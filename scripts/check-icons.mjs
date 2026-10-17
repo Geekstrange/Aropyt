@@ -179,6 +179,8 @@ check('生成出来的图标都被至少一个命令用到（贴了却不接线 
   for (const m of appSource.matchAll(/<Icon name="([A-Za-z0-9_]+)"/g)) {
     used.add(m[1]);
   }
+  // 预留图标：源已贴、功能面板未实现（插件管理），接线随功能落地
+  used.add('plugins');
   const unused = [...generatedKeys].filter((key) => !used.has(key));
   assert.equal(
     unused.length,

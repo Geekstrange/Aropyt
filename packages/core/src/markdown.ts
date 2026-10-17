@@ -21,6 +21,50 @@ function highlightCode(code: string, lang: string): string {
 }
 
 /**
+ * 数学公式：$…$（行内）、$$…$$（块级）、\(…\)（行内）、\[…\]（块级）。
+ *
+ * 输出的是**占位元素**（data-tex 存原式）—— KaTeX 的渲染发生在
+ * BlockWidget 的 DOM 水合阶段（异步动态 import，不进首屏）。
+ *
+ * 为什么必须抢在 escape 规则之前：`\(` 的反斜杠会被 markdown-it 的
+ * escape 规则当成转义吃掉，行内规则看到的就只剩 `(` 了。
+ * `$` 的闭合判定要求定界符内侧贴着内容（`$5 和 $10` 这种货币文本
+ * 不满足，不会被误判成公式）。
+ */
+function mathPlugin(md: MarkdownIt): void {
+  md.inline.ruler.before('escape', 'aropyt_math', (state, silent) => {
+    const src = state.src;
+    const start = state.pos;
+    let marker = '';
+    if (src.startsWith('$$', start)) marker = '$$';
+    else if (src[start] === '$') marker = '$';
+    else if (src.startsWith('\\(', start)) marker = '\\(';
+    else if (src.startsWith('\\[', start)) marker = '\\[';
+    if (!marker) return false;
+    const close = marker === '\\(' ? '\\)' : marker === '\\[' ? '\\]' : marker;
+    const end = src.indexOf(close, start + marker.length);
+    if (end < 0) return false;
+    const tex = src.slice(start + marker.length, end).trim();
+    if (!tex) return false;
+    // 行内 $ 的防误判：闭合 $ 前不能是空白（$5 和 $10 里的两个 $ 不配对）
+    if (marker === '$' && /\s$/.test(src.slice(start + 1, end))) return false;
+    if (silent) return true;
+    const isBlock = marker === '$$' || marker === '\\[';
+    const token = state.push(isBlock ? 'math_block' : 'math_inline', '', 0);
+    token.content = tex;
+    token.markup = marker;
+    state.pos = end + close.length;
+    return true;
+  });
+
+  const renderPlaceholder = (tex: string, display: boolean): string =>
+    `<span class="${display ? 'aropyt-math-block' : 'aropyt-math-inline'}" data-tex="${escapeHtml(tex)}"></span>`;
+
+  md.renderer.rules.math_inline = (tokens, idx) => renderPlaceholder(tokens[idx].content, false);
+  md.renderer.rules.math_block = (tokens, idx) => renderPlaceholder(tokens[idx].content, true);
+}
+
+/**
  * GFM 任务列表。[ ] / [x] 不在 CommonMark 里，markdown-it 核心不认，
  * 自己补一个最小实现比再引一个依赖更可控。
  */
@@ -59,7 +103,8 @@ export const md: MarkdownIt = new MarkdownIt({
   typographer: true,
   breaks: false,
   highlight: highlightCode,
-}).use(taskListPlugin);
+}).use(taskListPlugin)
+  .use(mathPlugin);
 
 /** 外链一律加 target=_blank + rel，避免在 PWA 里把应用本身导航走。 */
 const defaultLinkOpen =

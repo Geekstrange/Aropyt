@@ -81,41 +81,41 @@ jobs:
   # ── Android APK ─────────────────────────────────────────────
   # debug 签名（可直接安装）；正式发布换 release 签名需配 keystore secrets。
   # gen/android 工程不存在时由 CI 自动 `tauri android init`。
-  android:
-    runs-on: ubuntu-22.04
-    needs: build
-    permissions:
-      contents: write
-    steps:
-      - uses: actions/checkout@v4
+  # android:
+  #   runs-on: ubuntu-22.04
+  #   needs: build
+  #   permissions:
+  #     contents: write
+  #   steps:
+  #     - uses: actions/checkout@v4
 
-      - uses: actions/setup-node@v4
-        with:
-          node-version: 22
-          cache: npm
+  #     - uses: actions/setup-node@v4
+  #       with:
+  #         node-version: 22
+  #         cache: npm
 
-      - uses: dtolnay/rust-toolchain@stable
-        with:
-          targets: aarch64-linux-android,armv7-linux-androideabi,i686-linux-android,x86_64-linux-android
+  #     - uses: dtolnay/rust-toolchain@stable
+  #       with:
+  #         targets: aarch64-linux-android,armv7-linux-androideabi,i686-linux-android,x86_64-linux-android
 
-      - uses: actions/setup-java@v4
-        with:
-          distribution: temurin
-          java-version: 17
+  #     - uses: actions/setup-java@v4
+  #       with:
+  #         distribution: temurin
+  #         java-version: 17
 
-      - name: Install frontend dependencies
-        run: npm install
+  #     - name: Install frontend dependencies
+  #       run: npm install
 
-      - name: Init Android project（首次构建时生成 gen/android）
-        run: |
-          [ -d src-tauri/gen/android ] || npx tauri android init
+  #     - name: Init Android project（首次构建时生成 gen/android）
+  #       run: |
+  #         [ -d src-tauri/gen/android ] || npx tauri android init
 
-      - name: Build debug APK
-        run: npx tauri android build --apk --debug
+  #     - name: Build debug APK
+  #       run: npx tauri android build --apk --debug
 
-      - name: Upload APK to release
-        env:
-          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-        run: |
-          APK=$(find src-tauri/gen/android -name '*.apk' | head -1)
-          gh release upload "$GITHUB_REF_NAME" "$APK" --repo "$GITHUB_REPOSITORY" --clobber
+  #     - name: Upload APK to release
+  #       env:
+  #         GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+  #       run: |
+  #         APK=$(find src-tauri/gen/android -name '*.apk' | head -1)
+  #         gh release upload "$GITHUB_REF_NAME" "$APK" --repo "$GITHUB_REPOSITORY" --clobber

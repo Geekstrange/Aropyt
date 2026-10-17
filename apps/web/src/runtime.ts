@@ -987,9 +987,37 @@ export function createRuntime(options: RuntimeOptions): AropytRuntime {
    * 标签栏还有别的标签"的状态 —— 那种状态下用户点任何东西都像没反应。
    * 挑邻居而不是跳到第一个：靠得近的通常就是他接下来想看的那个。
    */
-  function closeTab(path: string): void {
+  async function closeTab(path: string): Promise<void> {
     const index = state.tabs.findIndex((item) => item.path === path);
     if (index < 0) return;
+
+    /*
+     * 未保存确认：标签带脏标记时先问，防误关丢改动。
+     * showMessage 的返回值是被点击 action 的 label；undefined = 用户
+     * 直接关掉提示 = 取消。
+     */
+    const closing = state.tabs[index];
+    if (closing.dirty) {
+      const name = path.startsWith('__untitled__') ? '未命名文档' : (path.split(/[\\/]/).pop() ?? path);
+      const actions = [
+        {
+          label: '不保存并关闭',
+          run: () => {
+            /* 直接关；未命名文档的草稿已自动保存，不会真丢 */
+          },
+        },
+      ];
+      const isCurrent = state.activePath === path;
+      if (isCurrent && !path.startsWith('__untitled__')) {
+        actions.push({ label: '保存并关闭', run: () => {} });
+      }
+      const choice = await windowService.showMessage(`「${name}」有未保存的修改。`, {
+        level: 'warning',
+        actions,
+      });
+      if (choice === undefined) return;
+      if (choice === '保存并关闭') await saveActiveFile();
+    }
 
     const closingActive = state.activePath === path;
     // 关掉当前标签之前先把它缓冲区的修改存回来 ——

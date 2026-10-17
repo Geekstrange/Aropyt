@@ -49,6 +49,7 @@ const manifest: PluginManifest = {
       { id: 'aropyt.blockquote', title: '引用', category: '格式', icon: 'quote' },
       { id: 'aropyt.codeBlock', title: '代码块', category: '格式', icon: 'codeBlock' },
       { id: 'aropyt.table', title: '插入表格', category: '格式', icon: 'table' },
+      { id: 'aropyt.mathBlock', title: '插入公式', category: '格式', icon: 'formula' },
       { id: 'aropyt.image', title: '插入图像', category: '格式', icon: 'image' },
     ],
     keybindings: [

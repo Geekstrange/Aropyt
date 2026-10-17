@@ -52,6 +52,8 @@ const NAME_MAP = {
   'leftSidebar-active': 'sidebarActive',
   // vim 模式指示（状态栏左下角）
   'vim-mode': 'vimMode',
+  formula: 'formula',
+  plugins: 'plugins',
 };
 
 function convert(file) {

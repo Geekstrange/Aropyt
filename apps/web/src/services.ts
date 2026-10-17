@@ -1,4 +1,11 @@
 /**
+
+// KaTeX 样式预热（数学公式渲染用）：core 包的 tsconfig 对 CSS 子路径无声明，
+// 放在 web 层（有 vite/client 类型）。动态 import → 独立 chunk，不进首屏。
+// 动态 import('xxx.css') 会被 Vite 静默丢弃（实测产物里无 CSS）——
+// 用 ?url 拿到构建产物的地址，运行时插 <link>：独立 chunk、不进首屏、
+// 字体路径由构建期正确重写。
+
  * 应用层服务：窗口/界面 API 与语言扩展点的实现。
  *
  * 注意这些类住在 apps/web 而不是 packages/core ——

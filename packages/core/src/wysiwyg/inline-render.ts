@@ -415,6 +415,10 @@ class BlockWidget extends WidgetType {
     const wrap = document.createElement('div');
     wrap.className = 'cm-md-block';
     wrap.innerHTML = sanitizeBlockHtml(this.html);
+    // 数学公式占位 → KaTeX 异步渲染（markdown-it 层只输出 data-tex 占位）
+    void hydrateMath(wrap).catch(() => {
+      /* 公式渲染失败保留占位 —— 原式在 data-tex 里，内容不丢 */
+    });
     // 工作区相对路径的图片在 WebView 里解析不到 —— 与行内图片 widget
     // 相同，走 resolveAsset 转成 data URL（异步，拿到后回填）。
     if (this.resolveAsset) {
@@ -491,8 +495,14 @@ class MermaidWidget extends WidgetType {
         const { svg } = await mermaidMod.render(id, this.code);
         mermaidSvgCache.set(this.code, svg);
         wrap.innerHTML = svg;
-      } catch {
-        /* 图表语法错误：保留源码占位 —— 与"渲染失败不吞内容"一致 */
+      } catch (err) {
+        /*
+         * 图表语法错误：保留源码占位并**显示原因** —— 静默回退会让用户
+         * 分不清"还没渲染"和"语法不支持"（stateDiagram 用 classDef 的
+         * 场景实测踩过：mermaid 状态图不支持 flowchart 的着色指令）。
+         */
+        pre.className = 'cm-md-mermaid-src cm-md-mermaid-err';
+        pre.textContent = `${this.code}\n\n[mermaid 渲染失败：${err instanceof Error ? err.message.slice(0, 120) : '未知错误'}]`;
       }
     })();
     return wrap;
@@ -587,6 +597,42 @@ function createBlockDecorationsField(
     },
     provide: (field) => EditorView.decorations.from(field),
   });
+}
+
+
+/*
+ * ── KaTeX 数学公式 ──────────────────────────────────────────
+ * markdown-it 层把 $…$ / \(…\) 等替换成 data-tex 占位元素，
+ * 这里在 DOM 水合时用 KaTeX 渲染成真公式。动态 import + 缓存
+ * （与 mermaid 同一套理由：renderToString 是重活，滚动重建 DOM
+ * 时不能反复跑）。
+ */
+interface KaTeXApi {
+  renderToString(tex: string, options?: Record<string, unknown>): string;
+}
+let katexMod: KaTeXApi | null = null;
+const katexCache = new Map<string, string>();
+
+async function hydrateMath(wrap: HTMLElement): Promise<void> {
+  const nodes = wrap.querySelectorAll('[data-tex]');
+  if (nodes.length === 0) return;
+  katexMod ??= (await import('katex')).default as unknown as KaTeXApi;
+  // KaTeX 的 CSS 由 web 宿主层预热加载（core 包的 tsconfig 对 CSS 子路径
+  // 没有模块声明，这里不引 —— 字体也由该 CSS 按需下载）
+  for (const el of [...wrap.querySelectorAll('[data-tex]')]) {
+    const tex = el.getAttribute('data-tex') ?? '';
+    if (!tex) continue;
+    const display = el.classList.contains('aropyt-math-block');
+    let html = katexCache.get(tex);
+    if (html === undefined) {
+      html = katexMod.renderToString(tex, {
+        throwOnError: false,
+        displayMode: display,
+      });
+      katexCache.set(tex, html);
+    }
+    el.innerHTML = html;
+  }
 }
 
 export interface InlineRenderConfig {
@@ -1747,6 +1793,8 @@ const aropytInlineTheme = EditorView.baseTheme({
   '.cm-md-block ul': { paddingLeft: '1.5em', margin: '0.35em 0' },
   '.cm-md-block ol': { paddingLeft: '1.5em', margin: '0.35em 0' },
   '.cm-md-block input[type=checkbox]': { marginRight: '0.45em', verticalAlign: 'middle' },
+  '.cm-md-block .katex-display': { margin: '0.6em 0', overflowX: 'auto' },
+
 
   /*
    * ── highlight.js token 染色（代码块语法高亮）─────────────────
@@ -1781,6 +1829,7 @@ const aropytInlineTheme = EditorView.baseTheme({
     margin: '0.6em 0',
   },
   '.cm-md-mermaid svg': { maxWidth: '100%' },
+  '.cm-md-mermaid-err': { color: 'var(--md-state-red, #e05252)' },
   '.cm-md-mermaid-src': {
     fontFamily: 'var(--font-mono)',
     fontSize: '0.88em',

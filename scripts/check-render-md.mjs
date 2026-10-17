@@ -311,6 +311,34 @@ try {
   expect(stats.hljsTokens >= 5, `代码块语法高亮（${stats.hljsTokens} 个 hljs token span）`);
 
 
+  // —— 数学公式专项：KaTeX 异步渲染（动态加载 chunk + 字体），轮询等 .katex 出现
+  await typeIntoEditor(readFileSync(resolve('test/math.md'), 'utf8'));
+  let mathCount = 0;
+  for (let i = 0; i < 24; i += 1) {
+    await sleep(500);
+    mathCount = await ev(
+      `document.querySelectorAll('.cm-md-block .katex').length`,
+    );
+    if (mathCount >= 7) break;
+  }
+  expect(mathCount >= 7, `数学公式渲染（${mathCount} 个 KaTeX 元素）`);
+  // 滚动全文档，收集仍未渲染的占位（诊断用户报的"希腊字母与偏导"未渲染）
+  const stale = await ev(`(async () => {
+    const scroller = document.querySelector('.cm-scroller');
+    const out = [];
+    for (let y = 0; y <= scroller.scrollHeight; y += 900) {
+      scroller.scrollTop = y;
+      await new Promise((r) => setTimeout(r, 350));
+      document.querySelectorAll('.cm-md-block [data-tex]').forEach((el) => {
+        if (!el.querySelector('.katex')) out.push((el.getAttribute('data-tex') ?? '').split(String.fromCharCode(10)).join(' ').slice(0, 50));
+      });
+    }
+    return out.slice(0, 5);
+  })()`);
+  if (stale.length > 0) console.log('未渲染占位样本:', JSON.stringify(stale));
+  expect(stale.length === 0, `滚动全文档无未渲染占位（发现 ${stale.length} 个）`);
+
+
   // —— Mermaid 专项：图表渲染是异步的（mermaid chunk 懒加载 + render），
   //    轮询等 SVG 出现，最多 15s。
   await typeIntoEditor(readFileSync(resolve('test/mermaid-basic.md'), 'utf8'));

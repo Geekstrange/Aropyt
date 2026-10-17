@@ -8,8 +8,8 @@
 //! 刻意不在这里实现任何编辑逻辑。内核与插件全在 Web 侧，
 //! Rust 只提供 Web 无法提供的能力 —— 这是"薄内核"原则在壳层的延续。
 //!
-//! ⚠️ 未编译验证：本机没有 Rust 工具链，这份代码尚未通过 `cargo check`。
-//!    首次构建前必须先跑一次，否则不要假定它能编译。
+//! 编译状态：Windows 本地 `cargo build --release` 与 GitHub Actions
+//! （ubuntu-22.04 / macos-latest）均已通过。改完记得 `cargo check`。
 
 use std::fs;
 use std::io::Write;
