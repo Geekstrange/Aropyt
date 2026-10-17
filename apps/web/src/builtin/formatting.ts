@@ -73,6 +73,7 @@ const manifest: PluginManifest = {
         { command: 'aropyt.blockquote', group: '4', order: 4 },
         { command: 'aropyt.codeBlock', group: '5', order: 1 },
         { command: 'aropyt.table', group: '5', order: 2 },
+        { command: 'aropyt.mathBlock', group: '5', order: 4 },
         { command: 'aropyt.image', group: '5', order: 3 },
       ],
     },
@@ -126,6 +127,16 @@ function activate(context: PluginContext): void {
 
   commands.register('aropyt.table', () => {
     editor.insertText('\n| 列 1 | 列 2 | 列 3 |\n| --- | --- | --- |\n|  |  |  |\n');
+  });
+
+  /*
+   * 插入块级公式。有选区时把选中内容包进公式块（符合"选中一段式子
+   * 直接转公式"的直觉），没有选区就插入空公式块并把光标放在里面。
+   */
+  commands.register('aropyt.mathBlock', () => {
+    const selection = editor.getSelection();
+    const body = selection?.text ?? '';
+    editor.insertText(`\n$$\n${body}\n$$\n`);
   });
 
   /*

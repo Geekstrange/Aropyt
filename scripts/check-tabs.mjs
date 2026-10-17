@@ -374,7 +374,13 @@ try {
     await ev(`document.querySelector('.cm-content').focus()`);
     await ev(`document.execCommand('insertText', false, 'dirty-marker')`);
     await sleep(400);
-    await ev(`document.querySelector('.tab .tab__close')?.click()`);
+    console.log('  [diag]', JSON.stringify({
+      tabsBefore,
+      dirtyMarks: await ev(`document.querySelectorAll('.tab__dirty').length`),
+      closeBtns: await ev(`document.querySelectorAll('.tab__close').length`),
+      cmText: (await ev(`document.querySelector('.cm-content')?.textContent ?? ''`)).slice(0, 30),
+    }));
+    await ev(`([...document.querySelectorAll('.tab__close')].pop())?.click()`);
     await sleep(600);
     const toastText = await ev(`document.querySelector('.toast')?.textContent ?? ''`);
     if (!toastText.includes('未保存')) {

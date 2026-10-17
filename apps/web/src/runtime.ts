@@ -49,7 +49,7 @@ import {
   type BudgetViolation,
 } from '@aropyt/core';
 
-import type { DocumentRef, ImportedFile, Memento } from '@aropyt/plugin-api';
+import type { DocumentRef, ImportedFile, Memento, PluginManifest } from '@aropyt/plugin-api';
 
 import { LanguagesService, WindowService } from './services.js';
 import { createThemeService, type ResolvedTheme, type ThemePreference, type ThemeService } from './theme.js';
@@ -151,6 +151,16 @@ export interface AropytRuntime {
   createUntitledTab(): void;
   /** vim 模式开关（normal/insert/visual 操作方式）。持久化在 localStorage。 */
   toggleVimMode(): void;
+  /**
+   * 插件启用/禁用。
+   * 禁用**立即生效**（撤销该插件的命令/视图声明）并写入 localStorage；
+   * 启用只记偏好 —— 插件的贡献声明要重新走一遍加载流程，重启后生效。
+   */
+  setPluginEnabled(pluginId: string, enabled: boolean): void;
+  /** 选择本地 .js 插件文件导入（存 IndexedDB，重启后加载生效）。 */
+  importExternalPlugin(): void;
+  /** 内置插件的 id 集合 —— 插件管理面板只展示外部导入的插件。 */
+  readonly builtinPluginIds: ReadonlySet<string>;
   /** 源码模式（原始标记可见）。webdev 与排障时需要。 */
   toggleSourceMode(): void;
   /**
@@ -605,6 +615,9 @@ export function createRuntime(options: RuntimeOptions): AropytRuntime {
     closeTab,
     createUntitledTab,
     toggleVimMode,
+    setPluginEnabled,
+    importExternalPlugin,
+    builtinPluginIds: new Set(builtinPlugins.map((plugin) => plugin.manifest.id)),
     saveActiveFile,
     markSaved() {
       state.dirty = false;
@@ -995,6 +1008,13 @@ export function createRuntime(options: RuntimeOptions): AropytRuntime {
    * 挑邻居而不是跳到第一个：靠得近的通常就是他接下来想看的那个。
    */
   async function closeTab(path: string): Promise<void> {
+    /*
+     * 先把激活标签的缓冲区（文本 + dirty）写回 tab —— tab.dirty 平时
+     * 不会随编辑实时更新（那会打坏崩溃恢复链路，实测过），只在切走/
+     * 关闭前同步一次。不调这一步，"关闭非激活但改过的标签"检测不到脏，
+     * 会静默丢内容（闸门用例实测暴露）。
+     */
+    syncActiveTabBuffer();
     const index = state.tabs.findIndex((item) => item.path === path);
     if (index < 0) return;
 
@@ -1004,8 +1024,7 @@ export function createRuntime(options: RuntimeOptions): AropytRuntime {
      * 直接关掉提示 = 取消。
      */
     const closing = state.tabs[index];
-    const closingDirty = state.activePath === path ? state.dirty : closing.dirty;
-    if (closingDirty) {
+    if (closing.dirty) {
       const name = path.startsWith('__untitled__') ? '未命名文档' : (path.split(/[\\/]/).pop() ?? path);
       const actions = [
         {
@@ -1107,6 +1126,135 @@ export function createRuntime(options: RuntimeOptions): AropytRuntime {
     }
     state.dirty = false;
     notify();
+  }
+
+  /** 被用户手动禁用的插件 id 集合（localStorage 持久化）。 */
+  function loadDisabledPlugins(): string[] {
+    try {
+      const raw = localStorage.getItem('aropyt.disabledPlugins');
+      return raw ? (JSON.parse(raw) as string[]) : [];
+    } catch {
+      return [];
+    }
+  }
+
+  function saveDisabledPlugins(ids: string[]): void {
+    try {
+      localStorage.setItem('aropyt.disabledPlugins', JSON.stringify(ids));
+    } catch {
+      /* 配额满：本次会话生效，不记住 */
+    }
+  }
+
+  function setPluginEnabled(pluginId: string, enabled: boolean): void {
+    const current = new Set(loadDisabledPlugins());
+    if (enabled) {
+      current.delete(pluginId);
+      saveDisabledPlugins([...current]);
+      void windowService.showMessage(
+        `已记录启用「${pluginId}」。插件贡献需要重新声明，**重启应用后生效**。`,
+        { level: 'info' },
+      );
+      return;
+    }
+    current.add(pluginId);
+    saveDisabledPlugins([...current]);
+    // 立即生效：撤销该插件的命令/视图，并把状态标成 disabled
+    host.disable(pluginId, '用户手动禁用');
+    void windowService.showMessage(`已禁用「${pluginId}」。`, { level: 'info' });
+  }
+
+  /*
+   * ── 外部插件（用户导入）────────────────────────────────────
+   *
+   * 存储：IndexedDB 的 kv store，单键 `aropyt.externalPlugins` 存数组
+   *（插件数量很少，没必要单开一个 object store 与版本升级）。
+   * 执行：Blob URL 动态 import —— 插件代码在渲染进程里以完整权限运行，
+   * 与 VS Code 插件同级别信任模型（不是沙箱）。CSP 已放开 `blob:`。
+   */
+  const EXTERNAL_PLUGINS_KEY = 'aropyt.externalPlugins';
+
+  interface StoredExternalPlugin {
+    manifest: PluginManifest;
+    code: string;
+  }
+
+  async function readExternalPlugins(): Promise<StoredExternalPlugin[]> {
+    const rows = await idbGet<StoredExternalPlugin[]>(STORE.kv, EXTERNAL_PLUGINS_KEY).catch(
+      () => undefined,
+    );
+    return rows ?? [];
+  }
+
+  async function loadExternalPlugins(): Promise<void> {
+    const rows = await readExternalPlugins();
+    for (const row of rows) {
+      try {
+        const url = URL.createObjectURL(new Blob([row.code], { type: 'text/javascript' }));
+        try {
+          const mod = (await import(/* @vite-ignore */ url)) as {
+            activate?: (context: unknown) => void | Promise<void>;
+            deactivate?: () => void | Promise<void>;
+          };
+          if (typeof mod.activate !== 'function') continue;
+          host.load([
+            {
+              manifest: row.manifest,
+              module: { activate: mod.activate as never, deactivate: mod.deactivate },
+            } as never,
+          ]);
+        } finally {
+          URL.revokeObjectURL(url);
+        }
+      } catch {
+        /* 单个外部插件失败不影响其它插件与启动 */
+      }
+    }
+  }
+
+  function importExternalPlugin(): void {
+    const input = document.createElement('input');
+    input.type = 'file';
+    input.accept = '.js,.mjs';
+    input.onchange = () => {
+      void (async () => {
+        const file = input.files?.[0];
+        if (!file) return;
+        const code = await file.text();
+        const url = URL.createObjectURL(new Blob([code], { type: 'text/javascript' }));
+        try {
+          const mod = (await import(/* @vite-ignore */ url)) as {
+            manifest?: PluginManifest;
+            activate?: unknown;
+          };
+          const manifest = mod.manifest;
+          if (!manifest?.id || !manifest?.name) {
+            throw new Error('插件缺少 manifest（需要 id 与 name）');
+          }
+          if (typeof mod.activate !== 'function') {
+            throw new Error('插件缺少 activate 导出');
+          }
+          const rows = await readExternalPlugins();
+          const next = [
+            ...rows.filter((row) => row.manifest.id !== manifest.id),
+            { manifest, code },
+          ];
+          await idbSet(STORE.kv, EXTERNAL_PLUGINS_KEY, next);
+          void windowService.showMessage(
+            `已导入插件「${manifest.name}」。重启应用后生效。`,
+            { level: 'info' },
+          );
+        } catch (error) {
+          void windowService.showMessage(
+            `导入失败：${error instanceof Error ? error.message : '未知错误'}`,
+            { level: 'error' },
+          );
+        } finally {
+          URL.revokeObjectURL(url);
+        }
+      })();
+    };
+    input.click();
   }
 
   /**
@@ -1322,6 +1470,15 @@ export function createRuntime(options: RuntimeOptions): AropytRuntime {
 
     // 只有真正需要视图或工具栏的插件在启动时激活；
     // 纯命令类插件等 onCommand 触发，启动开销为零。
+    /*
+     * 恢复用户的手动禁用：localStorage 里记的插件 id 在加载后立刻禁用，
+     * 否则"禁用"只在本次会话有效、重启又全回来了。
+     */
+    for (const pluginId of loadDisabledPlugins()) {
+      host.disable(pluginId, '用户手动禁用');
+    }
+    // 外部插件（用户导入）先加载，再统一按 activationEvents 激活
+    await loadExternalPlugins();
     await host.activateFor('onStartupFinished');
     notify();
   })();

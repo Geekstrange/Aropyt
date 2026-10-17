@@ -305,6 +305,63 @@ function Toolbar({ runtime }: ToolbarProps): JSX.Element {
        * 表达不了"跟随系统"。循环的代价是点击次数不固定，
        * 所以图标与提示文字必须清楚显示当前处于哪一态。
        */}
+      {/*
+       * 插件管理入口（v0.0.3）：列出全部插件的启用状态与原因。
+       * 完整的管理面板（启用/禁用开关）是下一步 —— 目前这条入口
+       * 至少让"某个功能为什么没生效"可被用户看到。
+       */}
+      <button
+        type="button"
+        className="tool-button"
+        title="插件管理"
+        aria-label="插件管理"
+        onClick={() => {
+          /*
+           * 插件面板：列出全部插件并给出**可操作的开关**。
+           * 禁用立即生效并记住；启用需要重启（插件贡献要重新声明）。
+           * 最后一枚按钮是导入入口（插件生态的下一步）。
+           */
+          /*
+           * 只展示**外部导入**的插件：文件/格式化/文件树/大纲是内置
+           * 功能，不属于"插件管理"的范畴（用户明确要求）。
+           */
+          const external = state.plugins.filter(
+            (record) => !runtime.builtinPluginIds.has(record.manifest.id),
+          );
+          const lines = external.map((record) => {
+            const status =
+              record.state === 'active'
+                ? '已启用'
+                : record.state === 'disabled'
+                  ? '已禁用'
+                  : record.state === 'failed'
+                    ? '加载失败'
+                    : '未激活';
+            const reason = record.reason ? `——${record.reason}` : '';
+            return `${record.manifest.name ?? record.manifest.id}（${status}）${reason}`;
+          });
+          const actions = external.map((record) => {
+            const active = record.state === 'active';
+            return {
+              label: `${active ? '禁用' : '启用'}：${record.manifest.name ?? record.manifest.id}`,
+              run: () => runtime.setPluginEnabled(record.manifest.id, !active),
+            };
+          });
+          actions.push({
+            label: '导入插件…',
+            run: () => runtime.importExternalPlugin(),
+          });
+          void runtime.windowService.showMessage(
+            lines.length > 0
+              ? ['已导入的插件：', ...lines].join('\n')
+              : '尚未导入任何插件。插件是单个 .js 文件，需导出 manifest 与 activate。',
+            { level: 'info', actions },
+          );
+        }}
+      >
+        <Icon name="plugins" />
+      </button>
+
       <button
         type="button"
         className="tool-button"
