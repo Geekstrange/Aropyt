@@ -1,6 +1,6 @@
 [package]
 name = "Aropyt"
-version = "0.0.2"
+version = "0.0.3"
 description = "跨平台 Markdown 编辑器"
 authors = ["Aropyt"]
 license = "AGPL-3.0-or-later"
