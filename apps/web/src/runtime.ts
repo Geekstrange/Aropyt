@@ -440,6 +440,13 @@ export function createRuntime(options: RuntimeOptions): AropytRuntime {
       if (loadingDocument) return;
       state.dirty = true;
       /*
+       * 注意：这里**不要**动 state.tabs —— 曾经为了同步 tab.dirty 加过
+       * tabs.map，结果打坏了崩溃恢复链路（check:crash 实测：
+       * "未保存的修改没有被恢复"）。
+       * closeTab 的未保存确认改用全局 state.dirty 兜底（激活标签场景
+       * 覆盖绝大多数情况），不需要维护 tab.dirty 的实时同步。
+       */
+      /*
        * **编辑使预览标签转正**（斜体消失）。
        *
        * 这是整条规则里最要紧的一条：预览标签会被"下一次单击"替换掉，
@@ -850,7 +857,7 @@ export function createRuntime(options: RuntimeOptions): AropytRuntime {
          */
         state.recoveredPath = path;
         notify();
-        await windowService.showMessage(
+        void windowService.showMessage(
           lastExitWasClean
             ? `这份文件上次关闭时（${when}）有未保存的修改，已恢复当时的编辑。`
             : `已从崩溃恢复日志中还原未保存的内容（${when}）。`,
@@ -997,7 +1004,8 @@ export function createRuntime(options: RuntimeOptions): AropytRuntime {
      * 直接关掉提示 = 取消。
      */
     const closing = state.tabs[index];
-    if (closing.dirty) {
+    const closingDirty = state.activePath === path ? state.dirty : closing.dirty;
+    if (closingDirty) {
       const name = path.startsWith('__untitled__') ? '未命名文档' : (path.split(/[\\/]/).pop() ?? path);
       const actions = [
         {

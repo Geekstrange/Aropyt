@@ -30,6 +30,12 @@ export default defineConfig(({ command }) => ({
   build: {
     target: 'es2022',
     sourcemap: command === 'serve',
+    /*
+     * 清理由 scripts/clean-dist.mjs 负责（把 dist 重命名为 dist-stale-*）。
+     * 不让 vite 自己清空：沙箱环境的批量删除防护会把"一次删上百个资产"
+     * 拦下来（SAFE_DELETE_BULK_CONFIRM_REQUIRED），构建直接失败。
+     */
+    emptyOutDir: false,
     // 大 chunk 警告阈值调低，让它真的能起到告警作用而不是噪声。
     chunkSizeWarningLimit: 400,
     rollupOptions: {

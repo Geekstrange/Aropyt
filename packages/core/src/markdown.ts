@@ -32,6 +32,36 @@ function highlightCode(code: string, lang: string): string {
  * 不满足，不会被误判成公式）。
  */
 function mathPlugin(md: MarkdownIt): void {
+  /*
+   * ⚠️ 块级数学必须是 **block 规则**，不能只靠 inline 规则。
+   *
+   * 实测（希腊字母与偏导块）：`\[ ... \]` 里有一行以 `+ \frac{...}` 开头，
+   * markdown-it 的列表规则先把它切成 `<p>` + `<ul><li>`，inline 规则
+   * 在第一个块里找不到闭合 `\]` → 整块退化成普通文本（用户看到的就是
+   * "未渲染"）。凡是以 `-` / `+` / `*` / `1.` 开头的 tex 行都会这样。
+   *
+   * block 规则插在 `fence` 之前，整块吞掉（不参与列表/段落解析）。
+   */
+  md.block.ruler.before('fence', 'aropyt_math_block', (state, startLine, _endLine, silent) => {
+    const lineStart = state.bMarks[startLine] + state.tShift[startLine];
+    const lineEnd = state.eMarks[startLine];
+    const head = state.src.slice(lineStart, lineEnd).trimStart();
+    const open = head.startsWith('$$') ? '$$' : head.startsWith('\\[') ? '\\[' : '';
+    if (!open) return false;
+    const close = open === '$$' ? '$$' : '\\]';
+    const closePos = state.src.indexOf(close, lineStart + open.length);
+    if (closePos < 0) return false;
+    if (silent) return true;
+    const token = state.push('math_block', '', 0);
+    token.block = true;
+    token.content = state.src.slice(lineStart + open.length, closePos).trim();
+    token.markup = open;
+    const end = state.src.slice(0, closePos).split('\n').length - 1;
+    token.map = [startLine, end];
+    state.line = end + 1;
+    return true;
+  });
+
   md.inline.ruler.before('escape', 'aropyt_math', (state, silent) => {
     const src = state.src;
     const start = state.pos;

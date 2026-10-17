@@ -121,6 +121,7 @@ export class WindowService implements WindowApi {
   readonly #coreViews = new Map<string, ViewContribution>();
   #statusItems: StatusBarItemImpl[] = [];
   #toasts: Toast[] = [];
+  #choiceResolvers = new Map<number, (label?: string) => void>();
   #listeners = new Set<() => void>();
   #revision = 0;
   #toastSeq = 0;
@@ -246,9 +247,33 @@ export class WindowService implements WindowApi {
 
   async showMessage(message: string, options?: MessageOptions): Promise<string | undefined> {
     const id = ++this.#toastSeq;
+    /*
+     * 带 actions 的提示要**等用户真的点了**才返回，并且返回值必须是
+     * **被点击那个 action 的 label**。
+     *
+     * 上一版直接 `return actions[0].label` —— 点"保存并关闭"也返回
+     * "不保存并关闭"（第一个），于是"有提示但保不住文件"（用户实测打回）。
+     */
+    let resolveChoice: ((label?: string) => void) | null = null;
+    const actions = options?.actions?.map((action) => ({
+      ...action,
+      run: () => {
+        /*
+         * ⚠️ 先把这个 id 的 resolver 摘掉，再 resolve(label)。
+         *
+         * 宿主点按钮时的顺序是 `dismiss(id)` → `action.run()`。
+         * dismiss 会把等待中的 Promise 以 undefined（= 取消）结算掉，
+         * 之后 run 里的 resolve(label) 就无效了 —— Promise 只能结算一次。
+         * 症状：按钮"点了没反应"（关闭标签/退出软件的确认全被判成取消）。
+         */
+        this.#choiceResolvers.delete(id);
+        resolveChoice?.(action.label);
+        action.run();
+      },
+    }));
     this.#toasts = [
       ...this.#toasts,
-      { id, level: options?.level ?? 'info', message, actions: options?.actions },
+      { id, level: options?.level ?? 'info', message, actions },
     ];
     this.#bump();
     // 5 秒自动消失。错误类留久一点，但仍然要自己走 ——
@@ -261,11 +286,22 @@ export class WindowService implements WindowApi {
      */
     if (!options?.actions?.length) {
       setTimeout(() => this.dismiss(id), options?.level === 'error' ? 8000 : 5000);
+      return undefined;
     }
-    return options?.actions?.[0]?.label;
+    // 提示被关掉（用户不要这些动作）→ resolve(undefined) 表示"取消"
+    return new Promise<string | undefined>((resolve) => {
+      resolveChoice = resolve;
+      this.#choiceResolvers.set(id, resolve);
+    });
   }
 
   dismiss(id: number): void {
+    // 关掉提示 = 取消：让等待中的 showMessage 以 undefined 结束
+    const resolver = this.#choiceResolvers.get(id);
+    if (resolver) {
+      this.#choiceResolvers.delete(id);
+      resolver(undefined);
+    }
     const next = this.#toasts.filter((toast) => toast.id !== id);
     if (next.length !== this.#toasts.length) {
       this.#toasts = next;

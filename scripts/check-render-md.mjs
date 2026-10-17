@@ -337,6 +337,13 @@ try {
   })()`);
   if (stale.length > 0) console.log('未渲染占位样本:', JSON.stringify(stale));
   expect(stale.length === 0, `滚动全文档无未渲染占位（发现 ${stale.length} 个）`);
+  // 针对性：希腊字母与偏导块（曾被列表规则切碎，必须真渲染成 .katex）
+  const partialOk = await ev(`(() => {
+    const el = [...document.querySelectorAll('.cm-md-block [data-tex]')]
+      .find((n) => (n.getAttribute('data-tex') ?? '').includes('\\partial^2'));
+    return el ? !!el.querySelector('.katex') : false;
+  })()`);
+  expect(partialOk, '希腊字母与偏导块已渲染成 KaTeX（偏导公式在渲染元素内）');
 
 
   // —— Mermaid 专项：图表渲染是异步的（mermaid chunk 懒加载 + render），

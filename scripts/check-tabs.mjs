@@ -355,6 +355,42 @@ try {
     writeFileSync(resolve('screenshots/tabs.png'), Buffer.from(shot.data, 'base64'));
   }
 
+
+  /*
+   * —— 未保存关闭确认：按钮必须真的生效 ——
+   *
+   * 曾两次栽在"点按钮没反应"：宿主先 dismiss（把 Promise 结算成取消）
+   * 再 run，Promise 只能结算一次 → 所有按钮都变成"取消"，
+   * 关闭标签不关、退出软件退不掉。这条用例钉死"点按钮 → 标签真的关"。
+   */
+  if (existsSync(resolve('test/basic.md'))) {
+    let tabsBefore = await ev(`document.querySelectorAll('.tab').length`);
+    // 前面的用例可能已把所有标签关掉 —— 先建一个（+ 按钮）再脏化
+    if (tabsBefore === 0) {
+      await ev(`document.querySelector('.tab-add')?.click()`);
+      await sleep(500);
+      tabsBefore = await ev(`document.querySelectorAll('.tab').length`);
+    }
+    await ev(`document.querySelector('.cm-content').focus()`);
+    await ev(`document.execCommand('insertText', false, 'dirty-marker')`);
+    await sleep(400);
+    await ev(`document.querySelector('.tab .tab__close')?.click()`);
+    await sleep(600);
+    const toastText = await ev(`document.querySelector('.toast')?.textContent ?? ''`);
+    if (!toastText.includes('未保存')) {
+      note(`未保存关闭没有弹确认（toast: ${JSON.stringify(toastText.slice(0, 40))}）`);
+    } else {
+      await ev(`document.querySelectorAll('.toast__action')[0]?.click()`);
+      await sleep(900);
+      const tabsAfter = await ev(`document.querySelectorAll('.tab').length`);
+      if (tabsAfter >= tabsBefore) {
+        note(`点「不保存并关闭」后标签没关（${tabsBefore} → ${tabsAfter}）—— 确认按钮无效`);
+      } else {
+        console.log(`  ok  未保存关闭确认生效（标签 ${tabsBefore} → ${tabsAfter}）`);
+      }
+    }
+  }
+
   ws.close();
 } catch (error) {
   console.error('检查失败：', error.message);

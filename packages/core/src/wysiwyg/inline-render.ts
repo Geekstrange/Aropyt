@@ -34,7 +34,7 @@ import {
   type ViewUpdate,
 } from '@codemirror/view';
 import type { SyntaxNode } from '@lezer/common';
-import { EditorState, StateEffect, StateField } from '@codemirror/state';
+import { EditorState, StateEffect, StateField, type Text } from '@codemirror/state';
 import { ensureSyntaxTree, syntaxTree } from '@codemirror/language';
 
 
@@ -521,6 +521,74 @@ class MermaidWidget extends WidgetType {
  * 这一轮栽过 —— MEMORY 里"表格 widget 改 StateField"就是同一颗雷的
  * 上一次爆发。
  */
+/**
+ * 行级扫描块级数学：`$$ … $$` 与 `\[ … \]`。
+ *
+ * ⚠️ 为什么不能只依赖 lezer / markdown-it 的块边界：
+ * 两者都会把 `+ \frac{...}` 这类以列表符号开头的 tex 行切成**独立的
+ * 列表块**，于是数学块被拆成两半、各自找不到闭合定界符，整块退化成
+ * 普通文本（"希腊字母与偏导"实测就是这个）。块切分必须在**这一层**
+ * 先把数学块整体圈出来，再交给 KaTeX。
+ *
+ * 返回的 to 是闭合定界符所在行的**行尾**（block widget 要求覆盖整行）。
+ */
+function scanMathBlocks(doc: Text): { from: number; to: number; tex: string }[] {
+  const out: { from: number; to: number; tex: string }[] = [];
+  let i = 1;
+  while (i <= doc.lines) {
+    const line = doc.line(i);
+    const trimmed = line.text.trimStart();
+    const open = trimmed.startsWith('$$') ? '$$' : trimmed.startsWith('\\[') ? '\\[' : '';
+    if (!open) {
+      i += 1;
+      continue;
+    }
+    const close = open === '$$' ? '$$' : '\\]';
+    // 单行形式：$$x$$ / \[x\]
+    const single = trimmed.slice(open.length);
+    const singleClose = single.indexOf(close);
+    if (singleClose >= 0) {
+      out.push({
+        from: line.from,
+        to: line.to,
+        tex: single.slice(0, singleClose).trim(),
+      });
+      i += 1;
+      continue;
+    }
+    // 多行：找含闭合定界符的行
+    let found = -1;
+    for (let j = i + 1; j <= doc.lines; j += 1) {
+      if (doc.line(j).text.includes(close)) {
+        found = j;
+        break;
+      }
+    }
+    if (found < 0) {
+      i += 1;
+      continue;
+    }
+    const startPos = line.from + (line.text.length - trimmed.length) + open.length;
+    const endLine = doc.line(found);
+    const closeIdx = endLine.text.indexOf(close);
+    out.push({
+      from: line.from,
+      to: endLine.to,
+      tex: doc.sliceString(startPos, endLine.from + closeIdx).trim(),
+    });
+    i = found + 1;
+  }
+  return out;
+}
+
+function escapeAttr(value: string): string {
+  return value
+    .replace(/&/g, '&amp;')
+    .replace(/"/g, '&quot;')
+    .replace(/</g, '&lt;')
+    .replace(/>/g, '&gt;');
+}
+
 function createBlockDecorationsField(
   reveal: boolean,
   resolveAsset?: AssetResolver,
@@ -530,10 +598,53 @@ function createBlockDecorationsField(
     if (!isEngineReady()) return Decoration.set(ranges, true);
     const tree = ensureSyntaxTree(state, state.doc.length, 100) ?? syntaxTree(state);
     const headLine = state.doc.lineAt(state.selection.main.head).number;
+
+    /*
+     * 第一步：块级数学的整体识别（行级扫描，见 scanMathBlocks 的注释）。
+     * 必须先于 lezer 遍历 —— lezer 会把 tex 里的 `+` / `-` 行切成独立
+     * 列表块，按 lezer 边界切会把数学块拆碎。
+     */
+    const mathBlocks = scanMathBlocks(state.doc);
+    const mathByFrom = new Map<number, { to: number; tex: string }>();
+    for (const block of mathBlocks) {
+      const startLine = state.doc.lineAt(block.from).number;
+      const endLineNo = state.doc.lineAt(block.to).number;
+      const isActive = reveal
+        && (headLine === startLine || headLine === endLineNo
+          || (headLine > startLine && headLine < endLineNo));
+      if (!isActive) {
+        const html = `<span class="aropyt-math-block" data-tex="${escapeAttr(block.tex)}"></span>`;
+        ranges.push({
+          from: block.from,
+          to: block.to,
+          value: Decoration.replace({
+            widget: new BlockWidget(html, resolveAsset),
+            block: true,
+          }),
+        });
+        mathByFrom.set(block.from, block);
+      }
+    }
+    // 数学块覆盖的区间：lezer 遍历遇到就跳过
+    const mathRanges = mathBlocks
+      .filter((b) => mathByFrom.has(b.from))
+      .map((b) => ({ from: b.from, to: b.to }));
+    const inMath = (pos: number): number | null => {
+      for (const r of mathRanges) {
+        if (pos >= r.from && pos < r.to) return r.to;
+      }
+      return null;
+    };
+
     const cursor = tree.cursor();
     let skip = -1;
     do {
       if (cursor.from < skip) continue;
+      const mathEnd = inMath(cursor.from);
+      if (mathEnd !== null) {
+        skip = mathEnd;
+        continue;
+      }
       const name = cursor.name;
       if (cursor.node.parent?.name === 'Document' && BLOCK_REPLACE_TYPES.has(name)) {
         const startLine = state.doc.lineAt(cursor.from).number;

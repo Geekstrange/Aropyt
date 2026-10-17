@@ -50,6 +50,53 @@ export function App(): JSX.Element {
     return () => instance.dispose();
   }, []);
 
+  /*
+   * 关闭窗口拦截（桌面壳）：有未保存修改时先确认，防误关丢内容。
+   *
+   * 浏览器开发模式下 import('@tauri-apps/api/window') 会失败 —— 静默
+   * catch，Web 形态本来就没有"关窗口"这件事。
+   * destroy() 而不是 close()：close 会再次触发 onCloseRequested，
+   * 形成"确认→close→再确认"的死循环。
+   */
+  useEffect(() => {
+    if (!runtime) return;
+    let disposed = false;
+    let unlisten: (() => void) | undefined;
+    void (async () => {
+      try {
+        const { getCurrentWindow } = await import('@tauri-apps/api/window');
+        const win = getCurrentWindow();
+        const off = await win.onCloseRequested(async (event) => {
+          const snap = runtime.getState();
+          const anyDirty = snap.dirty || snap.tabs.some((tab) => tab.dirty);
+          if (!anyDirty) return;
+          event.preventDefault();
+          const choice = await runtime.windowService.showMessage(
+            '有未保存的修改，确定要退出吗？',
+            {
+              level: 'warning',
+              actions: [
+                { label: '保存并退出', run: () => {} },
+                { label: '不保存退出', run: () => {} },
+              ],
+            },
+          );
+          if (choice === undefined) return; // 取消
+          if (choice === '保存并退出') await runtime.saveActiveFile();
+          await win.destroy();
+        });
+        if (disposed) off();
+        else unlisten = off;
+      } catch {
+        /* 浏览器开发模式：没有 Tauri 窗口 API */
+      }
+    })();
+    return () => {
+      disposed = true;
+      unlisten?.();
+    };
+  }, [runtime]);
+
   return (
     <div className="app">
       <header className="app-header">
@@ -585,8 +632,14 @@ function Toasts({ runtime }: { readonly runtime: AropytRuntime }): JSX.Element |
                   type="button"
                   className="toast__action"
                   onClick={() => {
-                    runtime.windowService.dismiss(toast.id);
+                    /*
+                     * ⚠️ 顺序不能反：先 run（结算真实选择），再 dismiss。
+                     * dismiss 会把等待中的 showMessage 以 undefined（取消）
+                     * 结算，Promise 只能结算一次 —— 先 dismiss 等于把所有
+                     * 按钮都变成"取消"（关闭标签不保存、退出软件退不掉）。
+                     */
                     action.run();
+                    runtime.windowService.dismiss(toast.id);
                   }}
                 >
                   {action.label}
