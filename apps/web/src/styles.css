@@ -1,0 +1,1134 @@
+/**
+ * 应用层样式。
+ *
+ * 所有颜色都走 CSS 自定义属性，这不只是为了换肤方便 ——
+ * 插件主题贡献点（ThemeContribution.variables）贡献的就是同一套变量名，
+ * 两边天然对齐，不需要任何转换层。
+ *
+ * 图标一律用内联 SVG + currentColor，不引图标字体也不引图标库。
+ * 理由很直接：编辑器一共用不到二十个图标，为它背一个图标包的体积不划算。
+ */
+
+/*
+ * ── 主题令牌的三种角色 ──────────────────────────────────
+ *
+ *   结构令牌   与配色无关（字体、字号、圆角、高度），只在 :root 定义一次。
+ *   深色色板   默认值，写在 :root 上。
+ *   浅色色板   写在 [data-theme='light'] 上，覆盖深色。
+ *
+ * 为什么深色放在 :root 而不是"两套都挂在属性选择器上"：
+ * 万一 JS 没跑起来（禁用、加载失败），至少还有一个可用的深色界面。
+ * 若两套色板都依赖 data-theme，脚本一挂就整个界面无色 —— 那是最糟的降级。
+ *
+ * ⚠️ 两套色板必须定义**完全相同**的变量集合。少一个不会报错，
+ * 只会静默回退到另一套的值（或落到 fallback），表现为"浅色下某个角落还是暗的"。
+ * `npm run check:render` 里有断言盯着这件事。
+ */
+
+/* @palette:shared ── 结构令牌，与配色无关 */
+:root {
+  /* 品牌色绿点：vim 未开启时的指示（用户指定的品牌色，不随主题变化） */
+  --md-brand-green: #5bb44e;
+  /* 状态灯三态：未保存（红）/ 已保存（品牌绿）/ 本次启动发生过恢复（黄） */
+  --md-state-red: #e05252;
+  --md-state-yellow: #e0a53d;
+  /* vim 图标的原色（icon/vim-mode.svg 的填充色） */
+  --md-vim-green: #43a047;
+  --md-font-size: 15px;
+
+  /*
+   * 字体族必须在这里定义 —— 内核的主题只**引用**它们，不定义。
+   *
+   * 曾经漏掉这两个变量，而内核写的是 `font-family: var(--font-mono)`
+   * （没有 fallback）。变量未定义时整条声明在计算值阶段失效，
+   * 于是字体回退成继承来的 body 无衬线 —— 编辑器**从来就不是等宽的**，
+   * 却没有任何报错。直到做模式切换（等宽 vs 无衬线）才暴露出来。
+   */
+  --font-sans: system-ui, -apple-system, 'Segoe UI', 'Microsoft YaHei', 'PingFang SC', sans-serif;
+  --font-mono: ui-monospace, SFMono-Regular, 'Cascadia Mono', Consolas, 'Liberation Mono', monospace;
+
+  --md-radius: 8px;
+  --md-header-height: 40px;
+  --md-status-height: 26px;
+}
+
+/* @palette:dark ── 深色（默认） */
+
+:root {
+  /* 让浏览器原生部件（滚动条、表单控件、默认光标）跟随主题。
+     只靠 JS 写内联样式不够 —— 脚本失败时仍需要一个正确的默认值。 */
+  color-scheme: dark;
+
+  --md-surface-0: #131315;
+  --md-surface-1: #1a1a1c;
+  --md-surface-2: #232326;
+  --md-surface-3: #2c2c2f;
+
+  --md-text: #e6e6e3;
+  --md-muted: #8b8a85;
+  --md-faint: #6b6a66;
+  --md-border: rgba(255, 255, 255, 0.1);
+  --md-border-strong: rgba(255, 255, 255, 0.18);
+  /* 阴影与遮罩用独立变量：浅色下同一组 rgba 会糊成一片脏灰。 */
+  --md-shadow: rgba(0, 0, 0, 0.45);
+
+  --md-accent: #378add;
+  /* 强调色上的文字色。深色主题的强调色偏亮，所以用深色字。 */
+  --md-accent-contrast: #06121f;
+  --md-selection: rgba(55, 138, 221, 0.28);
+  --md-active-line: rgba(255, 255, 255, 0.035);
+
+  --md-link: #5dcaa5;
+  --md-code: #f0997b;
+  --md-marker: #6b6a66;
+  --md-danger: #ed6a5a;
+
+  --md-h1: #b5d4f4;
+  --md-h2: #9fe1cb;
+  --md-h3: #fac775;
+  --md-h4: #f0997b;
+  --md-h5: #ed93b1;
+  --md-h6: #b4b2a9;
+
+  --md-syntax-keyword: #ed93b1;
+  --md-syntax-string: #9fe1cb;
+  --md-syntax-number: #fac775;
+  --md-syntax-type: #b5d4f4;
+}
+
+/*
+ * @palette:light ── 浅色
+ *
+ * 取值不是把深色反相。三条实际约束：
+ *   1. 正文与背景对比度要够（#26262b on #ffffff ≈ 14:1）。
+ *   2. 彩色语义令牌全部**降明度**：深色下的浅粉浅绿放到白底上会糊掉，
+ *      读不出来。所以 h1..h6、link、code、syntax-* 一律换成深色调。
+ *   3. 面板与纸面要能分开：surface-0 是纸（纯白），surface-1 是面板（微灰），
+ *      否则侧栏与正文边界消失。
+ */
+
+:root[data-theme='light'] {
+  color-scheme: light;
+
+  --md-surface-0: #ffffff;
+  --md-surface-1: #f7f7f5;
+  --md-surface-2: #eeedea;
+  --md-surface-3: #e3e2de;
+
+  --md-text: #26262b;
+  --md-muted: #6b6a66;
+  --md-faint: #8f8e88;
+  --md-border: rgba(0, 0, 0, 0.1);
+  --md-border-strong: rgba(0, 0, 0, 0.18);
+  --md-shadow: rgba(0, 0, 0, 0.13);
+
+  --md-accent: #2b6fd4;
+  /* 浅色的强调色够深，所以强调色上的文字要用白色。 */
+  --md-accent-contrast: #ffffff;
+  --md-selection: rgba(43, 111, 212, 0.18);
+  --md-active-line: rgba(0, 0, 0, 0.03);
+
+  --md-link: #0d7259;
+  --md-code: #b4460f;
+  --md-marker: #8f8e88;
+  --md-danger: #b91c1c;
+
+  --md-h1: #1f5c9e;
+  --md-h2: #0d7259;
+  --md-h3: #96650b;
+  --md-h4: #b4460f;
+  --md-h5: #8d1c94;
+  --md-h6: #6b6a66;
+
+  --md-syntax-keyword: #8d1c94;
+  --md-syntax-string: #0d7259;
+  --md-syntax-number: #96650b;
+  --md-syntax-type: #1f5c9e;
+}
+
+* {
+  box-sizing: border-box;
+}
+
+html,
+body,
+#root {
+  height: 100%;
+  margin: 0;
+}
+
+body {
+  background: var(--md-surface-0);
+  color: var(--md-text);
+  font-family: var(--font-sans, system-ui, -apple-system, 'Segoe UI', 'Microsoft YaHei', sans-serif);
+  font-size: 13px;
+  line-height: 1.6;
+  overflow: hidden;
+  -webkit-font-smoothing: antialiased;
+}
+
+button {
+  font: inherit;
+  color: inherit;
+  background: transparent;
+  border: none;
+  cursor: pointer;
+}
+
+/* ── 应用骨架 ─────────────────────────────────────────── */
+
+.app {
+  display: grid;
+  grid-template-rows: var(--md-header-height) 1fr var(--md-status-height);
+  height: 100%;
+}
+
+.app-header {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 0 12px;
+  background: var(--md-surface-1);
+  border-bottom: 1px solid var(--md-border);
+}
+
+/*
+ * .app-logo / .app-brand 已随头部品牌标记一起删除。
+ *
+ * 不留空规则：留着它们比删干净更糟 —— 看起来还有用，
+ * 下一个人会以为头部本来该有 logo，于是又把它加回来。
+ */
+
+.app-workspace {
+  color: var(--md-muted);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.app-header-spacer {
+  flex: 1;
+}
+
+/*
+ * 用 flex 而不是 grid。
+ *
+ * 曾经的写法是 grid + `grid-template-columns: auto 1fr auto`，
+ * 依赖于"三列各有一个孩子"。可当侧栏与面板都不显示时（默认就是如此），
+ * 唯一的子元素被自动放进**第一格** —— 也就是 `auto` 那格，
+ * 宽度由内容撑开（实测 626px），而中间的 `1fr`（796px）空着不动。
+ * 表现是编辑器只占左边一半、右边一大片空白，且完全没有报错。
+ *
+ * flex 不存在这个问题：缺席的兄弟节点不会被"占位"。
+ */
+.app-body {
+  display: flex;
+  min-height: 0;
+}
+
+.app-main {
+  display: flex;
+  flex-direction: column;
+  /*
+   * ⚠️ basis 必须是 0 而不是 auto。
+   *
+   * `1 1 auto` 的 basis 取内容宽度 —— 一条超长单行会把这里撑到
+   * 两千多像素，flex 收缩按比例分摊后，并排的预览面板被挤到
+   * min-width，用户看到"预览窗没法看"。
+   * basis 归零后这一列只按剩余空间分配，长内容在自己内部滚动。
+   */
+  flex: 1 1 0;
+  min-width: 0;
+  min-height: 0;
+  border-left: 1px solid var(--md-border);
+  border-right: 1px solid var(--md-border);
+}
+
+.app-editor {
+  min-height: 0;
+  overflow: hidden;
+}
+
+/* 处于"开启"状态的开关按钮（如预览面板）。 */
+.tool-button--on {
+  background: var(--md-surface-3);
+  color: var(--md-text);
+}
+
+/* 头部图标按钮（侧栏开关）。触屏最小命中区域 40px。 */
+.icon-button {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 32px;
+  height: 32px;
+  border-radius: 6px;
+  color: var(--md-muted);
+  flex: 0 0 auto;
+}
+
+.icon-button:hover {
+  background: var(--md-surface-3);
+  color: var(--md-text);
+}
+
+@media (pointer: coarse) {
+  .icon-button {
+    width: 40px;
+    height: 40px;
+  }
+
+  .tool-button {
+    width: 36px;
+    height: 34px;
+  }
+}
+
+/* ── 视图容器（布局槽位） ──────────────────────────────── */
+
+.view-column {
+  display: flex;
+  flex-direction: column;
+  min-height: 0;
+  background: var(--md-surface-1);
+  overflow: hidden;
+}
+
+/*
+ * 侧栏与面板宽度必须分开定。
+ *
+ * 侧栏放文件树 / 大纲，240px 合适。面板放预览 —— 那是渲染出来的文档，
+ * 用 240px 装它等于把 Typora 压成一条短信，读都读不下去。
+ *
+ * ⚠️ data-open 必须在**所有**断点生效。
+ * 曾经只在窄屏的媒体查询里处理 data-open，宽屏下无条件显示 ——
+ * 结果是状态里明明关着（默认关），面板却照样占掉 42% 宽度。
+ * 状态与样式各说各话，而且没有任何报错。
+ * 现在 media query 只负责"怎么显示"（并排 / 覆盖），
+ * 开与关一律由 data-open 决定。
+ */
+.view-column[data-open='false'] {
+  display: none;
+}
+
+.view-column--left {
+  width: 240px;
+  flex: 0 0 auto;
+  border-right: 1px solid var(--md-border);
+}
+
+
+
+
+/* 编辑器区在 flex 布局下需要显式允许收缩。 */
+.app-editor {
+  flex: 1 1 auto;
+  min-height: 0;
+}
+
+.view {
+  display: flex;
+  flex-direction: column;
+  min-height: 0;
+  flex: 1 1 auto;
+  border-bottom: 1px solid var(--md-border);
+}
+
+.view:last-child {
+  border-bottom: none;
+}
+
+.view-header {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  height: 28px;
+  padding: 0 10px;
+  font-size: 11px;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  color: var(--md-faint);
+  flex: 0 0 auto;
+  /*
+   * 标题栏整条是按钮（点击折叠 / 展开面板）。
+   *
+   * 必须把 button 的默认外观全部清掉，否则会带出系统按钮的
+   * 背景、边框与内边距，跟旁边工具栏的图标按钮看起来完全不是一套东西。
+   */
+  width: 100%;
+  appearance: none;
+  background: transparent;
+  border: none;
+  font-family: inherit;
+  text-align: left;
+  cursor: pointer;
+}
+
+.view-header:hover {
+  color: var(--md-muted);
+  background: var(--md-surface-2);
+}
+
+.view-header:focus-visible {
+  outline: 2px solid var(--md-accent);
+  outline-offset: -2px;
+}
+
+.view-header__title {
+  /* 标题过长时截断；min-width:0 是 flex item 能收缩的必要条件。 */
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+/*
+ * 折叠：只留标题栏。
+ *
+ * 关键是 `flex: 0 0 auto` —— `.view` 默认是 `flex: 1 1 auto`（多个面板
+ * 平分高度）。折叠后如果还占着那一份空间，侧栏会留出一大片空白，
+ * 而用户折叠它正是为了把空间让给另一个面板。
+ */
+.view--collapsed {
+  flex: 0 0 auto;
+}
+
+.view--collapsed .view-body {
+  display: none;
+}
+
+.view-body {
+  flex: 1 1 auto;
+  min-height: 0;
+  overflow: auto;
+}
+
+/* ── 滚动条 ───────────────────────────────────────────── */
+
+/*
+ * 细滚动条（overlay 风格）。
+ *
+ * 为什么必须显式定义：WebView2 / WebKitGTK / Android WebView 都用
+ * **原生粗滚动条**（Windows 上 17px），它在编辑区两侧各占一条，
+ * 而这个产品要的是"文字铺满、界面尽量安静"。默认滚动条是**跟随系统**
+ * 的，闸门不可能在所有机器上验证，只能由样式显式接管。
+ *
+ * 为什么用点状（thumb 窄 + 常态半透明）：
+ * 常态下几乎看不见 → 不干扰阅读；悬停/滚动时才显形 → 可发现性靠
+ * hover 而不是常驻视觉噪音。定宽 8px 而非 6px：6px 在 1x 屏上
+ * 拖不动，太宽又回到"占地方"的原点。
+ *
+ * ⚠️ 覆盖必须写全四个选择器：
+ * `::-webkit-scrollbar` 只在 WebKit/Blink 生效，而 `scrollbar-width` /
+ * `scrollbar-color` 是 Firefox 的标准写法。少写一个就是"换个平台
+ * 滚动条又变回粗的"，而这类问题在开发机（Chromium）上永远看不到。
+ */
+
+/* Firefox：直接给标准属性，够用且不画多余的槽。 */
+* {
+  scrollbar-width: thin;
+  scrollbar-color: var(--md-border-strong) transparent;
+}
+
+/* WebKit / Blink：::-webkit-scrollbar 系列。 */
+::-webkit-scrollbar {
+  width: 8px;
+  height: 8px;
+}
+
+/* 槽：透明。不设的话 Windows 上会出现一条灰底竖槽，比滑块本身还显眼。 */
+::-webkit-scrollbar-track {
+  background: transparent;
+}
+
+/*
+ * 滑块。圆角要两端都设 ——
+ * 只写 `border-radius` 在旧版 WebKit 上不生效（它认 `-webkit-border-radius`）。
+ */
+::-webkit-scrollbar-thumb {
+  background: var(--md-border-strong);
+  border-radius: 4px;
+  border: 2px solid transparent;
+  /* 滑块比轨道窄，靠透明边框撑出"细"的手感，而不是靠更小的 width */
+  background-clip: content-box;
+}
+
+::-webkit-scrollbar-thumb:hover {
+  background: var(--md-muted);
+  background-clip: content-box;
+}
+
+/* 角落：两个方向都没内容时 Chrome 会画一个默认小块。 */
+::-webkit-scrollbar-corner {
+  background: transparent;
+}
+
+/* ── 工具栏 ───────────────────────────────────────────── */
+
+/* ── 标签栏 ──────────────────────────────────────────── */
+
+.tab-bar {
+  display: flex;
+  align-items: stretch;
+  /*
+   * 标签栏现在住在 .app-header 里（工作目录名那一行），
+   * 要吃掉目录名与右侧按钮之间的剩余宽度 —— flex: 1 1 auto + min-width: 0
+   * 才允许内部横向滚动（标签多时不把按钮挤出窗口）。
+   */
+  flex: 1 1 auto;
+  min-width: 0;
+  /* header 自带背景与底边框，标签栏不再重复画一遍 */
+  flex-wrap: nowrap;
+  overflow-x: auto;
+  overflow-y: hidden;
+  scrollbar-width: none;
+}
+
+.tab-bar::-webkit-scrollbar {
+  display: none;
+}
+
+.tab {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  flex: 0 0 auto;
+  max-width: 180px;
+  padding: 0 6px 0 12px;
+  /*
+   * 高度 28px，与侧栏的 .view-header（文件 / 大纲标题行）完全一致 ——
+   * 标签栏要与那一行水平对齐，高度不齐就会出现一条错位的缝。
+   */
+  height: 28px;
+  border-right: 1px solid var(--md-border);
+  color: var(--md-muted);
+  font-size: 12px;
+  cursor: pointer;
+  user-select: none;
+}
+
+.tab:hover {
+  background: var(--md-surface-2);
+}
+
+.tab--active {
+  background: var(--md-surface-0);
+  color: var(--md-text);
+  /* 顶边一条强调色：这是"当前标签"最不抢眼但仍一眼可见的画法 */
+  box-shadow: inset 0 2px 0 var(--md-accent);
+}
+
+/*
+ * 预览标签 = 斜体。
+ *
+ * 这条斜体承担的是**状态指示**，不是装饰：它说明"这个标签是临时的，
+ * 下一次单击文件树就会把它顶掉，或者你一旦编辑它就会变成正体"。
+ * 少了它，用户没法预判自己那次单击会不会挤走别的东西。
+ */
+.tab--preview .tab__label {
+  font-style: italic;
+}
+
+.tab__label {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.tab__dirty {
+  flex: 0 0 auto;
+  font-size: 10px;
+  color: var(--md-accent);
+}
+
+/*
+ * 新建标签按钮（Tab 栏最右的「+」）。
+ *
+ * 高度与标签一致（28px），无边框透明底，hover 才点亮 ——
+ * 它是常驻的轻量入口，不该在视觉上和标签抢注意力。
+ */
+.tab-add {
+  appearance: none;
+  flex: 0 0 auto;
+  width: 26px;
+  height: 28px;
+  padding: 0;
+  border: none;
+  background: transparent;
+  color: var(--md-muted);
+  font-size: 16px;
+  line-height: 1;
+  cursor: pointer;
+  transition: color 0.12s ease, background 0.12s ease;
+}
+
+.tab-add:hover,
+.tab-add:focus-visible {
+  color: var(--md-text);
+  background: var(--md-surface-2);
+}
+
+.tab__close {
+  appearance: none;
+  flex: 0 0 auto;
+  width: 16px;
+  height: 16px;
+  padding: 0;
+  border: none;
+  border-radius: 3px;
+  background: transparent;
+  color: inherit;
+  font: inherit;
+  font-size: 14px;
+  line-height: 1;
+  cursor: pointer;
+  opacity: 0;
+}
+
+/* 关闭按钮只在悬停/聚焦时出现：常显会让一排 × 抢走文件名的注意力。 */
+.tab:hover .tab__close,
+.tab--active .tab__close,
+.tab__close:focus-visible {
+  opacity: 0.7;
+}
+
+.tab__close:hover {
+  opacity: 1;
+  background: var(--md-surface-3);
+}
+
+.toolbar {
+  display: flex;
+  align-items: center;
+  gap: 2px;
+  padding: 4px 8px;
+  background: var(--md-surface-1);
+  border-bottom: 1px solid var(--md-border);
+  flex: 0 0 auto;
+  /* 工具栏不换行：横向滚动即可。换成 wrap 会在窄屏把编辑器挤没。 */
+  flex-wrap: nowrap;
+  overflow-x: auto;
+  /*
+   * 横向滚动条在这里必须**彻底隐藏**（不是变细）。
+   *
+   * 全局那条 `* { scrollbar-width: thin }` 会覆盖掉原先写在
+   * `::-webkit-scrollbar { display: none }` 上的意图 ——
+   * `none` 在 WebKit 里是 display，而 `thin` 是"细但还在"，
+   * 两者的可见性完全不同。所以要在标准属性这一侧再关一次。
+   */
+  scrollbar-width: none;
+}
+
+/* 弹性占位：把预览开关推到最右。 */
+.toolbar-spacer {
+  flex: 1 0 auto;
+  min-width: 8px;
+}
+
+.toolbar::-webkit-scrollbar {
+  display: none;
+}
+
+.tool-button {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 28px;
+  height: 26px;
+  border-radius: 6px;
+  color: var(--md-muted);
+}
+
+.tool-button:hover {
+  background: var(--md-surface-3);
+  color: var(--md-text);
+}
+
+.tool-button:disabled {
+  opacity: 0.4;
+  cursor: not-allowed;
+}
+
+.toolbar-separator {
+  width: 1px;
+  height: 16px;
+  margin: 0 6px;
+  background: var(--md-border);
+  flex: 0 0 auto;
+}
+
+/* ── 按钮 ─────────────────────────────────────────────── */
+
+.button {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  height: 26px;
+  padding: 0 10px;
+  border-radius: 6px;
+  border: 1px solid var(--md-border);
+  color: var(--md-text);
+  white-space: nowrap;
+}
+
+.button:hover {
+  background: var(--md-surface-3);
+  border-color: var(--md-border-strong);
+}
+
+.button--primary {
+  background: var(--md-accent);
+  border-color: var(--md-accent);
+  color: var(--md-accent-contrast);
+  font-weight: 500;
+}
+
+.button--primary:hover {
+  filter: brightness(1.1);
+  background: var(--md-accent);
+}
+
+.button:disabled {
+  opacity: 0.45;
+  cursor: not-allowed;
+}
+
+/* ── 文件树 / 大纲 ────────────────────────────────────── */
+
+.tree {
+  padding: 2px 0 8px;
+}
+
+.tree-item {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  width: 100%;
+  padding: 3px 10px;
+  text-align: left;
+  color: var(--md-muted);
+  overflow: hidden;
+}
+
+/*
+ * 折叠箭头。
+ *
+ * 用 CSS 边框画三角而不是 SVG：
+ *   - 它要继承 currentColor 跟随主题，SVG 得额外处理 fill
+ *   - 收起态靠 rotate 变形，一个 transform 就够，不必换图形
+ *   - 文件行渲染一个**透明占位**而不是不留空 ——
+ *     不留空的话文件名会比目录名浅一格缩进，整棵树看着是歪的
+ */
+/*
+ * 折叠箭头。
+ *
+ * 一处定义、两处使用（视图面板标题栏 + 文件树 / 大纲的节点行）。
+ * 这个项目已经四次栽在"同一条属性定义在两处、后写的静默胜出"上，
+ * 所以这里用**选择器组**共用同一份形状参数，而不是各写一份像样的。
+ *
+ * 三角由 border 拼成：只给 border-left 上色时是一个指向**右**的箭头。
+ * 语义统一按 VSCode 的约定 —— 展开朝下（▾）、折叠朝右（▸）。
+ */
+.twisty,
+.tree-item__twisty {
+  flex: 0 0 auto;
+  width: 0;
+  height: 0;
+  border-left: 4px solid currentColor;
+  border-top: 3.5px solid transparent;
+  border-bottom: 3.5px solid transparent;
+  opacity: 0.75;
+  transition: transform 0.12s ease;
+}
+
+.tree-item:hover .tree-item__twisty {
+  opacity: 1;
+}
+
+/* 展开：朝下的三角。 */
+.twisty--expanded,
+.tree-item__twisty:not(.tree-item__twisty--collapsed) {
+  transform: rotate(90deg);
+}
+
+/*
+ * 折叠态刻意**不写规则** —— 基础形状（border-left 上色）本来就是朝右的，
+ * 而"写上 transform: rotate(0deg)"看着无害，实则是一条
+ * `:not()` 选择器（2 个 class 的特异性）的规则，会把上面那条
+ * `rotate(90deg)` 压掉，于是展开态也朝右、箭头永远不动。
+ * 冗余的默认值声明就是这个项目的头号陷阱，见 .cm-line 那几条。
+ */
+
+/* 文件行：占位但不可见，且不能有 hover 变色。 */
+.tree-item__twisty--leaf {
+  border-left-color: transparent;
+  opacity: 0;
+}
+
+/*
+ * 箭头的可点热区。
+ *
+ * 三角是用 border 拼的 0×0 元素 —— 它的可点区域只有 4×7px 左右，
+ * 而它现在承担"点击折叠"这个动作（整行点击已改为跳转），
+ * 这么小的目标基本点不中。
+ *
+ * 用伪元素撑出一个 18px 的方形热区：绝对定位不影响布局，
+ * 也不会把行撑高。只给**有子节点**的箭头加 —— 叶子那个是纯占位，
+ * 点它应该等同于点整行（走跳转），不该额外拦截。
+ */
+.tree-item__twisty:not(.tree-item__twisty--leaf) {
+  position: relative;
+  cursor: pointer;
+}
+
+.tree-item__twisty:not(.tree-item__twisty--leaf)::after {
+  content: '';
+  position: absolute;
+  left: -7px;
+  top: -7px;
+  width: 18px;
+  height: 18px;
+}
+
+/*
+ * 大纲的标题行不做整行高亮背景。
+ *
+ * 折叠态靠箭头表达就够了，再加背景会让人以为"选中了这一节"。
+ * 悬停仍保留背景，用来指示"这一行可以点"。
+ */
+.tree-item--outline {
+  color: var(--md-text);
+}
+
+.tree-item:hover {
+  background: var(--md-surface-2);
+  color: var(--md-text);
+}
+
+.tree-item--active {
+  background: var(--md-surface-3);
+  color: var(--md-text);
+}
+
+.tree-item__label {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.tree-empty,
+.view-empty {
+  padding: 12px 10px;
+  color: var(--md-faint);
+  line-height: 1.7;
+}
+
+/* ── 状态栏 ───────────────────────────────────────────── */
+
+.status-bar {
+  display: flex;
+  align-items: center;
+  gap: 14px;
+  padding: 0 12px;
+  background: var(--md-surface-1);
+  border-top: 1px solid var(--md-border);
+  font-size: 11px;
+  color: var(--md-faint);
+  overflow: hidden;
+  white-space: nowrap;
+}
+
+.status-item {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+}
+
+.status-item--warn {
+  color: var(--md-h3);
+}
+
+.status-item--ok {
+  color: var(--md-link);
+}
+
+/*
+ * 可点击的状态项。
+ *
+ * 这些条目（功能模块加载失败、主线程阻塞）现在能点开看明细，
+ * 所以必须给出按钮的视觉暗示 —— 否则用户只当是静态文字，
+ * 永远不知道点得动。hover 变亮 + 手型光标是最轻的做法，
+ * 不需要额外的底色（状态栏很窄，加底色会和相邻项糊在一起）。
+ */
+.status-item--button {
+  cursor: pointer;
+  border: 0;
+  background: transparent;
+  font: inherit;
+  padding: 0;
+}
+
+.status-item--button:hover {
+  text-decoration: underline;
+}
+
+.status-bar__spacer {
+  flex: 1;
+}
+
+.dot {
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  background: currentColor;
+  flex: 0 0 auto;
+}
+
+/* ── 提示条 ───────────────────────────────────────────── */
+
+.toasts {
+  position: absolute;
+  right: 16px;
+  bottom: 40px;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  z-index: 50;
+  max-width: 360px;
+}
+
+.toast {
+  padding: 8px 12px;
+  border-radius: var(--md-radius);
+  background: var(--md-surface-3);
+  border: 1px solid var(--md-border-strong);
+  box-shadow: 0 6px 20px var(--md-shadow);
+  color: var(--md-text);
+}
+
+/* 文字区单独成块：点它关闭提示（保留原来"点提示关闭"的习惯）。 */
+.toast__text {
+  display: block;
+  cursor: pointer;
+}
+
+/*
+ * 动作按钮。
+ *
+ * 与提示文字同排但右对齐：空间够时并排，不够时换行（flex-wrap）——
+ * 提示文案长短不一，硬挤会把字压变形。
+ * 外观从零画，因为 button 的默认样式（灰底、系统边框）和这套界面不搭。
+ */
+.toast__actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  margin-top: 8px;
+}
+
+.toast__action {
+  appearance: none;
+  padding: 3px 10px;
+  border: 1px solid var(--md-border-strong);
+  border-radius: 5px;
+  background: transparent;
+  color: var(--md-accent);
+  font: inherit;
+  font-size: 0.92em;
+  cursor: pointer;
+}
+
+.toast__action:hover {
+  background: var(--md-surface-2);
+  border-color: var(--md-accent);
+}
+
+.toast__action:focus-visible {
+  outline: 2px solid var(--md-accent);
+  outline-offset: 1px;
+}
+
+.toast--error {
+  border-color: var(--md-h4);
+}
+
+.toast--warning {
+  border-color: var(--md-h3);
+}
+
+/* ── 空状态 ───────────────────────────────────────────── */
+
+.welcome {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 14px;
+  height: 100%;
+  color: var(--md-faint);
+  text-align: center;
+  padding: 24px;
+}
+
+.welcome__title {
+  color: var(--md-text);
+  font-size: 15px;
+}
+
+.welcome__notes {
+  max-width: 460px;
+  text-align: left;
+  line-height: 1.8;
+}
+
+.welcome__notes li {
+  margin-bottom: 4px;
+}
+
+/* ── 预览 iframe ──────────────────────────────────────── */
+
+.preview-frame {
+  width: 100%;
+  height: 100%;
+  border: none;
+  background: var(--md-surface-0);
+  display: block;
+}
+
+/*
+ * 窄屏（Android 手机、横屏平板）不再把视图直接 display:none ——
+ * 那等于"在手机上没有文件树、没有预览"，而这四个平台里手机是主力形态之一。
+ * 改成侧栏可折叠：默认收起，点汉堡按钮才展开。
+ */
+@media (max-width: 900px) {
+  /* flex 布局下不需要重置列定义，覆盖层本来就脱离文档流。 */
+
+  .view-column--left {
+    position: absolute;
+    top: 0;
+    bottom: 0;
+    left: 0;
+    z-index: 20;
+    width: min(280px, 80vw);
+    transform: translateX(-100%);
+    transition: transform 0.18s ease;
+    box-shadow: 0 0 24px var(--md-shadow);
+  }
+
+  .view-column--left[data-open='true'] {
+    transform: none;
+  }
+
+  .app-body {
+    position: relative;
+  }
+}
+
+/*
+ * vim 模式指示器（状态栏左下角）+ 关于入口。
+ * 未开启 = 品牌色绿点（--md-brand-green），开启 = vim-mode 图标。
+ */
+.status-bar__vim {
+  appearance: none;
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 0 10px;
+  height: 100%;
+  border: none;
+  background: transparent;
+  color: var(--md-muted);
+  font-size: 11px;
+  letter-spacing: 0.08em;
+  cursor: pointer;
+}
+
+.status-bar__vim:hover,
+.status-bar__vim:focus-visible {
+  color: var(--md-text);
+  background: var(--md-surface-2);
+}
+
+.status-bar__vim[aria-pressed='true'] {
+  color: var(--md-text);
+}
+
+.status-bar__vim svg {
+  width: 14px;
+  height: 14px;
+}
+
+.status-bar__dot {
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  /* 品牌色绿点：vim 未开启时的指示（色值定义在 @palette:shared 的 --md-brand-green） */
+  background: var(--md-brand-green);
+}
+
+/*
+ * vim 模式指示器（状态栏左下角）+ 关于入口。
+ * 未开启 = 品牌色绿点（--md-brand-green），开启 = vim-mode 图标。
+ */
+.status-bar__vim {
+  appearance: none;
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 0 10px;
+  height: 100%;
+  border: none;
+  background: transparent;
+  color: var(--md-muted);
+  font-size: 11px;
+  letter-spacing: 0.08em;
+  cursor: pointer;
+}
+
+.status-bar__vim:hover,
+.status-bar__vim:focus-visible {
+  color: var(--md-text);
+  background: var(--md-surface-2);
+}
+
+.status-bar__vim[aria-pressed='true'] {
+  color: var(--md-text);
+}
+
+.status-bar__vim svg {
+  width: 14px;
+  height: 14px;
+}
+
+.status-bar__dot {
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  /* 品牌色绿点：色值在 @palette:shared 的 --md-brand-green */
+  background: var(--md-brand-green);
+}
+
+/* vim 模式开启时图标用原色（不跟随文字色） */
+.status-bar__vim[aria-pressed='true'] svg {
+  color: var(--md-vim-green);
+}
+
+/* 保存状态灯三态（未保存红 / 已保存绿 / 恢复过黄） */
+.status-bar__dot--red {
+  background: var(--md-state-red);
+}
+.status-bar__dot--yellow {
+  background: var(--md-state-yellow);
+}
+
+/* 消息提示里的换行（关于对话框等按 \n 排版）按真实换行渲染 */
+.toast {
+  white-space: pre-line;
+}
+
+/* 消息提示里的换行（关于对话框等按 
+ 排版）按真实换行渲染 */
+.toast {
+  white-space: pre-line;
+}

@@ -1,0 +1,49 @@
+<!doctype html>
+<html lang="zh-CN">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
+    <meta name="color-scheme" content="dark" />
+    <meta name="description" content="Aropyt —— 全平台 Markdown 编辑器" />
+    <title>Aropyt</title>
+    <script>
+      /*
+       * 首帧前定主题 —— 这段必须内联，且必须同步执行。
+       *
+       * 主题偏好存在 localStorage（同步）而不是配置系统（IndexedDB，异步），
+       * 唯一原因就是这里：异步读取赶不上首帧，浅色用户会先看到一帧深色，
+       * 也就是常见的"换主题闪一下"。
+       *
+       * 逻辑与 src/theme.ts 的 readPreference / systemTheme 保持一致。
+       * 这是唯一的重复点 —— 宁可重复这几行，也不要为了消除重复而把主题
+       * 推到首帧之后，那会换来一个可见的闪烁。
+       *
+       * 注意 html 上原来写死的 class="theme-dark" 已去掉：
+       * 主题由 data-theme 表达，写死就等于宣布"只有深色"。
+       */
+      (function () {
+        var KEY = 'aropyt.theme';
+        var pref = 'auto';
+        try {
+          var raw = localStorage.getItem(KEY);
+          if (raw === 'light' || raw === 'dark' || raw === 'auto') pref = raw;
+        } catch (e) {
+          /* 隐私模式等场景读不到，按 auto 处理 */
+        }
+        var isLight =
+          pref === 'light' ||
+          (pref === 'auto' && window.matchMedia('(prefers-color-scheme: light)').matches);
+        var theme = isLight ? 'light' : 'dark';
+        document.documentElement.setAttribute('data-theme', theme);
+        document.documentElement.style.colorScheme = theme;
+        var meta = document.querySelector('meta[name="color-scheme"]');
+        if (meta) meta.setAttribute('content', theme);
+      })();
+    </script>
+  </head>
+  <body>
+    <div id="root"></div>
+    <noscript>Aropyt 需要启用 JavaScript。</noscript>
+    <script type="module" src="/src/main.tsx"></script>
+  </body>
+</html>

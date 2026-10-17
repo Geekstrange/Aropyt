@@ -1,0 +1,15 @@
+{
+  "name": "@aropyt/capabilities",
+  "version": "0.1.0",
+  "private": true,
+  "description": "平台能力适配层。内核与平台之间唯一的边界。",
+  "license": "AGPL-3.0-or-later",
+  "type": "module",
+  "exports": {
+    ".": "./src/index.ts"
+  },
+  "dependencies": {
+    "@aropyt/core": "^0.1.0",
+    "@aropyt/plugin-api": "^0.1.0"
+  }
+}

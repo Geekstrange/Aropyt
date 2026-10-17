@@ -1,0 +1,11 @@
+{
+  "name": "@aropyt/plugin-api",
+  "version": "0.1.0",
+  "private": true,
+  "description": "插件作者唯一允许 import 的包。零运行时依赖，只有类型。",
+  "license": "AGPL-3.0-or-later",
+  "type": "module",
+  "exports": {
+    ".": "./src/index.ts"
+  }
+}

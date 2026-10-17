@@ -1,0 +1,28 @@
+{
+  "name": "@aropyt/core",
+  "version": "0.1.0",
+  "private": true,
+  "description": "编辑器内核 — 纯 Web，零平台 API。可运行在任何有 DOM 的环境。",
+  "license": "AGPL-3.0-or-later",
+  "type": "module",
+  "exports": {
+    ".": "./src/index.ts",
+    "./markdown": "./src/markdown.ts"
+  },
+  "dependencies": {
+    "@aropyt/plugin-api": "^0.1.0",
+    "@codemirror/autocomplete": "^6.18.0",
+    "@codemirror/commands": "^6.7.0",
+    "@codemirror/lang-markdown": "^6.3.0",
+    "@codemirror/language": "^6.10.0",
+    "@codemirror/language-data": "^6.5.0",
+    "@codemirror/search": "^6.5.0",
+    "@codemirror/state": "^6.5.0",
+    "@codemirror/view": "^6.34.0",
+    "highlight.js": "^11.10.0",
+    "markdown-it": "^14.1.0"
+  },
+  "devDependencies": {
+    "@types/markdown-it": "^14.1.2"
+  }
+}

@@ -1,0 +1,614 @@
+/**
+ * 应用外壳（React 层）。
+ *
+ * 刻意很薄：它只做三件事 —— 摆布局槽位、按贡献点渲染工具栏、显示状态。
+ * 任何一个按钮的行为都不在这里写死，全都是"执行某个命令"。
+ *
+ * 换句话说：如果哪天 React 被换掉，插件生态毫发无损。
+ * 这就是"插件 API 框架无关"带来的自由。
+ *
+ * 另一点重要：编辑器宿主节点是**常驻**的，运行时创建前后它都不卸载。
+ * 如果把宿主放进条件渲染里，React 会在运行时建好后把那个节点连同
+ * CodeMirror 实例一起销毁 —— 这类 bug 表现为"启动后编辑器空白且无报错"。
+ */
+
+import {
+  useCallback,
+  useEffect,
+  useRef,
+  useState,
+  useSyncExternalStore,
+  type JSX,
+  type RefObject,
+} from 'react';
+
+import { createRuntime, type AropytRuntime, type RuntimeState } from './runtime.js';
+import type { ThemePreference } from './theme.js';
+import { Icon } from './components/Icons.js';
+import { ViewColumn } from './components/ViewHost.js';
+
+export function App(): JSX.Element {
+  const editorHostRef = useRef<HTMLDivElement>(null);
+  const [runtime, setRuntime] = useState<AropytRuntime | null>(null);
+  // 侧栏与面板各自独立开关，对应 VS Code 的 Toggle Primary/Secondary Side Bar。
+  //
+  // 默认值随宽度走：宽屏（桌面）面板默认打开，因为 Typora 的核心体验
+  // 就是编辑器与预览并排；窄屏（Android）默认全关，否则一进来就被
+  // 两个覆盖层糊住屏幕，连字都打不了。
+  const [sidebarOpen, setSidebarOpen] = useState(() => isWideScreen());
+
+  useEffect(() => {
+    const host = editorHostRef.current;
+    if (!host) return undefined;
+
+    // ?safe 打开安全模式：禁用全部插件，对应 VS Code 的 --disable-extensions。
+    // 插件把编辑器搞挂时，这是唯一还能进去的路。
+    const safeMode = new URLSearchParams(window.location.search).has('safe');
+
+    const instance = createRuntime({ editorHost: host, safeMode });
+    setRuntime(instance);
+    return () => instance.dispose();
+  }, []);
+
+  return (
+    <div className="app">
+      <header className="app-header">
+        <button
+          type="button"
+          className="icon-button"
+          title="侧栏"
+          aria-label="侧栏"
+          aria-pressed={sidebarOpen}
+          onClick={() => setSidebarOpen((value) => !value)}
+        >
+          <Icon name={sidebarOpen ? 'sidebarActive' : 'sidebar'} />
+        </button>
+        {/*
+         * 这里原来还有 logo + "Aropyt" 品牌标记，已删除。
+         *
+         * 理由是**信息量为零**：桌面形态下原生窗口标题栏已经写着软件名，
+         * WebView 里再写一遍是同一句话；移动端则由启动器图标承担识别。
+         * 而logo.svg 是 3.2KB 的path 数据 + 一条 public 资源，
+         * 为了显示一个到处都有的名字而常驻首屏，不划算。
+         *
+         * 侧栏按钮仍在原位：它是**布局开关**，删掉品牌标记不该顺带删掉它。
+         */}
+        {runtime && <Header runtime={runtime} />}
+      </header>
+
+      <Shell runtime={runtime} editorHostRef={editorHostRef} sidebarOpen={sidebarOpen} />
+
+      <footer className="status-bar">
+        {runtime ? <StatusBar runtime={runtime} /> : <span className="status-item">正在启动…</span>}
+      </footer>
+
+      {runtime && <Toasts runtime={runtime} />}
+    </div>
+  );
+}
+
+
+/**
+ * 主体布局。**无条件渲染**，即使运行时还没起来。
+ *
+ * 关键在编辑器宿主那个 div：它必须在整个生命周期里是**同一个 DOM 节点**。
+ * 如果按 `runtime ? <带编辑器> : <空工具栏>` 这样分两支渲染，
+ * React 会在运行时创建后把旧分支卸载 —— 连同一个 CodeMirror 实例一起销毁。
+ * 表现是"启动后编辑器空白且没有任何报错"，所以这里不能图省事拆分支。
+ *
+ * 单独抽一个组件只是为了能调用 useRuntimeState（面板开合归运行时所有：
+ * 打开面板会连带把编辑区逼成源码模式），而 App 顶层拿不到状态快照，
+ * hook 又不能条件调用。
+ */
+function Shell({
+  runtime,
+  editorHostRef,
+  sidebarOpen,
+}: {
+  readonly runtime: AropytRuntime | null;
+  readonly editorHostRef: RefObject<HTMLDivElement>;
+  readonly sidebarOpen: boolean;
+}): JSX.Element {
+  return (
+    <div className="app-body">
+      {runtime && <ViewColumn runtime={runtime} location="sidebar" side="left" open={sidebarOpen} />}
+
+      <main className="app-main">
+        {runtime ? <Toolbar runtime={runtime} /> : <div className="toolbar" />}
+        <div className="app-editor" ref={editorHostRef} />
+      </main>
+
+    </div>
+  );
+}
+
+/** runtime 为 null 时也能订阅的空实现。 */
+function useMaybeRuntimeState(runtime: AropytRuntime | null): RuntimeState | null {
+  const subscribe = useCallback(
+    (listener: () => void) => (runtime ? runtime.subscribe(listener) : () => undefined),
+    [runtime],
+  );
+  const getSnapshot = useCallback(() => runtime?.getState() ?? null, [runtime]);
+  return useSyncExternalStore(subscribe, getSnapshot);
+}
+
+function useRuntimeState(runtime: AropytRuntime): RuntimeState {
+  const state = useMaybeRuntimeState(runtime);
+  // 调用点都已经判过runtime 非空，这里拿到 null 只可能是逻辑漏判，
+  // 与其静默渲染空白不如立刻暴露。
+  if (!state) throw new Error('useRuntimeState 在 runtime 为 null 时被调用');
+  return state;
+}
+
+function useWindowRevision(runtime: AropytRuntime): number {
+  const subscribe = useCallback((listener: () => void) => runtime.windowService.subscribe(listener), [runtime]);
+  const getSnapshot = useCallback(() => runtime.windowService.revision, [runtime]);
+  return useSyncExternalStore(subscribe, getSnapshot);
+}
+
+function runCommand(runtime: AropytRuntime, commandId: string): void {
+  void runtime.commands.execute(commandId).catch((error: unknown) => {
+    console.error(error);
+    /*
+     * 提示里必须带上**真实错误信息**，不能只给命令 id。
+     *
+     * 原来只显示 `命令执行失败：aropyt.file.pickWorkspace` ——
+     * 那条提示把"哪个命令挂了"说清楚了，却把"为什么挂"完全藏起来，
+     * 于是无论什么问题看起来都一模一样。实际那次是
+     * `window.showMessage is not a function`，但光看提示根本无从判断。
+     *
+     * 定位信息（命令 id）放前面是为了多个提示堆叠时仍能扫读。
+     */
+    const detail = error instanceof Error ? error.message : String(error);
+    void runtime.windowService.showMessage(
+      `命令执行失败：${commandId}\n${detail}`,
+      { level: 'error' },
+    );
+  });
+}
+
+function Header({ runtime }: { readonly runtime: AropytRuntime }): JSX.Element {
+  const state = useRuntimeState(runtime);
+
+  return (
+    <>
+      <span className="app-workspace">
+        {state.workspace ? state.workspace.name : '未打开工作区'}
+        {/*
+         * 当前文件名不再显示 —— 标签栏就在旁边，激活标签上写着它，
+         * 这里再重复一遍是同一句话。
+         *
+         * 脏点（●）保留：标签上的脏点只标"那个标签"是否未保存，
+         * 这里的 ● 是未命名文档（它没有标签）唯一的未保存提示 ——
+         * 去掉它，未命名文档改了字就再也看不到任何脏标记了。
+         */}
+        {state.dirty ? ' ●' : ''}
+      </span>
+      {/*
+       * 标签栏就在**工作目录名这一行**里，紧跟着目录名、吃掉中间的剩余宽度 ——
+       * 这正是用户要的布局：打开的是哪个目录、现在开着哪些文件，一眼同排。
+       * 它在 spacer 之前，所以右侧的「能力说明 / 主题」按钮仍靠最右。
+       */}
+      {runtime && <TabBar runtime={runtime} />}
+      <span className="app-header-spacer" />
+      {state.limitations.length > 0 && (
+        <button
+          type="button"
+          className="button"
+          title={state.limitations.join('\n')}
+          onClick={() =>
+            void runtime.windowService.showMessage(state.limitations.join('\n'), { level: 'info' })
+          }
+        >
+          平台能力说明
+        </button>
+      )}
+    </>
+  );
+}
+
+/**
+ * 主题偏好 → 图标与提示。
+ *
+ * `auto` 的提示要把**解析结果**也带上（"跟随系统（当前深色）"）——
+ * 否则用户点了半天看不出到底生效了没有。
+ */
+const THEME_ICON: Record<ThemePreference, string> = {
+  light: 'sun',
+  dark: 'moon',
+  auto: 'autoTheme',
+};
+
+const THEME_LABEL: Record<ThemePreference, string> = {
+  light: '浅色（点击切换）',
+  dark: '深色（点击切换）',
+  auto: '跟随系统（点击切换）',
+};
+
+function isWideScreen(): boolean {
+  return typeof window !== 'undefined' && window.matchMedia('(min-width: 901px)').matches;
+}
+
+interface ToolbarProps {
+  readonly runtime: AropytRuntime;
+}
+
+function Toolbar({ runtime }: ToolbarProps): JSX.Element {
+  const state = useRuntimeState(runtime);
+  const details = new Map(runtime.commands.details().map((item) => [item.id, item]));
+  const groups = groupToolbar(state.toolbar);
+
+  return (
+    <div className="toolbar" role="toolbar" aria-label="工具栏">
+      {groups.map((group, index) => (
+        <ToolbarGroup
+          key={group.key}
+          commands={group.commands}
+          details={details}
+          onRun={(commandId) => runCommand(runtime, commandId)}
+          withSeparator={index > 0}
+        />
+      ))}
+      <span className="toolbar-spacer" />
+
+      {/*
+       * 主题三态循环：浅色 → 深色 → 跟随系统。
+       *
+       * 为什么是循环而不是一个开关：需要表达三种状态，而两态开关
+       * 表达不了"跟随系统"。循环的代价是点击次数不固定，
+       * 所以图标与提示文字必须清楚显示当前处于哪一态。
+       */}
+      <button
+        type="button"
+        className="tool-button"
+        title={THEME_LABEL[state.themePreference]}
+        aria-label={`主题：${THEME_LABEL[state.themePreference]}`}
+        onClick={() => runtime.theme.cycle()}
+      >
+        <Icon name={THEME_ICON[state.themePreference]} />
+      </button>
+
+      {/*
+       * 视图开关不进命令注册表，也不该来自插件贡献 ——
+       * 否则"关掉源码模式"会依赖某个插件是否装上了。
+       * 快捷键 Ctrl+/ 已在内核的 keymap 里绑好。
+       *
+       * 按钮状态用 preferredSourceMode（用户自己的选择）而不是 sourceMode
+       * （实际生效）：一旦两者会因为外部强制而分叉，用 sourceMode 的按钮
+       * 就会亮着、点了没反应 —— 那比不显示状态更糟。
+       *
+       * 现在**没有任何东西会强制源码模式**（预览面板不再拽着编辑区），
+       * 所以 preferredSourceMode 就是 sourceMode，禁用态也一并去掉。
+       */}
+      <button
+        type="button"
+        className={`tool-button${state.preferredSourceMode ? ' tool-button--on' : ''}`}
+        title={state.preferredSourceMode ? '退出源码模式 (Ctrl+/)' : '源码模式 (Ctrl+/)'}
+        aria-label={state.preferredSourceMode ? '退出源码模式' : '进入源码模式'}
+        aria-pressed={state.preferredSourceMode}
+        onClick={() => runtime.toggleSourceMode()}
+      >
+        <Icon name="code" />
+      </button>
+
+      {/*
+       * 预览面板开关**已从工具栏移除**。
+       *
+       * 原来的按钮提示写着"打开预览面板（编辑区切到源码模式）"——
+       * 那条耦合本身就是问题的来源：Typora 式的编辑体验是**边写边看渲染**，
+       * 编辑区永远该是渲染态，不该因为旁边多了一栏就被拽成源码。
+       * 面板本身还在，改由 Ctrl+Shift+V 开关（见 runtime），
+       * 打开它不会影响编辑区的模式。
+       */}
+    </div>
+  );
+}
+
+interface DeclaredCommandLike {
+  readonly id: string;
+  readonly title: string;
+  readonly icon?: string;
+}
+
+interface ToolbarGroupProps {
+  readonly commands: readonly string[];
+  readonly details: ReadonlyMap<string, DeclaredCommandLike>;
+  readonly onRun: (commandId: string) => void;
+  readonly withSeparator: boolean;
+}
+
+function ToolbarGroup({ commands, details, onRun, withSeparator }: ToolbarGroupProps): JSX.Element {
+  return (
+    <>
+      {withSeparator && <span className="toolbar-separator" />}
+      {commands.map((commandId) => {
+        const detail = details.get(commandId);
+        return (
+          <button
+            key={commandId}
+            type="button"
+            className="tool-button"
+            title={detail?.title ?? commandId}
+            aria-label={detail?.title ?? commandId}
+            onClick={() => onRun(commandId)}
+          >
+            <Icon name={detail?.icon ?? 'code'} />
+          </button>
+        );
+      })}
+    </>
+  );
+}
+
+function StatusBar({ runtime }: { readonly runtime: AropytRuntime }): JSX.Element {
+  const state = useRuntimeState(runtime);
+  const disabledPlugins = state.plugins.filter((record) => record.state === 'disabled');
+  return (
+    <>
+      {/*
+       * vim 模式指示器（左下角，用户约定）：开启显示 vim-mode 图标，
+       * 未开启显示品牌色绿点（--md-brand-green）。它本身就是开关。
+       */}
+      <button
+        type="button"
+        className="status-bar__vim"
+        aria-pressed={state.vimMode}
+        title={state.vimMode ? 'vim 模式已开启（点击关闭）' : 'vim 模式未开启（点击开启）'}
+        onClick={() => runtime.toggleVimMode()}
+      >
+        {state.vimMode ? (
+          <Icon name="vimMode" />
+        ) : (
+          <span
+            className="status-bar__dot"
+            aria-hidden="true"
+            style={{
+              background: state.dirty
+                ? 'var(--md-state-red)'
+                : state.recoveredPath === state.activePath && state.recoveredPath !== null
+                  ? 'var(--md-state-yellow)'
+                  : 'var(--md-brand-green)',
+            }}
+          />
+        )}
+        <span>VIM</span>
+      </button>
+      {/*
+       * 「插件 4/4」已移除。
+       *
+       * 它原本是`activePlugins / plugins.length`，对用户毫无意义：
+       * 4 个全是内置的基础功能（文件、编辑、表格、预览），
+       * 不是用户装的扩展。"4/4"读起来像"你装了 4 个插件，只启动了 4 个"，
+       * 会让人去找插件商店 —— 而这个产品目前根本没有那东西。
+       *
+       * 真正需要暴露的是**异常**：插件被禁用了（多半是加载失败），
+       * 那个必须留在状态栏，而且要能点开看到原因。
+       */}
+      {disabledPlugins.length > 0 && (
+        <button
+          type="button"
+          className="status-item status-item--warn status-item--button"
+          title={disabledPlugins
+            .map((record) => `${record.manifest.name}：${record.reason}`)
+            .join('\n')}
+          onClick={() =>
+            void runtime.windowService.showMessage(
+              disabledPlugins
+                .map((record) => `${record.manifest.name}：${record.reason}`)
+                .join('\n'),
+              { level: 'warning' },
+            )
+          }
+        >
+          {disabledPlugins.length} 个功能模块未能加载
+        </button>
+      )}
+      <span className="status-bar__spacer" />
+      {/*
+       * 关于入口（0.0.1 发布所需）：版本 + GitHub + 许可证。
+       */}
+      <button
+        type="button"
+        className="status-item status-item--button"
+        title="关于 Aropyt"
+        onClick={() =>
+          void runtime.windowService.showMessage(
+            [
+              'Aropyt v0.0.1',
+              '',
+              'GitHub:',
+              'https://github.com/Geekstrange/Aropyt',
+              '',
+              '许可证: AGPL-3.0',
+            ].join('\n'),
+            { level: 'info' },
+          )
+        }
+      >
+        Aropyt v0.0.1
+      </button>
+      {/*
+       * 「预算超支 N 次」改成说明型提示 + 具体条目。
+       *
+       * 原来只有一句"预算超支 1 次"，用户完全不知道被谁超的、
+       * 超了多少、算不算问题。现在：
+       *   - 文字说明它是什么（主线程被同步任务阻塞超过 50ms）
+       *   - title 里列出最近几次的来源与实际耗时
+       * 点击则把明细弹成提示，便于截图/复制。
+       *
+       * 注意：启动阶段的那一次 longtask 已在 FrameBudgetMonitor 里
+       * 用宽限期排除 —— 那属于冷启动成本，不是"编辑变卡"。
+       */}
+      {state.budgetViolations > 0 && (
+        <button
+          type="button"
+          className="status-item status-item--warn status-item--button"
+          title={
+            state.budgetDetails
+              .map((v) => `${v.label} — ${v.actualMs}ms（预算 ${v.budgetMs}ms）`)
+              .join('\n') || '主线程被同步任务阻塞超过 50ms'
+          }
+          onClick={() =>
+            void runtime.windowService.showMessage(
+              `主线程被同步任务阻塞超过 ${state.budgetDetails[0]?.budgetMs ?? 50}ms，这期间按键会延迟响应。\n\n` +
+                state.budgetDetails
+                  .map((v) => `· ${v.label}：${v.actualMs}ms`)
+                  .join('\n'),
+              { level: 'warning' },
+            )
+          }
+        >
+          主线程阻塞 {state.budgetViolations} 次
+        </button>
+      )}
+      <span className="status-item" title="最近一次按键到下一次绘制的间隔">
+        输入延迟 {state.lastInputLatencyMs > 0 ? `${state.lastInputLatencyMs.toFixed(1)} ms` : '—'}
+      </span>
+    </>
+  );
+}
+
+/** 取路径里最后一段，标签上只显示文件名。 */
+function baseName(path: string): string {
+  return path.split(/[\\/]/).filter(Boolean).pop() ?? path;
+}
+
+/**
+ * 标签栏。
+ *
+ * 两种标签用**斜体**区分，这是 VSCode 的约定：
+ *
+ *   斜体（预览标签）—— 在文件树里单击打开的。**至多一个**，
+ *     下一次单击会把它顶掉，所以"随手翻几个文件看看"不会塞满标签栏。
+ *   正体（固定标签）—— 双击打开的、或者被编辑过的。不会被顶掉。
+ *
+ * 斜体不是装饰，是**状态指示**：它告诉用户"这个标签是临时的，
+ * 你一旦动了它、或者点了别的文件，它就会变"。少了这个提示，
+ * 用户没法预判自己刚才那次单击会不会把什么东西挤走。
+ */
+function TabBar({ runtime }: { readonly runtime: AropytRuntime }): JSX.Element | null {
+  const state = useRuntimeState(runtime);
+  /*
+   * tabs 为空时**也渲染**：右侧的「+」是新建文档的入口，
+   * 一张标签都没有时它恰恰最有用。
+   */
+  if (!runtime) return null;
+
+  return (
+    <div className="tab-bar" role="tablist" aria-label="打开的文件">
+      {state.tabs.map((tab) => {
+        const active = tab.path === state.activePath;
+        const dirty = active && state.dirty;
+        // 未命名标签：__untitled__-1 → 未命名.md，-2 → 未命名 2.md（同 VSCode 习惯）
+        const untitledMatch = /^__untitled__-(\d+)$/.exec(tab.path);
+        const name = untitledMatch
+          ? (untitledMatch[1] === '1' ? '未命名.md' : `未命名 ${untitledMatch[1]}.md`)
+          : baseName(tab.path);
+        return (
+          <div
+            key={tab.path}
+            role="tab"
+            aria-selected={active}
+            className={
+              'tab' +
+              (active ? ' tab--active' : '') +
+              (tab.preview ? ' tab--preview' : '')
+            }
+            title={tab.preview ? `${tab.path}（预览，编辑后固定）` : tab.path}
+            onClick={() => runtime.activateTab(tab.path)}
+          >
+            <span className="tab__label">{name}</span>
+            {dirty && (
+              <span className="tab__dirty" aria-label="未保存">
+                ●
+              </span>
+            )}
+            <button
+              type="button"
+              className="tab__close"
+              aria-label={`关闭 ${name}`}
+              onClick={(event) => {
+                // 不冒泡：否则关标签会顺手把它激活一下，看起来像"点两次"
+                event.stopPropagation();
+                runtime.closeTab(tab.path);
+              }}
+            >
+              ×
+            </button>
+          </div>
+        );
+      })}
+      {/*
+       * 新建标签。放在标签列表的最右 —— 与浏览器/VSCode 同位，
+       * "在最后一个标签旁边开新的"是这条视觉惯例的语义。
+       * 已有未命名标签时点击会直接激活它，不会堆出两张未命名。
+       */}
+      <button
+        type="button"
+        className="tab-add"
+        aria-label="新建标签页"
+        title="新建标签页"
+        onClick={() => runtime.createUntitledTab()}
+      >
+        +
+      </button>
+    </div>
+  );
+}
+
+function Toasts({ runtime }: { readonly runtime: AropytRuntime }): JSX.Element | null {
+  useWindowRevision(runtime);
+  const toasts = runtime.windowService.toasts;
+  if (toasts.length === 0) return null;
+
+  return (
+    <div className="toasts">
+      {toasts.map((toast) => (
+        <div
+          key={toast.id}
+          className={`toast${
+            toast.level === 'error' ? ' toast--error' : toast.level === 'warning' ? ' toast--warning' : ''
+          }`}
+        >
+          {/*
+           * 文字区负责关闭，按钮区不冒泡 ——
+           * 否则点「丢弃」会顺手把提示关掉又执行动作，看起来像"点了两次"。
+           */}
+          <span className="toast__text" onClick={() => runtime.windowService.dismiss(toast.id)}>
+            {toast.message}
+          </span>
+          {toast.actions && toast.actions.length > 0 && (
+            <span className="toast__actions">
+              {toast.actions.map((action) => (
+                <button
+                  key={action.label}
+                  type="button"
+                  className="toast__action"
+                  onClick={() => {
+                    runtime.windowService.dismiss(toast.id);
+                    action.run();
+                  }}
+                >
+                  {action.label}
+                </button>
+              ))}
+            </span>
+          )}
+        </div>
+      ))}
+    </div>
+  );
+}
+
+function groupToolbar(
+  items: readonly { command: string; group: string; order: number }[],
+): readonly { key: string; commands: readonly string[] }[] {
+  const buckets = new Map<string, string[]>();
+  for (const item of items) {
+    const bucket = buckets.get(item.group) ?? [];
+    bucket.push(item.command);
+    buckets.set(item.group, bucket);
+  }
+  return [...buckets.entries()].sort(([a], [b]) => a.localeCompare(b)).map(([key, commands]) => ({ key, commands }));
+}
+

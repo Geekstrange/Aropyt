@@ -1,0 +1,15 @@
+{
+  "$schema": "../gen/schemas/desktop-schema.json",
+  "identifier": "default",
+  "description": "Aropyt 桌面与 Android 壳的默认权限集。",
+  "windows": ["main"],
+  "permissions": [
+    "core:default",
+    "core:window:allow-set-title",
+    "dialog:allow-open",
+    "os:allow-platform",
+    "os:allow-os-type",
+    "fs:allow-read-file",
+    "fs:allow-write-file"
+  ]
+}

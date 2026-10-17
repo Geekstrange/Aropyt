@@ -1,0 +1,17 @@
+node_modules/
+dist/
+dist-ssr/
+*.tsbuildinfo
+.DS_Store
+.env
+.env.local
+*.log
+dev-dist/
+
+# Rust / Tauri 构建产物
+src-tauri/target/
+target/
+src-tauri/gen/schemas/
+# 构建产物（历史上为绕开批量删除防护留下的）
+apps/web/dist-stale-*/
+

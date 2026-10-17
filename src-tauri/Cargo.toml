@@ -1,0 +1,70 @@
+[package]
+name = "Aropyt"
+version = "0.0.1"
+description = "跨平台 Markdown 编辑器"
+authors = ["Aropyt"]
+license = "AGPL-3.0-or-later"
+edition = "2021"
+rust-version = "1.77.2"
+
+[lib]
+# Android 与桌面共用同一个 crate，所以必须是 lib 而不仅是 bin。
+name = "aropyt_lib"
+crate-type = ["staticlib", "cdylib", "rlib"]
+
+[build-dependencies]
+tauri-build = { version = "2", features = [] }
+
+[dependencies]
+# protocol-asset 与 tauri.conf.json 里的 security.assetProtocol 必须成对出现 ——
+# 少这个 feature 时 tauri-build 会直接报错拦住构建，不会让你跑到运行时才发现。
+# 它让 WebView 能把本地文件（图片、附件）当 asset: URL 加载，
+# 这是"Markdown 里插本地图片"能工作的前提。
+tauri = { version = "2", features = ["protocol-asset"] }
+tauri-plugin-fs = "2"
+tauri-plugin-dialog = "2"
+tauri-plugin-os = "2"
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+
+# 自动更新默认关闭（可选依赖）。它需要 minisign 发布方密钥，
+# 没有真实密钥时开启只会得到一个静默失败的更新通道。
+# 要开启：`npm run tauri signer generate` 拿到密钥，填进 tauri.conf.json，
+# 然后启用下面的 optional 依赖 + Cargo feature。
+tauri-plugin-updater = { version = "2", optional = true }
+
+
+
+[features]
+# 设为**默认开启**，这样 `cargo build --release` 直接就是对的。
+#
+# 为什么需要它：Tauri 用 `dev = !custom_protocol` 判断形态
+# （tauri crate 的 build.rs）。没有它，WebView 会去加载 devUrl
+# （http://localhost:5173）而不是内嵌的前端资源 —— 产出的 exe 能启动，
+# 但界面显示"没有网络连接"。
+#
+#   cargo build --release   无该 feature   3.51 MB  连不上
+#   cargo build --release   有该 feature   5.75 MB  正常
+#
+# 为什么敢设成默认（而不是只靠 `tauri build` 注入）：
+# Tauri CLI 的 dev_options() 会**主动**传 `--no-default-features`，
+# 并把默认 feature 里定义含 `tauri/custom-protocol` 的那条过滤掉：
+#
+#   .filter(|feature| !manifest_feature.contains(&"tauri/custom-protocol"))
+#
+# 也就是说 CLI 本来就为"用户把 custom-protocol 设成默认"这一情形做了处理，
+# 热更新不受影响。`tauri build` 则无条件 push `tauri/custom-protocol`。
+#
+# 结论：三条路径都对 —— cargo build --release 走默认值即正确，
+# tauri dev 由 CLI 剔除，tauri build 由 CLI 显式注入。
+custom-protocol = ["tauri/custom-protocol"]
+default = ["custom-protocol"]
+# 自动更新默认关闭。打开前先读 lib.rs 里setup 的那段注释。
+updater = ["dep:tauri-plugin-updater"]
+
+[profile.release]
+codegen-units = 1
+lto = true
+opt-level = "s"
+panic = "abort"
+strip = true
