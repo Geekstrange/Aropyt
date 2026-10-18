@@ -194,6 +194,18 @@ button {
   padding: 0 12px;
   background: var(--md-surface-1);
   border-bottom: 1px solid var(--md-border);
+  /*
+   * 关键：flex 子项的默认 min-width 是 auto（内容宽度），
+   * 不压成 0 的话，标签栏内容一多就会把整行撑宽、
+   * 把右侧按钮挤出可视区（用户实测"标签开太多按钮被挤走"）。
+   */
+  min-width: 0;
+}
+
+/* 头部右侧的按钮：永不收缩，标签再多也钉在右边 */
+.app-header > .tool-button,
+.app-header > .icon-button {
+  flex: 0 0 auto;
 }
 
 /*

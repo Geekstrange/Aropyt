@@ -58,7 +58,12 @@ function joinPath(dir: string, name: string): string {
 }
 
 async function ensureDir(dir: string): Promise<void> {
-  await invoke('plugin:fs|mkdir', { path: dir, recursive: true }).catch(() => undefined);
+  // 目录已存在时 mkdir 会报错，这是预期情况；其它错误必须往上抛
+  await invoke('plugin:fs|mkdir', { path: dir, recursive: true }).catch((error: unknown) => {
+    const message = error instanceof Error ? error.message : String(error);
+    if (/exist/i.test(message)) return;
+    throw error;
+  });
 }
 
 /** 用原生能力读写 settings.jsonc。 */
@@ -79,14 +84,26 @@ export async function createTauriSettingsIo(): Promise<SettingsIo & { path: stri
       }
     },
     async write(text) {
-      // mkdir 失败不能吞：目录建不出来，后面的写必然失败且原因难查
-      await ensureDir(dir);
-      // 注意：fs 插件的 write_text_file 接受字节数组
+      /*
+       * 分步 try/catch：每一步失败都带上步骤名与路径。
+       * 只包一层的话，"配置文件永远不生成"这类问题完全无法定位
+       * （此前连续三轮卡在这里，就是因为错误被合并成了一句话）。
+       */
+      const step = async (name: string, run: () => Promise<unknown>): Promise<void> => {
+        try {
+          await run();
+        } catch (error) {
+          const detail =
+            error instanceof Error ? error.message : typeof error === 'string' ? error : JSON.stringify(error);
+          throw new Error(`${name} 失败：${detail}`);
+        }
+      };
+      await step(`mkdir(${dir})`, () => ensureDir(dir));
       const bytes = Array.from(new TextEncoder().encode(text));
-      await invoke('plugin:fs|write_text_file', { path: tmp, data: bytes });
-      // rename 覆盖：Windows 上目标存在时 rename 会失败，先尽力删除旧文件
+      await step(`write(${tmp})`, () => invoke('plugin:fs|write_text_file', { path: tmp, data: bytes }));
+      // 目标已存在时 Windows 的 rename 可能失败，先尽力删除
       await invoke('plugin:fs|remove', { path }).catch(() => undefined);
-      await invoke('plugin:fs|rename', { oldPath: tmp, newPath: path });
+      await step(`rename(${tmp} → ${path})`, () => invoke('plugin:fs|rename', { oldPath: tmp, newPath: path }));
     },
     async openExternal() {
       await invoke('plugin:opener|open_path', { path });

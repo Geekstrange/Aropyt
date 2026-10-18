@@ -23,7 +23,6 @@ import {
 } from 'react';
 
 import { createRuntime, type AropytRuntime, type RuntimeState } from './runtime.js';
-import type { ThemePreference } from './theme.js';
 import { Icon } from './components/Icons.js';
 import { ViewColumn } from './components/ViewHost.js';
 import { SettingsDialog } from './components/SettingsDialog.js';
@@ -351,24 +350,6 @@ function Header({ runtime }: { readonly runtime: AropytRuntime }): JSX.Element {
   );
 }
 
-/**
- * 主题偏好 → 图标与提示。
- *
- * `auto` 的提示要把**解析结果**也带上（"跟随系统（当前深色）"）——
- * 否则用户点了半天看不出到底生效了没有。
- */
-const THEME_ICON: Record<ThemePreference, string> = {
-  light: 'sun',
-  dark: 'moon',
-  auto: 'autoTheme',
-};
-
-const THEME_LABEL: Record<ThemePreference, string> = {
-  light: '浅色（点击切换）',
-  dark: '深色（点击切换）',
-  auto: '跟随系统（点击切换）',
-};
-
 function isWideScreen(): boolean {
   return typeof window !== 'undefined' && window.matchMedia('(min-width: 901px)').matches;
 }
@@ -463,16 +444,6 @@ function Toolbar({ runtime, onOpenSettings }: ToolbarProps): JSX.Element {
         }}
       >
         <Icon name="plugins" />
-      </button>
-
-      <button
-        type="button"
-        className="tool-button"
-        title={THEME_LABEL[state.themePreference]}
-        aria-label={`主题：${THEME_LABEL[state.themePreference]}`}
-        onClick={() => runtime.theme.cycle()}
-      >
-        <Icon name={THEME_ICON[state.themePreference]} />
       </button>
 
       {/*
@@ -742,6 +713,11 @@ function TabBar({ runtime }: { readonly runtime: AropytRuntime }): JSX.Element |
           >
             <span
               className="tab__label"
+              onMouseDown={(event) => {
+                // 中键按下的默认行为是"自动滚动"（图标+拖动）—— 不拦掉它，
+                // auxclick 永远不会到来（用户实测：中键变成拖拽滚动）
+                if (event.button === 1) event.preventDefault();
+              }}
               onAuxClick={(event) => {
                 if (event.button !== 1) return;
                 event.preventDefault();
