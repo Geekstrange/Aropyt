@@ -10,15 +10,29 @@
  *  - 还没接：把改动写回 settings.jsonc —— 需要先让配置成为"真源"
  *    （现在 theme/vim 仍读 localStorage），那一步单独做，避免半套同步。
  */
-import type { JSX } from 'react';
-import type { AropytRuntime } from '../runtime.js';
+import { useCallback, useSyncExternalStore, type JSX } from 'react';
+import type { AropytRuntime, RuntimeState } from '../runtime.js';
 
 interface SettingsDialogProps {
   readonly runtime: AropytRuntime;
-  readonly themePreference: 'light' | 'dark' | 'auto';
-  readonly vimMode: boolean;
   readonly settingsPath: string | null;
   readonly onClose: () => void;
+}
+
+/**
+ * 订阅运行时状态。
+ *
+ * 上一版把 themePreference / vimMode 当 props 传进来 —— 那是**渲染时的快照**，
+ * 点开关后组件不会重渲染，界面看起来"点了没反应"（用户实测）。
+ * 状态必须订阅，不能用快照。
+ */
+function useRuntimeState(runtime: AropytRuntime): RuntimeState {
+  const subscribe = useCallback(
+    (listener: () => void) => runtime.subscribe(listener),
+    [runtime],
+  );
+  const getSnapshot = useCallback(() => runtime.getState(), [runtime]);
+  return useSyncExternalStore(subscribe, getSnapshot);
 }
 
 const THEME_OPTIONS: { value: 'light' | 'dark' | 'auto'; label: string }[] = [
@@ -29,11 +43,12 @@ const THEME_OPTIONS: { value: 'light' | 'dark' | 'auto'; label: string }[] = [
 
 export function SettingsDialog({
   runtime,
-  themePreference,
-  vimMode,
   settingsPath,
   onClose,
 }: SettingsDialogProps): JSX.Element {
+  const state = useRuntimeState(runtime);
+  const themePreference = state.themePreference;
+  const vimMode = state.vimMode;
   return (
     <div className="settings-backdrop" role="presentation" onClick={onClose}>
       <div

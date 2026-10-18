@@ -20,17 +20,24 @@
     "fs:allow-mkdir",
     "fs:allow-rename",
     "fs:allow-remove",
-    "fs:allow-appconfig-read",
-    "fs:allow-appconfig-write",
     "core:path:default",
+    {
+      "identifier": "fs:scope",
+      "allow": [
+        {
+          "path": "$HOME/.aropyt/**"
+        },
+        {
+          "path": "$HOME/.aropyt"
+        }
+      ]
+    },
+    "fs:allow-exists",
     {
       "identifier": "opener:allow-open-path",
       "allow": [
         {
-          "path": "$APPDATA/**"
-        },
-        {
-          "path": "$APPCONFIG/**"
+          "path": "$HOME/.aropyt/**"
         }
       ]
     }

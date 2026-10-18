@@ -215,9 +215,6 @@ export function App(): JSX.Element {
       {settingsOpen && runtime && (
         <SettingsDialog
           runtime={runtime}
-          // App 层不订阅运行时状态，这里按需取快照（面板打开时才读）
-          themePreference={runtime.getState().themePreference}
-          vimMode={runtime.getState().vimMode}
           settingsPath={runtime.settingsPath}
           onClose={() => setSettingsOpen(false)}
         />
@@ -399,14 +396,8 @@ function Toolbar({ runtime, onOpenSettings }: ToolbarProps): JSX.Element {
       ))}
       <span className="toolbar-spacer" />
 
-      {/*
-       * 主题三态循环：浅色 → 深色 → 跟随系统。
-       *
-       * 为什么是循环而不是一个开关：需要表达三种状态，而两态开关
-       * 表达不了"跟随系统"。循环的代价是点击次数不固定，
-       * 所以图标与提示文字必须清楚显示当前处于哪一态。
-       */}
-      {/* 设置面板（外观 / 编辑 / 配置文件） */}
+
+      {/* 设置面板入口 */}
       <button
         type="button"
         className="tool-button"

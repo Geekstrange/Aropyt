@@ -39,13 +39,17 @@ async function invoke<T>(command: string, args?: Record<string, unknown>): Promi
  * Download, Picture, Public, Video, Resource, Temp, **AppConfig=13** …）。
  * 这个数值是版本敏感点：升级 Tauri 大版本时要复核。
  */
-const BASE_DIRECTORY_APP_CONFIG = 13;
+/** BaseDirectory.Home = 21（枚举顺序同上，Audio=1 起数）。 */
+const BASE_DIRECTORY_HOME = 21;
 
+/** 配置目录：`<用户家目录>/.aropyt`（用户要求放家目录，便于备份与手改）。 */
 async function configDir(): Promise<string> {
-  const dir = await invoke<string>('plugin:path|resolve_directory', {
-    directory: BASE_DIRECTORY_APP_CONFIG,
+  const home = await invoke<string>('plugin:path|resolve_directory', {
+    directory: BASE_DIRECTORY_HOME,
   });
-  return dir.replace(/[\\/]+$/, '');
+  const base = home.replace(/[\\/]+$/, '');
+  const sep = base.includes('\\') ? '\\' : '/';
+  return `${base}${sep}.aropyt`;
 }
 
 function joinPath(dir: string, name: string): string {
@@ -75,6 +79,7 @@ export async function createTauriSettingsIo(): Promise<SettingsIo & { path: stri
       }
     },
     async write(text) {
+      // mkdir 失败不能吞：目录建不出来，后面的写必然失败且原因难查
       await ensureDir(dir);
       // 注意：fs 插件的 write_text_file 接受字节数组
       const bytes = Array.from(new TextEncoder().encode(text));
