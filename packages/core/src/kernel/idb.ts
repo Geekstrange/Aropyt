@@ -15,12 +15,15 @@
  */
 
 const DB_NAME = 'aropyt';
-const DB_VERSION = 1;
+// 2：新增 history store（v0.0.7）
+const DB_VERSION = 2;
 
 export const STORE = {
   kv: 'kv',
   handles: 'handles',
   drafts: 'drafts',
+  /** 编辑历史（v0.0.7）：每个文件一条版本链。 */
+  history: 'history',
 } as const;
 
 export type StoreName = (typeof STORE)[keyof typeof STORE];
@@ -76,6 +79,28 @@ export function idbSet(store: StoreName, key: IDBValidKey, value: unknown): Prom
 
 export function idbDelete(store: StoreName, key: IDBValidKey): Promise<void> {
   return run(store, 'readwrite', (os) => os.delete(key) as unknown as IDBRequest<undefined>).then(() => undefined);
+}
+
+/** 遍历整个 store（数据导出用）：一次事务拿全键值。 */
+export function idbEntries<T>(store: StoreName): Promise<Array<[IDBValidKey, T]>> {
+  return openDatabase().then(
+    (db) =>
+      new Promise<Array<[IDBValidKey, T]>>((resolve, reject) => {
+        const transaction = db.transaction(store, 'readonly');
+        const request = transaction.objectStore(store).openCursor();
+        const out: Array<[IDBValidKey, T]> = [];
+        request.onsuccess = () => {
+          const cursor = request.result;
+          if (cursor) {
+            out.push([cursor.key, cursor.value as T]);
+            cursor.continue();
+          } else {
+            resolve(out);
+          }
+        };
+        request.onerror = () => reject(request.error ?? new Error('遍历失败'));
+      }),
+  );
 }
 
 export function idbKeys(store: StoreName): Promise<IDBValidKey[]> {

@@ -54,6 +54,10 @@ const NAME_MAP = {
   'vim-mode': 'vimMode',
   formula: 'formula',
   setting: 'setting',
+  history: 'history',
+  mdFile: 'mdFile',
+  texFile: 'texFile',
+  fountainFile: 'fountainFile',
   plugins: 'plugins',
 };
 

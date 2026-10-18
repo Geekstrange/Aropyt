@@ -111,6 +111,73 @@ export function SettingsDialog({
         </section>
 
         <section className="settings-section">
+          <h3>数据备份</h3>
+          <div className="settings-row">
+            <span className="settings-row__label">草稿与编辑历史</span>
+            <div className="settings-actions" style={{ marginTop: 0 }}>
+              <button type="button" className="settings-button" onClick={() => void runtime.exportBackup()}>
+                导出数据
+              </button>
+              <button type="button" className="settings-button" onClick={() => void runtime.importBackup()}>
+                导入数据
+              </button>
+            </div>
+          </div>
+          <p className="settings-hint">
+            导出为单个 JSON 文件（含全部草稿与编辑历史），可用于换机器或重装系统。
+            导入会覆盖现有数据，操作前请先导出一份。
+          </p>
+        </section>
+
+        <section className="settings-section">
+          <h3>编辑历史</h3>
+          <div className="settings-row">
+            <span className="settings-row__label">每文件保留版本数</span>
+            <input
+              type="number"
+              className="history-number"
+              min={10}
+              max={200}
+              value={state.historyLimit}
+              onChange={(event) => {
+                const value = Number(event.target.value);
+                if (Number.isFinite(value)) runtime.updateSettings({ history: { limit: value } });
+              }}
+            />
+          </div>
+          <div className="settings-row">
+            <span className="settings-row__label">自动保存版本</span>
+            <button
+              type="button"
+              className={`settings-switch${state.historyAutoSave ? ' is-on' : ''}`}
+              aria-pressed={state.historyAutoSave}
+              onClick={() => runtime.updateSettings({ history: { autoSave: !state.historyAutoSave } })}
+            >
+              <span className="settings-switch__knob" />
+            </button>
+          </div>
+          <div className="settings-row">
+            <span className="settings-row__label">自动保存间隔（秒）</span>
+            <input
+              type="number"
+              className="history-number"
+              min={15}
+              max={3600}
+              disabled={!state.historyAutoSave}
+              value={state.historyInterval}
+              onChange={(event) => {
+                const value = Number(event.target.value);
+                if (Number.isFinite(value)) runtime.updateSettings({ history: { autoSaveInterval: value } });
+              }}
+            />
+          </div>
+          <p className="settings-hint">
+            自动保存按间隔给当前内容记一个版本，内容没变不会重复记录。
+            每个文件只保留最近的若干版本，更早的自动淘汰。
+          </p>
+        </section>
+
+        <section className="settings-section">
           <h3>配置文件</h3>
           <div className="settings-row">
             <span className="settings-row__label">settings.jsonc</span>

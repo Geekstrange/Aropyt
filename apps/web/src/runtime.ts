@@ -47,6 +47,11 @@ import {
   type LoadablePlugin,
   type PluginRecord,
   type BudgetViolation,
+  getVersion,
+  listVersions,
+  recordVersion,
+  applyBackup,
+  assembleBackup,
 } from '@aropyt/core';
 
 import type { DocumentRef, ImportedFile, Memento, PluginManifest } from '@aropyt/plugin-api';
@@ -114,6 +119,12 @@ export interface RuntimeState {
   readonly vimMode: boolean;
   /** vim 子模式（NORMAL/INSERT/VISUAL…），未开 vim 时 null。 */
   readonly vimSubMode: string | null;
+  /** 编辑历史：每文件保留的版本数。 */
+  readonly historyLimit: number;
+  /** 编辑历史：是否自动保存版本。 */
+  readonly historyAutoSave: boolean;
+  /** 编辑历史：自动保存间隔（秒）。 */
+  readonly historyInterval: number;
   /** 恢复自草稿/崩溃日志的文件路径；null = 本次会话没有恢复过。状态栏黄点用它，且只在**当前激活**文件是它时才亮。 */
   readonly recoveredPath: string | null;
   readonly plugins: readonly PluginRecord[];
@@ -175,6 +186,16 @@ export interface AropytRuntime {
   updateSettings(patch: DeepPartial<AppSettings>): void;
   /** 打开工作区之外的文件（文件关联 / 命令行传入）。 */
   openExternalPath(path: string): Promise<void>;
+  /** 某个文件的编辑历史（新→旧）。 */
+  listHistory(path: string): Promise<import('@aropyt/core').HistorySummary[]>;
+  /** 把某个历史版本恢复进编辑器（当前内容会先存为新版本，不丢）。 */
+  restoreHistory(id: string): Promise<void>;
+  /** 把当前内容存成一个**命名版本**（里程碑）。 */
+  snapshotHistory(label: string): Promise<void>;
+  /** 导出草稿与编辑历史为 JSON（用户选保存位置）。 */
+  exportBackup(): Promise<void>;
+  /** 从 JSON 导入（覆盖现有草稿与历史，导入后需重启）。 */
+  importBackup(): Promise<void>;
   /** vim 模式开关（normal/insert/visual 操作方式）。持久化在 localStorage。 */
   toggleVimMode(): void;
   /**
@@ -308,6 +329,9 @@ export function createRuntime(options: RuntimeOptions): AropytRuntime {
     tabs: state.tabs,
     vimMode: state.vimMode,
     vimSubMode: lastVimSubMode,
+    historyLimit: currentSettings.history.limit,
+    historyAutoSave: currentSettings.history.autoSave,
+    historyInterval: currentSettings.history.autoSaveInterval,
     recoveredPath: state.recoveredPath,
     plugins: host.records,
     sourceMode: editor.sourceMode,
@@ -650,6 +674,11 @@ export function createRuntime(options: RuntimeOptions): AropytRuntime {
     },
     updateSettings,
     openExternalPath,
+    listHistory,
+    restoreHistory,
+    snapshotHistory,
+    exportBackup,
+    importBackup,
     get settingsPath() {
       return settingsPathValue;
     },
@@ -1327,6 +1356,25 @@ export function createRuntime(options: RuntimeOptions): AropytRuntime {
       state.vimMode = next.vim.enabled;
       editor.setVimMode(next.vim.enabled);
     }
+    restartHistoryTimer();
+  }
+
+  /*
+   * 编辑历史的**自动保存**：每 interval 秒把当前内容记一个版本。
+   * 内容没变不会产生新版本（recordVersion 有哈希去重），成本几乎为零。
+   * interval 改变（配置更新）时要重启定时器 —— 统一走
+   * applySettings → restartHistoryTimer，保证单一入口。
+   */
+  let historyTimer: ReturnType<typeof setInterval> | null = null;
+
+  function restartHistoryTimer(): void {
+    if (historyTimer) {
+      clearInterval(historyTimer);
+      historyTimer = null;
+    }
+    if (!currentSettings.history.autoSave) return;
+    const ms = Math.max(10, currentSettings.history.autoSaveInterval) * 1000;
+    historyTimer = setInterval(() => void recordCurrentVersion(), ms);
   }
 
   function mergeSettings(patch: DeepPartial<AppSettings>): AppSettings {
@@ -1377,6 +1425,112 @@ export function createRuntime(options: RuntimeOptions): AropytRuntime {
         level: 'error',
       });
     });
+  }
+
+  /*
+   * ── 编辑历史（v0.0.7）────────────────────────────────────
+   * 保存即版本；恢复前先把当前内容存成新版本，所以任何操作都不丢内容。
+   * 未命名文档没有稳定标识，不记录历史（__untitled__ 每次序号都不同）。
+   */
+  function historyKey(): string | null {
+    const path = state.activePath;
+    if (!path || path.startsWith('__untitled__')) return null;
+    return path;
+  }
+
+  async function recordCurrentVersion(label?: string): Promise<void> {
+    const key = historyKey();
+    if (!key) return;
+    // 外部文件用绝对路径作为键（与工作区相对路径天然区分）
+    await recordVersion(key, editor.getText(), currentSettings.history.limit, label).catch(() => undefined);
+  }
+
+  async function listHistory(path: string) {
+    return listVersions(path).catch(() => []);
+  }
+
+  async function restoreHistory(id: string): Promise<void> {
+    const version = await getVersion(id).catch(() => null);
+    if (!version) {
+      void windowService.showMessage('该版本已不存在（可能已被更早的版本淘汰）', { level: 'warning' });
+      return;
+    }
+    /*
+     * 恢复前先给**当前内容**留一个版本 —— 否则"恢复到旧版"这个动作本身
+     * 就把最新的编辑抹掉了，这是编辑历史最不可接受的失败方式。
+     */
+    await recordCurrentVersion(`恢复前快照 ${new Date().toLocaleTimeString()}`);
+    loadingDocument = true;
+    try {
+      editor.replaceDocument(version.text);
+    } finally {
+      loadingDocument = false;
+    }
+    state.dirty = true;
+    notify();
+  }
+
+  async function snapshotHistory(label: string): Promise<void> {
+    await recordCurrentVersion(label.trim() || '手动版本');
+    notify();
+  }
+
+  async function exportBackup(): Promise<void> {
+    const data = await assembleBackup();
+    const date = new Date().toISOString().slice(0, 10);
+    const picked = await invokeNative<string | null>('plugin:dialog|save', {
+      options: {
+        defaultPath: `aropyt-backup-${date}.json`,
+        filters: [{ name: 'JSON', extensions: ['json'] }],
+      },
+    }).catch((error: unknown) => {
+      // 对话框打开失败不能静默 —— 静默的表现就是"点了没反应"（用户实测）
+      throw new Error(
+        error instanceof Error ? error.message : typeof error === 'string' ? error : JSON.stringify(error),
+      );
+    });
+    if (!picked) return;
+    await invokeNative('backup_write', { path: picked, text: JSON.stringify(data, null, 2) }).catch(
+      (error: unknown) => {
+        const detail =
+          error instanceof Error ? error.message : typeof error === 'string' ? error : JSON.stringify(error);
+        void windowService.showMessage(`导出失败：${detail}`, { level: 'error' });
+      },
+    );
+    void windowService.showMessage(`数据已导出到 ${picked}`, { level: 'info' });
+  }
+
+  async function importBackup(): Promise<void> {
+    const picked = await invokeNative<string | null>('plugin:dialog|open', {
+      options: { multiple: false, filters: [{ name: 'JSON', extensions: ['json'] }] },
+    }).catch((error: unknown) => {
+      throw new Error(
+        error instanceof Error ? error.message : typeof error === 'string' ? error : JSON.stringify(error),
+      );
+    });
+    if (!picked) return;
+    const text = await invokeNative<string>('backup_read', { path: picked }).catch((error: unknown) => {
+      throw new Error(
+        error instanceof Error ? error.message : typeof error === 'string' ? error : JSON.stringify(error),
+      );
+    });
+    const data = JSON.parse(text) as import('@aropyt/core').BackupFile;
+    const counts = `草稿 ${Object.keys(data.drafts ?? {}).length} 份 · 历史 ${(data.history ?? []).length} 个版本`;
+    const ok = await invokeNative<boolean>('plugin:dialog|ask', {
+      options: {
+        title: '导入数据',
+        message: `将导入 ${counts}，并**覆盖**当前所有草稿与编辑历史。确定继续？`,
+        kind: 'warning',
+        okButtonLabel: '导入',
+        cancelButtonLabel: '取消',
+      },
+    }).catch(() => false);
+    if (!ok) return;
+    const result = await applyBackup(data);
+    void windowService.showMessage(
+      `导入完成：${result.drafts} 份草稿、${result.history} 个历史版本。重启应用后生效。`,
+      { level: 'info' },
+    );
   }
 
   /**
@@ -1440,6 +1594,12 @@ export function createRuntime(options: RuntimeOptions): AropytRuntime {
   }
 
   async function saveActiveFile(): Promise<void> {
+    /*
+     * 保存即版本：把**当前内容**记一条历史（去重逻辑在 recordVersion 里，
+     * 内容没变不会产生新版本）。放在最前面是因为"要保存的内容"就是
+     * 此刻编辑器里的文本 —— 与后续走哪条分支（工作区/外部/另存为）无关。
+     */
+    void recordCurrentVersion();
     let workspace = state.workspace;
     let path = state.activePath;
 

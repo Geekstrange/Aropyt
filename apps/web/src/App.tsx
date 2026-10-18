@@ -26,6 +26,7 @@ import { createRuntime, type AropytRuntime, type RuntimeState } from './runtime.
 import { Icon } from './components/Icons.js';
 import { ViewColumn } from './components/ViewHost.js';
 import { SettingsDialog } from './components/SettingsDialog.js';
+import { HistoryDialog } from './components/HistoryDialog.js';
 
 export function App(): JSX.Element {
   const editorHostRef = useRef<HTMLDivElement>(null);
@@ -40,6 +41,7 @@ export function App(): JSX.Element {
    * 没存过才回落到"宽屏默认打开"—— 用户手动关过就尊重用户。
    */
   const [settingsOpen, setSettingsOpen] = useState(false);
+  const [historyOpen, setHistoryOpen] = useState(false);
 
   /*
    * 侧栏开合：真源是 settings.jsonc（配置就绪后由 Effect 同步一次，
@@ -203,7 +205,16 @@ export function App(): JSX.Element {
         editorHostRef={editorHostRef}
         sidebarOpen={sidebarOpen}
         onOpenSettings={() => setSettingsOpen(true)}
+        onOpenHistory={() => setHistoryOpen(true)}
       />
+      {historyOpen && runtime && runtime.getState().activePath && (
+        <HistoryDialog
+          runtime={runtime}
+          path={runtime.getState().activePath ?? ''}
+          onClose={() => setHistoryOpen(false)}
+        />
+      )}
+
       {settingsOpen && runtime && (
         <SettingsDialog
           runtime={runtime}
@@ -239,18 +250,20 @@ function Shell({
   editorHostRef,
   sidebarOpen,
   onOpenSettings,
+  onOpenHistory,
 }: {
   readonly runtime: AropytRuntime | null;
   readonly editorHostRef: RefObject<HTMLDivElement>;
   readonly sidebarOpen: boolean;
   readonly onOpenSettings: () => void;
+  readonly onOpenHistory: () => void;
 }): JSX.Element {
   return (
     <div className="app-body">
       {runtime && <ViewColumn runtime={runtime} location="sidebar" side="left" open={sidebarOpen} />}
 
       <main className="app-main">
-        {runtime ? <Toolbar runtime={runtime} onOpenSettings={onOpenSettings} /> : <div className="toolbar" />}
+        {runtime ? <Toolbar runtime={runtime} onOpenSettings={onOpenSettings} onOpenHistory={onOpenHistory} /> : <div className="toolbar" />}
         <div className="app-editor" ref={editorHostRef} />
       </main>
 
@@ -350,9 +363,10 @@ function isWideScreen(): boolean {
 interface ToolbarProps {
   readonly runtime: AropytRuntime;
   readonly onOpenSettings: () => void;
+  readonly onOpenHistory: () => void;
 }
 
-function Toolbar({ runtime, onOpenSettings }: ToolbarProps): JSX.Element {
+function Toolbar({ runtime, onOpenSettings, onOpenHistory }: ToolbarProps): JSX.Element {
   const state = useRuntimeState(runtime);
   const details = new Map(runtime.commands.details().map((item) => [item.id, item]));
   const groups = groupToolbar(state.toolbar);
@@ -370,6 +384,18 @@ function Toolbar({ runtime, onOpenSettings }: ToolbarProps): JSX.Element {
       ))}
       <span className="toolbar-spacer" />
 
+
+      {/* 编辑历史 */}
+      <button
+        type="button"
+        className="tool-button"
+        title="编辑历史"
+        aria-label="编辑历史"
+        onClick={onOpenHistory}
+        disabled={!state.activePath || Boolean(state.activePath?.startsWith('__untitled__'))}
+      >
+        <Icon name="history" />
+      </button>
 
       {/* 设置面板入口 */}
       <button

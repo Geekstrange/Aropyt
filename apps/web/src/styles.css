@@ -1337,3 +1337,103 @@ button {
   line-height: 1.6;
   color: var(--md-muted);
 }
+
+/* ── 编辑历史面板 ── */
+.history-dialog {
+  width: min(680px, calc(100vw - 48px));
+}
+
+.history-snapshot {
+  display: flex;
+  gap: 6px;
+  align-items: center;
+}
+
+.history-snapshot input {
+  font: inherit;
+  font-size: 12px;
+  color: var(--md-text);
+  background: var(--md-surface-1);
+  border: 1px solid var(--md-border);
+  padding: 4px 8px;
+  width: 180px;
+  outline: none;
+}
+
+.history-snapshot input:focus {
+  border-color: var(--md-link);
+}
+
+.history-list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  max-height: 46vh;
+  overflow: auto;
+}
+
+.history-item {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 8px 2px;
+  border-bottom: 1px solid var(--md-border);
+}
+
+.history-item:last-child {
+  border-bottom: none;
+}
+
+.history-item__main {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  font-size: 12px;
+  min-width: 0;
+}
+
+.history-item__time {
+  font-family: var(--font-mono);
+  color: var(--md-text);
+}
+
+.history-item__label {
+  color: var(--md-link);
+  max-width: 240px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.history-item__badge {
+  font-size: 10px;
+  color: var(--md-brand-green);
+  border: 1px solid var(--md-brand-green);
+  padding: 0 4px;
+}
+
+.history-item__meta {
+  color: var(--md-muted);
+  font-size: 11px;
+}
+
+/* 编辑历史设置的数字输入框 */
+.history-number {
+  font: inherit;
+  font-size: 12px;
+  color: var(--md-text);
+  background: var(--md-surface-1);
+  border: 1px solid var(--md-border);
+  padding: 4px 8px;
+  width: 90px;
+  outline: none;
+}
+
+.history-number:focus {
+  border-color: var(--md-link);
+}
+
+.history-number:disabled {
+  opacity: 0.5;
+}

@@ -937,6 +937,32 @@ fn write_external_file(path: String, text: String) -> Result<(), String> {
     fs::rename(&tmp, &file).map_err(|error| format!("替换失败 {}: {}", file.display(), error))
 }
 
+
+/// 备份文件读取（数据导出/导入用）。限 .json 扩展名。
+#[tauri::command]
+fn backup_read(path: String) -> Result<String, String> {
+    let file = PathBuf::from(&path);
+    if file.extension().and_then(|ext| ext.to_str()) != Some("json") {
+        return Err("只支持 .json 文件".to_string());
+    }
+    fs::read_to_string(&file).map_err(|error| format!("读取失败: {}", error))
+}
+
+/// 备份文件写入。限 .json 扩展名，原子写。
+#[tauri::command]
+fn backup_write(path: String, text: String) -> Result<(), String> {
+    let file = PathBuf::from(&path);
+    if file.extension().and_then(|ext| ext.to_str()) != Some("json") {
+        return Err("只支持 .json 文件".to_string());
+    }
+    let tmp = file.with_extension(format!("json.tmp"));
+    fs::write(&tmp, text).map_err(|error| format!("写入失败: {}", error))?;
+    if file.exists() {
+        let _ = fs::remove_file(&file);
+    }
+    fs::rename(&tmp, &file).map_err(|error| format!("替换失败: {}", error))
+}
+
 pub fn run() {
     let builder = tauri::Builder::default()
         .plugin(tauri_plugin_fs::init())
@@ -959,7 +985,9 @@ pub fn run() {
             settings_write,
             take_launch_file,
             read_external_file,
-            write_external_file
+            write_external_file,
+            backup_read,
+            backup_write
         ])
         .setup(|app| {
             app.manage(PendingOpen(Mutex::new(launch_file_from_args())));

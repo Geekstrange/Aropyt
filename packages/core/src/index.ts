@@ -36,3 +36,15 @@ export * from './kernel/plugin-host.js';
  * Typora 式编辑里编辑区本身就是预览，再挂一栏 iframe 渲染是第二套
  * 渲染管线，两边各显示一半，反而制造不一致。
  */
+
+export {
+  MAX_VERSION_BYTES,
+  clearHistory,
+  getVersion,
+  hashText,
+  listVersions,
+  recordVersion,
+  type HistorySummary,
+  type HistoryVersion,
+} from './kernel/history.js';
+export { applyBackup, assembleBackup, type BackupFile } from './kernel/backup.js';

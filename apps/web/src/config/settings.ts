@@ -19,8 +19,8 @@ export interface AppSettings {
   vim: { enabled: boolean };
   sidebar: { open: boolean };
   plugins: { disabled: string[] };
-  /** v0.0.6 编辑历史预留。 */
-  history: { limit: number };
+  /** 编辑历史。 */
+  history: { limit: number; /** 自动保存版本（按间隔）。 */ autoSave: boolean; /** 间隔秒数。 */ autoSaveInterval: number };
 }
 
 export const DEFAULT_SETTINGS: AppSettings = {
@@ -29,7 +29,7 @@ export const DEFAULT_SETTINGS: AppSettings = {
   vim: { enabled: false },
   sidebar: { open: true },
   plugins: { disabled: [] },
-  history: { limit: 50 },
+  history: { limit: 50, autoSave: true, autoSaveInterval: 60 },
 };
 
 /** 配置文件在磁盘上的名字（与 appConfigDir 拼接）。 */
@@ -164,6 +164,15 @@ export function normalizeSettings(raw: unknown): {
   if (history?.limit !== undefined) {
     if (isFiniteNumber(history.limit)) settings.history.limit = clamp(Math.round(history.limit), 10, 200);
     else invalidValues.push('history.limit');
+  }
+  if (history?.autoSave !== undefined) {
+    if (typeof history.autoSave === 'boolean') settings.history.autoSave = history.autoSave;
+    else invalidValues.push('history.autoSave');
+  }
+  if (history?.autoSaveInterval !== undefined) {
+    if (isFiniteNumber(history.autoSaveInterval)) {
+      settings.history.autoSaveInterval = clamp(Math.round(history.autoSaveInterval), 15, 3600);
+    } else invalidValues.push('history.autoSaveInterval');
   }
   return { settings, problems: { unknownKeys, invalidValues } };
 }
