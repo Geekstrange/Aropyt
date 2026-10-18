@@ -41,24 +41,17 @@ export function App(): JSX.Element {
    */
   const [settingsOpen, setSettingsOpen] = useState(false);
 
-  const [sidebarOpen, setSidebarOpen] = useState(() => {
-    try {
-      const saved = localStorage.getItem('aropyt.sidebarOpen');
-      if (saved === 'on') return true;
-      if (saved === 'off') return false;
-    } catch {
-      /* 隐私模式：退回默认 */
-    }
-    return isWideScreen();
-  });
+  /*
+   * 侧栏开合：真源是 settings.jsonc（配置就绪后由 Effect 同步一次，
+   * 在此之前先用宽屏默认值，避免"先闪一下再收起"）。
+   */
+  const [sidebarOpen, setSidebarOpen] = useState(() => isWideScreen());
 
   useEffect(() => {
-    try {
-      localStorage.setItem('aropyt.sidebarOpen', sidebarOpen ? 'on' : 'off');
-    } catch {
-      /* 配额满：本次会话仍生效 */
-    }
-  }, [sidebarOpen]);
+    if (!runtime) return;
+    const desired = runtime.getSettings().sidebar.open;
+    setSidebarOpen(desired);
+  }, [runtime]);
 
   useEffect(() => {
     const host = editorHostRef.current;

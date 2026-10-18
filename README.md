@@ -38,6 +38,23 @@ markdown-it 渲染的真实 HTML（真表格布局、真标题排版），光标
   在 vim 下照常可用；`Ctrl+B`（翻页）、`Ctrl+N`（插入补全）留给 vim
 - **禁用鼠标选择**：vim 下单击定位光标可用，拖选/Shift 扩选被拦
 
+### 设置与配置文件
+
+- **设置面板**：工具栏齿轮入口，外观（浅色 / 深色 / 跟随系统）、编辑（Vim 开关）、配置文件
+- **`~/.aropyt/settings.jsonc`**：用户配置的真源，JSONC 格式（可写注释）
+  ```jsonc
+  {
+    "theme": "auto",           // light | dark | auto
+    "editor": { "fontSize": 15 },
+    "vim": { "enabled": false },
+    "sidebar": { "open": true },
+    "plugins": { "disabled": [] },
+    "history": { "limit": 50 } // 编辑历史（v0.0.6）预留
+  }
+  ```
+- 界面里的修改**立即写回文件**；手改文件重启后生效；非法值会提示而不是静默忽略
+- 首次启动自动从旧的浏览器存储迁移（只做一次）
+
 ### 插件系统
 
 VSCode 式声明式贡献 + 懒激活：大纲、文件树、格式化是内置插件；内核只保留

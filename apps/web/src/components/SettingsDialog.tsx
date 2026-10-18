@@ -77,14 +77,12 @@ export function SettingsDialog({
                   className={option.value === themePreference ? 'is-active' : ''}
                   aria-pressed={option.value === themePreference}
                   onClick={() => {
-                    // 循环切换 API 是三态的，这里按目标值直接定位
-                    const current = themePreference;
-                    const order: ('light' | 'dark' | 'auto')[] = ['light', 'dark', 'auto'];
-                    let steps = (order.indexOf(option.value) - order.indexOf(current) + 3) % 3;
-                    while (steps > 0) {
-                      runtime.theme.cycle();
-                      steps -= 1;
-                    }
+                    /*
+                     * 直接写配置（而不是 theme.cycle()）——
+                     * cycle 只改内存 + localStorage，不会落到 settings.jsonc；
+                     * 配置成为真源后，主题也必须经由 updateSettings 走一遍。
+                     */
+                    runtime.updateSettings({ theme: option.value });
                   }}
                 >
                   {option.label}

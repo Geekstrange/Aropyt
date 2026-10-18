@@ -806,6 +806,59 @@ fn set_workspace(state: State<'_, WorkspaceState>, root: String) -> Result<(), S
 }
 
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
+/*
+ * ── 用户配置（~/.aropyt/settings.jsonc）────────────────────────
+ *
+ * 走原生命令而不是 fs 插件：fs 插件的 baseDir/scope 组合在 Windows 上
+ * 反复报 "missing file path"（绝对路径与相对路径两种形态都试过）。
+ * 这里直接用 std::fs —— 配置文件属于"应用自己的数据"，不需要插件那层
+ * 权限模型，逻辑也更短：mkdir_all + 原子写 + 读。
+ */
+fn settings_dir(app: &tauri::AppHandle) -> Result<PathBuf, String> {
+    let home = app.path().home_dir().map_err(|error| error.to_string())?;
+    let dir = home.join(".aropyt");
+    fs::create_dir_all(&dir).map_err(|error| format!("mkdir {}: {}", dir.display(), error))?;
+    Ok(dir)
+}
+
+/// 配置文件的绝对路径（顺带确保目录存在）。
+#[tauri::command]
+fn settings_path(app: tauri::AppHandle) -> Result<String, String> {
+    let dir = settings_dir(&app)?;
+    Ok(dir.join("settings.jsonc").to_string_lossy().to_string())
+}
+
+/// 读配置：文件不存在返回 None（不当作错误）。
+#[tauri::command]
+fn settings_read(app: tauri::AppHandle) -> Result<Option<String>, String> {
+    let path = settings_dir(&app)?.join("settings.jsonc");
+    match fs::read_to_string(&path) {
+        Ok(text) => Ok(Some(text)),
+        Err(error) if error.kind() == std::io::ErrorKind::NotFound => Ok(None),
+        Err(error) => Err(format!("read {}: {}", path.display(), error)),
+    }
+}
+
+/// 原子写配置：写 .tmp 后 rename，断电不会留下半截 JSONC。
+#[tauri::command]
+fn settings_write(app: tauri::AppHandle, text: String) -> Result<(), String> {
+    let dir = settings_dir(&app)?;
+    let path = dir.join("settings.jsonc");
+    let tmp = dir.join("settings.jsonc.tmp");
+    {
+        let mut file = fs::File::create(&tmp).map_err(|error| format!("create {}: {}", tmp.display(), error))?;
+        file.write_all(text.as_bytes())
+            .map_err(|error| format!("write {}: {}", tmp.display(), error))?;
+        file.sync_all().map_err(|error| format!("sync {}: {}", tmp.display(), error))?;
+    }
+    // Windows 上 rename 到已存在的文件会失败 → 先删再改名（失败也无妨）
+    if path.exists() {
+        let _ = fs::remove_file(&path);
+    }
+    fs::rename(&tmp, &path).map_err(|error| format!("rename {}: {}", path.display(), error))?;
+    Ok(())
+}
+
 pub fn run() {
     let builder = tauri::Builder::default()
         .plugin(tauri_plugin_fs::init())
@@ -822,7 +875,10 @@ pub fn run() {
             set_workspace,
             import_image,
             pick_markdown_file,
-            save_markdown_file
+            save_markdown_file,
+            settings_path,
+            settings_read,
+            settings_write
         ])
         .setup(|_app| {
             // 状态只在这里注册一次。命令里不再 manage —— 重复注册会 panic。

@@ -54,7 +54,17 @@ import type { DocumentRef, ImportedFile, Memento, PluginManifest } from '@aropyt
 import { LanguagesService, WindowService } from './services.js';
 import { createThemeService, type ResolvedTheme, type ThemePreference, type ThemeService } from './theme.js';
 import { builtinPlugins } from './builtin/index.js';
-import { browserSettingsIo, loadSettings, type SettingsIo } from './config/settings.js';
+/** 配置补丁：允许只给嵌套对象的一部分。 */
+export type DeepPartial<T> = { [K in keyof T]?: T[K] extends object ? Partial<T[K]> : T[K] };
+
+import {
+  browserSettingsIo,
+  DEFAULT_SETTINGS,
+  loadSettings,
+  saveSettings,
+  type AppSettings,
+  type SettingsIo,
+} from './config/settings.js';
 import { createTauriSettingsIo, hasTauri } from './config/tauri-io.js';
 
 export interface ToolbarItem {
@@ -159,6 +169,10 @@ export interface AropytRuntime {
   openSettingsFile(): void;
   /** 配置文件路径（浏览器模式为 null）。 */
   readonly settingsPath: string | null;
+  /** 当前生效的配置（settings.jsonc 的真源快照）。 */
+  getSettings(): AppSettings;
+  /** 合并写入配置：应用到运行时并落盘（失败会提示，不会静默丢）。 */
+  updateSettings(patch: DeepPartial<AppSettings>): void;
   /** vim 模式开关（normal/insert/visual 操作方式）。持久化在 localStorage。 */
   toggleVimMode(): void;
   /**
@@ -629,6 +643,10 @@ export function createRuntime(options: RuntimeOptions): AropytRuntime {
     toggleVimMode,
     activateRelativeTab,
     openSettingsFile,
+    getSettings() {
+      return currentSettings;
+    },
+    updateSettings,
     get settingsPath() {
       return settingsPathValue;
     },
@@ -1150,21 +1168,13 @@ export function createRuntime(options: RuntimeOptions): AropytRuntime {
   }
 
   /** 被用户手动禁用的插件 id 集合（localStorage 持久化）。 */
+  /** 插件禁用集合的真源是配置（settings.jsonc 的 plugins.disabled）。 */
   function loadDisabledPlugins(): string[] {
-    try {
-      const raw = localStorage.getItem('aropyt.disabledPlugins');
-      return raw ? (JSON.parse(raw) as string[]) : [];
-    } catch {
-      return [];
-    }
+    return currentSettings.plugins.disabled;
   }
 
   function saveDisabledPlugins(ids: string[]): void {
-    try {
-      localStorage.setItem('aropyt.disabledPlugins', JSON.stringify(ids));
-    } catch {
-      /* 配额满：本次会话生效，不记住 */
-    }
+    updateSettings({ plugins: { disabled: ids } });
   }
 
   function setPluginEnabled(pluginId: string, enabled: boolean): void {
@@ -1303,6 +1313,42 @@ export function createRuntime(options: RuntimeOptions): AropytRuntime {
    */
   let settingsIo: SettingsIo = browserSettingsIo;
   let settingsPathValue: string | null = null;
+  /** 配置的真相：运行时状态由它派生（theme / vim / sidebar）。 */
+  let currentSettings: AppSettings = structuredClone(DEFAULT_SETTINGS);
+
+  /** 把配置应用到运行时（启动与每次修改都走这里，保证单一入口）。 */
+  function applySettings(next: AppSettings): void {
+    currentSettings = next;
+    theme.set(next.theme);
+    if (state.vimMode !== next.vim.enabled) {
+      state.vimMode = next.vim.enabled;
+      editor.setVimMode(next.vim.enabled);
+    }
+  }
+
+  function mergeSettings(patch: DeepPartial<AppSettings>): AppSettings {
+    return {
+      ...currentSettings,
+      ...patch,
+      editor: { ...currentSettings.editor, ...(patch.editor ?? {}) },
+      vim: { ...currentSettings.vim, ...(patch.vim ?? {}) },
+      sidebar: { ...currentSettings.sidebar, ...(patch.sidebar ?? {}) },
+      plugins: { ...currentSettings.plugins, ...(patch.plugins ?? {}) },
+      history: { ...currentSettings.history, ...(patch.history ?? {}) },
+    };
+  }
+
+  function updateSettings(patch: DeepPartial<AppSettings>): void {
+    const next = mergeSettings(patch);
+    applySettings(next);
+    notify();
+    // 落盘失败必须可见：这是"界面改了但下次启动又回去了"的唯一原因
+    void saveSettings(settingsIo, next).catch((error: unknown) => {
+      const detail =
+        error instanceof Error ? error.message : typeof error === 'string' ? error : JSON.stringify(error);
+      void windowService.showMessage(`配置保存失败：${detail}`, { level: 'error' });
+    });
+  }
   /** 配置文件初始化失败的原因（桌面壳下失败必须如实报出来，不能伪装成"浏览器模式"）。 */
   let settingsInitError: string | null = null;
 
@@ -1339,14 +1385,8 @@ export function createRuntime(options: RuntimeOptions): AropytRuntime {
   }
 
   function toggleVimMode(): void {
-    state.vimMode = !state.vimMode;
-    try {
-      localStorage.setItem('aropyt.vimMode', state.vimMode ? 'on' : 'off');
-    } catch {
-      /* 配额满/隐私模式：本次会话仍生效，只是不记住 */
-    }
-    editor.setVimMode(state.vimMode);
-    notify();
+    // 走配置系统：settings.jsonc 才是真源（不再单独写 localStorage）
+    updateSettings({ vim: { enabled: !state.vimMode } });
   }
 
   /**
@@ -1570,6 +1610,7 @@ export function createRuntime(options: RuntimeOptions): AropytRuntime {
     }
     const loaded = await loadSettings(settingsIo).catch(() => null);
     if (loaded) {
+      applySettings(loaded.settings);
       if (loaded.problems.unknownKeys.length > 0 || loaded.problems.invalidValues.length > 0) {
         void windowService.showMessage(
           `settings.jsonc 有 ${loaded.problems.unknownKeys.length + loaded.problems.invalidValues.length} 处问题，已按默认值处理`,
