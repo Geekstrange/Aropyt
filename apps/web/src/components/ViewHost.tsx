@@ -293,6 +293,8 @@ export function ViewColumn({ runtime, location, side, open }: ViewColumnProps): 
     <aside
       className={`view-column view-column--${side}`}
       data-open={open ? 'true' : 'false'}
+      // 可编程聚焦：Ctrl+0 焦点落到侧栏（内部没有可聚焦项时兜底）
+      tabIndex={-1}
     >
       {declared.map((view) => (
         <MountedView

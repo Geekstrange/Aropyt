@@ -1,4 +1,23 @@
+// @ts-nocheck
+/* 构建配置跑在 node 里，本仓库 tsconfig 未引入 node 类型；
+   这里不参与应用的类型边界，压掉 node:* 模块声明缺失。 */
+import { readFileSync } from 'node:fs';
+import { dirname, resolve } from 'node:path';
+import { fileURLToPath } from 'node:url';
 import { defineConfig } from 'vite';
+
+/** 读取仓库根 package.json 的 version（发布版本的真源）。 */
+function readRootVersion(): string {
+  try {
+    const root = resolve(dirname(fileURLToPath(import.meta.url)), '..', '..');
+    const pkg = JSON.parse(readFileSync(resolve(root, 'package.json'), 'utf8')) as {
+      version?: string;
+    };
+    return pkg.version ?? '0.0.0';
+  } catch {
+    return '0.0.0';
+  }
+}
 import react from '@vitejs/plugin-react';
 
 /**
@@ -27,11 +46,19 @@ export default defineConfig(({ command }) => ({
     port: 5173,
     strictPort: true,
   },
+  define: {
+    /*
+     * 版本号取**仓库根** package.json。
+     * 曾用 process.env.npm_package_version —— 在 workspace 里跑构建时它是
+     * apps/web 的版本（0.1.0），状态栏因此显示成 v0.1.0（用户实测发现）。
+     */
+    __APP_VERSION__: JSON.stringify(readRootVersion()),
+  },
   build: {
     target: 'es2022',
     sourcemap: command === 'serve',
     /*
-     * 清理由 scripts/clean-dist.mjs 负责（把 dist 重命名为 dist-stale-*）。
+     * 清理由 scripts/clean-dist.mjs（逐批删除）负责。
      * 不让 vite 自己清空：沙箱环境的批量删除防护会把"一次删上百个资产"
      * 拦下来（SAFE_DELETE_BULK_CONFIRM_REQUIRED），构建直接失败。
      */

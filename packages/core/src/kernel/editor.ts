@@ -9,7 +9,7 @@
  * 都执行、而且是同步代码无法超时，它是整个防挂起体系里最需要被盯住的入口。
  */
 
-import { Compartment, EditorState, type Extension } from '@codemirror/state';
+import { Compartment, EditorState, Prec, type Extension } from '@codemirror/state';
 import {
   EditorView,
   crosshairCursor,
@@ -27,7 +27,7 @@ import { bracketMatching, foldGutter, foldKeymap, indentOnInput } from '@codemir
 import { markdown, markdownLanguage } from '@codemirror/lang-markdown';
 import { languages } from '@codemirror/language-data';
 import { autocompletion, closeBrackets, closeBracketsKeymap, completionKeymap } from '@codemirror/autocomplete';
-import { highlightSelectionMatches, searchKeymap } from '@codemirror/search';
+import { highlightSelectionMatches, search, searchKeymap } from '@codemirror/search';
 
 import type {
   CapabilitySnapshot,
@@ -77,6 +77,8 @@ export interface EditorOptions {
    */
   readonly resolveAsset?: (url: string) => Promise<string | null>;
   readonly onDocChange?: (text: string, version: number) => void;
+  /** 源码/渲染模式变化（含 Ctrl+/ 与 vim 强制切换）—— 宿主据此刷新按钮状态。 */
+  readonly onModeChange?: (sourceMode: boolean) => void;
   readonly onCursorChange?: (info: CursorInfo) => void;
   /** Ctrl/Cmd+S。由应用层决定它意味着什么。 */
   readonly onSaveRequest?: () => void;
@@ -104,7 +106,11 @@ export class EditorAdapter implements EditorApi {
   readonly #modeClassSlot = new Compartment();
   /** vim 模式槽：运行时开关，不重建编辑器。 */
   readonly #vimSlot = new Compartment();
+  /** 默认键位槽：vim 开启时收起（见构造函数里的说明）。 */
+  readonly #keymapSlot = new Compartment();
   #vimOn = false;
+  /** 动态 import 的 vim 模块（懒加载，这里只留 getCM 供状态查询）。 */
+  #vimApi: { getCM: (view: EditorView) => unknown } | null = null;
   #sourceMode = false;
   /*
    * 曾经还有一个 #forcedSource（"预览面板把编辑区逼成源码"）。
@@ -128,13 +134,32 @@ export class EditorAdapter implements EditorApi {
   readonly #saveListeners = new Set<(payload: { path: string }) => void>();
 
   constructor(private readonly options: EditorOptions) {
-    this.#sourceMode = options.inlineRender === false;
-    this.#appliedSource = this.#sourceMode;
     this.#vimOn = options.vimMode ?? false;
+    /*
+     * vim 开启时初始就是源码态：渲染态下非光标块是整块 widget，j/k 与
+     * 上下键按 DOM 几何移动会跳过文本（用户实测"跳过文字行"）。
+     * 注意这只管**初始**状态；用户仍可用 Ctrl+/ 切到渲染态（能切回去
+     * 才是可用的，上一版"拒绝切回"导致用户卡在源码态出不来）。
+     */
+    this.#sourceMode = options.inlineRender === false || this.#vimOn;
+    this.#appliedSource = this.#sourceMode;
     // vim 模式的初始装载是异步的（动态 import），就绪后补挂扩展
     if (this.#vimOn) {
-      void import('@replit/codemirror-vim').then(({ vim }) => {
-        if (this.#vimOn) this.#view.dispatch({ effects: this.#vimSlot.reconfigure(vim()) });
+      void import('@replit/codemirror-vim').then(({ vim, getCM }) => {
+        this.#vimApi = { getCM: getCM as (view: EditorView) => unknown };
+        if (!this.#vimOn) return;
+        this.#view.dispatch({
+          effects: [
+            this.#vimSlot.reconfigure(
+              Prec.highest([
+                vim(),
+                // 类名给 CSS 用：vim 模式禁掉原生鼠标选择（见 styles.css）
+                EditorView.editorAttributes.of({ class: 'aropyt-vim' }),
+              ]),
+            ),
+            this.#keymapSlot.reconfigure(keymap.of([...historyKeymap, indentWithTab])),
+          ],
+        });
       });
     }
 
@@ -155,13 +180,49 @@ export class EditorAdapter implements EditorApi {
           crosshairCursor(),
           highlightActiveLine(),
           highlightSelectionMatches(),
+          /*
+           * 搜索面板：必须显式安装 search() —— 只装 searchKeymap 时
+           * openSearchPanel 没有对应的 state，面板的配色与文案都无法定制
+           * （用户看到的"原始 UI"就是 CM6 内部的兜底渲染）。
+           * phrases 把按钮文案换成中文（CM6 官方支持的本地化入口）。
+           */
+          search({ top: true }),
+          /*
+           * 面板文案走 EditorState.phrases（CM6 的全局文案 facet）——
+           * 键名是 CM6 search 内部调用 phrase() 时用的英文原文，
+           * 不能改成任意中文键（试过 phrases 放在 search() 里，类型上不存在）。
+           */
+          EditorState.phrases.of({
+            Find: '查找',
+            Replace: '替换',
+            // CM6 内部用的是小写键（用户实测这两个漏翻）
+            replace: '替换',
+            'replace all': '全部替换',
+            next: '下一个',
+            previous: '上一个',
+            all: '全部选中',
+            'match case': '区分大小写',
+            regexp: '正则',
+            'by word': '全词匹配',
+            close: '关闭',
+            'replaced all': '已全部替换',
+            'current match': '当前匹配',
+            'on line': '第几行',
+            'Go to line': '跳转到行',
+            go: '跳转',
+          }),
           markdown({ base: markdownLanguage, codeLanguages: languages }),
           // Typora 式原地渲染。必须在 markdown 解析器之后 —— 它依赖 syntaxTree。
           //
           // 走 Compartment：切模式时重配这个槽，而不是重建视图。
           // 重建会连带丢失撤销历史、光标位置、滚动位置 ——
           // 那种"切一下模式回到文档开头"的体验是灾难性的。
-          this.#renderSlot.of(this.#renderModeExtensions(options.inlineRender === false)),
+          /*
+           * 必须用 this.#sourceMode（已含 vim 强制源码）—— 只看 options.inlineRender
+           * 会让"启动即 vim"的场景下：状态说源码、实际注入的却是渲染态扩展
+           * （#appliedSource 与槽分叉，用户表现为"源码模式未激活"）。
+           */
+          this.#renderSlot.of(this.#renderModeExtensions(this.#sourceMode)),
           /*
            * 自有键位必须排在 `...defaultKeymap` **之前**。
            *
@@ -182,27 +243,81 @@ export class EditorAdapter implements EditorApi {
             // Ctrl+/ 切换源码模式 —— 与 Typora 一致。
             // 放这里而不是贡献点：它是编辑器自身状态的切换，
             // 不该让插件来决定"这个编辑器能不能切模式"。
-            { key: 'Mod-/', preventDefault: true, run: () => { this.setSourceMode(!this.#sourceMode); return true; } },
+            {
+              key: 'Mod-/',
+              preventDefault: true,
+              run: () => {
+                /*
+                 * vim 模式恒为源码态 —— Ctrl+/ 在这里**直接吞掉**。
+                 * 自有 keymap 独立于 vim 的键位层（vim 不占 Ctrl+/），
+                 * 不做这层拦截的话 vim 下仍能切到渲染态，
+                 * j/k 又会跳块（用户实测）。
+                 */
+                if (this.#vimOn) return true;
+                this.setSourceMode(!this.#sourceMode);
+                return true;
+              },
+            },
           ]),
-          keymap.of([
-            ...closeBracketsKeymap,
-            ...defaultKeymap,
-            ...searchKeymap,
-            ...historyKeymap,
-            ...foldKeymap,
-            ...completionKeymap,
-            indentWithTab,
-          ]),
+          /*
+           * 默认键位用 Compartment 包起来：**vim 模式下必须整体收起**。
+           *
+           * CM6 的 keymap 前面优先，而 defaultKeymap 里的 Backspace 是
+           * "删除字符" —— 排在 vim 之前就会让 normal 模式的 Backspace
+           * 真的删字（用户实测打回：不进插入模式也能删）。
+           * vim 模式下只留历史与缩进兜底（insert 模式的 Tab、Ctrl-Z）。
+           */
+          this.#keymapSlot.of(
+            keymap.of([
+              ...closeBracketsKeymap,
+              ...defaultKeymap,
+              ...searchKeymap,
+              ...historyKeymap,
+              ...foldKeymap,
+              ...completionKeymap,
+              indentWithTab,
+            ]),
+          ),
           // 主题常驻，不再随模式切换 —— 它内部用 `&.aropyt-render-mode`
           // 这个类来区分排版，所以本身与模式无关。
           // 模式类由下面的槽设置。
           aropytEditorTheme,
           this.#modeClassSlot.of(
             EditorView.editorAttributes.of({
-              class: options.inlineRender === false ? 'aropyt-source-mode' : 'aropyt-render-mode',
+              /*
+               * 必须用 this.#sourceMode（已含 vim 强制源码），不能只看
+               * options.inlineRender —— 否则"启动时 vim 已开启"的场景下
+               * 按钮显示激活、编辑器实际却是渲染态（用户实测）。
+               */
+              class: this.#sourceMode ? 'aropyt-source-mode' : 'aropyt-render-mode',
             }),
           ),
           aropytHighlightStyle,
+          EditorView.domEventHandlers({
+            // vim 模式禁用鼠标选择（单击定位仍可用）—— 老用户的手始终在键位层
+            mousedown: (event) => this.#vimOn && (event.shiftKey || event.detail > 1),
+            /*
+             * 拖选必须拦 **mousemove**：CM6 的 drawSelection() 自绘选区，
+             * 选中过程完全不走浏览器原生选择 —— `user-select: none`
+             * 对它无效（因此上一版没能禁掉拖选）。
+             * 按住左键移动时返回 true = CM6 不扩展选择；
+             * 单击定位（按下即抬起，无 move）仍然可用。
+             */
+            mousemove: (event) => this.#vimOn && event.buttons === 1,
+            selectstart: () => this.#vimOn,
+            /*
+             * vim 模式下的纵向移动：如果当前在渲染态，先切回源码态。
+             * 渲染态的非光标块是整块 widget，j/k 只能落在 widget 边界
+             * （用户实测"跳过文字行"）—— 渲染态与 vim 的行级光标本质冲突，
+             * 一按 j/k 就退回源码是最不反直觉的处理。
+             */
+            keydown: (event) => {
+              if (!this.#vimOn || this.#sourceMode) return false;
+              if (!['j', 'k', 'ArrowDown', 'ArrowUp'].includes(event.key)) return false;
+              this.setSourceMode(true);
+              return false;
+            },
+          }),
           this.#slot.of([]),
           // vim 槽：初始状态来自 options（持久化由宿主负责）
           this.#vimSlot.of([]),
@@ -248,7 +363,9 @@ export class EditorAdapter implements EditorApi {
    * 光标位置、滚动位置。切模式后回到文档开头是灾难性的体验。
    */
   setSourceMode(source: boolean): void {
+    if (this.#sourceMode === source) return;
     this.#sourceMode = source;
+    this.options.onModeChange?.(source);
     this.#applyMode();
   }
 
@@ -267,12 +384,63 @@ export class EditorAdapter implements EditorApi {
   setVimMode(on: boolean): void {
     if (on === this.#vimOn) return;
     this.#vimOn = on;
+    /*
+     * vim 模式强制源码态。
+     *
+     * 两个理由：
+     * 1. 渲染态下非光标块是整块 widget（8 行源码 = 1 行 DOM），j/k 与
+     *    上下方向键按 DOM 几何移动，只会落在 widget 边界 —— 用户实测
+     *    "跳过文字行落到空白行"。
+     * 2. vim 用户的编辑习惯本来就是源码（Typora 的 vim 模式同样如此）。
+     * 关闭 vim 时不自动切回，用户按 Ctrl+/ 自己决定。
+     */
+    if (on) this.setSourceMode(true);
     if (!on) {
-      this.#view.dispatch({ effects: this.#vimSlot.reconfigure([]) });
+      /*
+       * 退出 vim：回到渲染态。
+       * vim 是"强制源码"的唯一原因，退出后应回到用户的阅读模式，
+       * 而不是把人留在源码态里（上一版留在源码态，用户以为按钮坏了）。
+       */
+      this.setSourceMode(false);
+      this.#view.dispatch({
+        effects: [
+          this.#vimSlot.reconfigure([]),
+          this.#keymapSlot.reconfigure(
+            keymap.of([
+              ...closeBracketsKeymap,
+              ...defaultKeymap,
+              ...searchKeymap,
+              ...historyKeymap,
+              ...foldKeymap,
+              ...completionKeymap,
+              indentWithTab,
+            ]),
+          ),
+        ],
+      });
       return;
     }
-    void import('@replit/codemirror-vim').then(({ vim }) => {
-      if (this.#vimOn) this.#view.dispatch({ effects: this.#vimSlot.reconfigure(vim()) });
+    void import('@replit/codemirror-vim').then(({ vim, getCM }) => {
+      if (!this.#vimOn) return;
+      /*
+       * 这里也必须保存 getCM —— 只在构造时保存的话，"先关 vim 再开"的
+       * 路径下 #vimApi 永远是 null，getVimSubMode() 恒返回 null，
+       * 状态栏就永远显示 fallback 的 NORMAL（用户实测：按 i 进插入模式
+       * 仍显示 NORMAL）。
+       */
+      this.#vimApi = { getCM: getCM as (view: EditorView) => unknown };
+      this.#view.dispatch({
+        effects: [
+          this.#vimSlot.reconfigure(
+            Prec.highest([
+              vim(),
+              EditorView.editorAttributes.of({ class: 'aropyt-vim' }),
+            ]),
+          ),
+          // 收起默认键位：否则 defaultKeymap 的 Backspace/Delete 会先命中
+          this.#keymapSlot.reconfigure(keymap.of([...historyKeymap, indentWithTab])),
+        ],
+      });
     });
   }
 
@@ -297,6 +465,27 @@ export class EditorAdapter implements EditorApi {
   }
 
   /** 实际生效的模式。UI 判断按钮亮不亮要看这个。 */
+  /**
+   * vim 子模式（normal / insert / visual …）。
+   * 未开 vim 时返回 null —— 状态栏据此显示 -- NORMAL -- 这类指示，
+   * 这是"用起来像 vim"最直接的一环（老用户靠它确认当前模式）。
+   */
+  getVimSubMode(): string | null {
+    if (!this.#vimOn || !this.#vimApi) return null;
+    try {
+      const cm = this.#vimApi.getCM(this.#view) as { state?: { vim?: { mode?: unknown } } } | null;
+      const mode = cm?.state?.vim?.mode;
+      if (typeof mode !== 'string') return null;
+      /*
+       * 库在 normal 模式返回的是 'vim'（内部默认名），不是 'normal' ——
+       * 直接大写会显示成 "VIM"，与旁边的 vim logo 重复（用户实测）。
+       */
+      return mode === 'vim' ? 'normal' : mode;
+    } catch {
+      return null;
+    }
+  }
+
   get sourceMode(): boolean {
     return this.#sourceMode;
   }

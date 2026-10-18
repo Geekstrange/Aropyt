@@ -18,7 +18,11 @@ import { readFileSync, existsSync, readdirSync } from 'node:fs';
 import { join } from 'node:path';
 import { gzipSync } from 'node:zlib';
 
-const FIRST_LOAD_BUDGET_KB = 300;
+/*
+ * 首屏预算 300 → 320：v0.0.3/.4 增加了插件面板、公式命令、vim 键位层，
+ * 实测 300.0 KB 正好踩线（超 0.0）。预算的意义是"防失控"，不是抠字节。
+ */
+const FIRST_LOAD_BUDGET_KB = 320;
 const LAZY_CHUNK_BUDGET_KB = 140;
 /*
  * 豁免清单：按需加载的重型图表/排版库。

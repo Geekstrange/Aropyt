@@ -100,6 +100,8 @@ export interface RuntimeState {
   readonly tabs: readonly EditorTab[];
   /** vim 模式是否开启。 */
   readonly vimMode: boolean;
+  /** vim 子模式（NORMAL/INSERT/VISUAL…），未开 vim 时 null。 */
+  readonly vimSubMode: string | null;
   /** 恢复自草稿/崩溃日志的文件路径；null = 本次会话没有恢复过。状态栏黄点用它，且只在**当前激活**文件是它时才亮。 */
   readonly recoveredPath: string | null;
   readonly plugins: readonly PluginRecord[];
@@ -149,6 +151,8 @@ export interface AropytRuntime {
   closeTab(path: string): void;
   /** 新建一个空白未命名标签；若未命名标签已存在则直接激活它。 */
   createUntitledTab(): void;
+  /** 按打开顺序循环切换标签（Ctrl+Tab / Ctrl+Shift+Tab）。 */
+  activateRelativeTab(delta: number): void;
   /** vim 模式开关（normal/insert/visual 操作方式）。持久化在 localStorage。 */
   toggleVimMode(): void;
   /**
@@ -281,6 +285,7 @@ export function createRuntime(options: RuntimeOptions): AropytRuntime {
     dirty: state.dirty,
     tabs: state.tabs,
     vimMode: state.vimMode,
+    vimSubMode: lastVimSubMode,
     recoveredPath: state.recoveredPath,
     plugins: host.records,
     sourceMode: editor.sourceMode,
@@ -446,6 +451,7 @@ export function createRuntime(options: RuntimeOptions): AropytRuntime {
     parent: options.editorHost,
     platform: capabilities.platform,
     capabilities: capabilities.snapshot,
+    onModeChange: () => notify(),
     onDocChange: (text) => {
       if (loadingDocument) return;
       state.dirty = true;
@@ -615,6 +621,7 @@ export function createRuntime(options: RuntimeOptions): AropytRuntime {
     closeTab,
     createUntitledTab,
     toggleVimMode,
+    activateRelativeTab,
     setPluginEnabled,
     importExternalPlugin,
     builtinPluginIds: new Set(builtinPlugins.map((plugin) => plugin.manifest.id)),
@@ -625,9 +632,13 @@ export function createRuntime(options: RuntimeOptions): AropytRuntime {
     },
 
     toggleSourceMode() {
-      // 用 preferredSourceMode 而不是 sourceMode：
-      // 预览面板开着时 sourceMode 恒为 true，拿它取反会让按钮变成"点了没反应"。
-      editor.setSourceMode(!editor.preferredSourceMode);
+      /*
+       * 取反 **实际生效** 的 sourceMode，不是 preferredSourceMode。
+       * vim 强制源码期间 preferred 一直停在 false（用户没主动切过），
+       * 用它取反永远是"设成 true" —— 已经是源码态时点了没反应，
+       * 表现为"关闭源码模式关不掉，要开关一次 vim 才行"（用户实测）。
+       */
+      editor.setSourceMode(!editor.sourceMode);
       notify();
     },
 
@@ -1261,6 +1272,28 @@ export function createRuntime(options: RuntimeOptions): AropytRuntime {
    * vim 模式开关。开关状态落 localStorage（同步，下一帧就生效，
    * 也在下次启动时先于编辑器创建被读到）。
    */
+  /** vim 子模式：从编辑器读，轮询比较（库没有模式变更回调可用）。 */
+  function readVimSubMode(): string | null {
+    return editor.getVimSubMode();
+  }
+
+  let lastVimSubMode: string | null = null;
+  setInterval(() => {
+    const next = readVimSubMode();
+    if (next !== lastVimSubMode) {
+      lastVimSubMode = next;
+      notify();
+    }
+  }, 250);
+
+  function activateRelativeTab(delta: number): void {
+    if (state.tabs.length < 2) return;
+    const index = state.tabs.findIndex((tab) => tab.path === state.activePath);
+    if (index < 0) return;
+    const next = state.tabs[(index + delta + state.tabs.length) % state.tabs.length];
+    if (next) void activateTab(next.path);
+  }
+
   function toggleVimMode(): void {
     state.vimMode = !state.vimMode;
     try {

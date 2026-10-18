@@ -253,10 +253,15 @@ button {
   overflow: hidden;
 }
 
-/* 处于"开启"状态的开关按钮（如预览面板）。 */
+/*
+ * 处于"开启"状态的开关按钮（源码模式等）。
+ * 原来只有 surface-3 背景 —— 深色主题下与常规按钮几乎没差别，
+ * 用户看不出当前在哪个模式（实测反馈）。加主色描边与主色图标。
+ */
 .tool-button--on {
   background: var(--md-surface-3);
-  color: var(--md-text);
+  color: var(--md-link);
+  box-shadow: inset 0 0 0 1px var(--md-link);
 }
 
 /* 头部图标按钮（侧栏开关）。触屏最小命中区域 40px。 */
@@ -1135,4 +1140,23 @@ button {
  排版）按真实换行渲染 */
 .toast {
   white-space: pre-line;
+}
+
+/*
+ * vim 模式禁用鼠标选择。
+ * domEventHandlers 只能拦 mousedown/selectstart 的**起点**，拖选过程中
+ * 浏览器原生的选择行为仍然发生（用户实测能拖选）—— 只有 user-select
+ * 能从根上关掉。单击定位光标仍然可用（那不是选择）。
+ */
+.cm-editor.aropyt-vim .cm-content {
+  user-select: none;
+}
+
+/* vim 子模式文字（NORMAL / INSERT / VISUAL） */
+.status-bar__vim-mode {
+  margin-left: 6px;
+  font-family: var(--font-mono);
+  font-size: 11px;
+  letter-spacing: 0.06em;
+  color: var(--md-vim-green, var(--md-text));
 }

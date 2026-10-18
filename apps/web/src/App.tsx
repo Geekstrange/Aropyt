@@ -35,7 +35,28 @@ export function App(): JSX.Element {
   // 默认值随宽度走：宽屏（桌面）面板默认打开，因为 Typora 的核心体验
   // 就是编辑器与预览并排；窄屏（Android）默认全关，否则一进来就被
   // 两个覆盖层糊住屏幕，连字都打不了。
-  const [sidebarOpen, setSidebarOpen] = useState(() => isWideScreen());
+  /*
+   * 侧栏开关：**保存用户的选择**（localStorage 同步读取，首帧就生效）。
+   * 没存过才回落到"宽屏默认打开"—— 用户手动关过就尊重用户。
+   */
+  const [sidebarOpen, setSidebarOpen] = useState(() => {
+    try {
+      const saved = localStorage.getItem('aropyt.sidebarOpen');
+      if (saved === 'on') return true;
+      if (saved === 'off') return false;
+    } catch {
+      /* 隐私模式：退回默认 */
+    }
+    return isWideScreen();
+  });
+
+  useEffect(() => {
+    try {
+      localStorage.setItem('aropyt.sidebarOpen', sidebarOpen ? 'on' : 'off');
+    } catch {
+      /* 配额满：本次会话仍生效 */
+    }
+  }, [sidebarOpen]);
 
   useEffect(() => {
     const host = editorHostRef.current;
@@ -49,6 +70,65 @@ export function App(): JSX.Element {
     setRuntime(instance);
     return () => instance.dispose();
   }, []);
+
+  /*
+   * 宿主级快捷键：
+   *   Ctrl/Cmd+Shift+B   切换侧栏
+   *   Ctrl/Cmd+Shift+N   新建标签
+   *   Ctrl/Cmd+Tab       切换下一个标签（Shift 反向）
+   *   Ctrl/Cmd+0         聚焦侧栏
+   *
+   * 为什么侧栏/新建要带 Shift：Ctrl-B 与 Ctrl-N 在 vim 里分别是
+   * "向上翻页"与"插入模式补全"，抢走它们会直接破坏 vim 老用户的肌肉记忆。
+   * 带 Shift 的组合 vim 不用，宿主安全接管。
+   */
+  useEffect(() => {
+    /*
+     * **只用捕获阶段一个 handler**（之前是"捕获阶段 stopPropagation + 冒泡
+     * 阶段执行"——stopPropagation 会把事件从传播链上摘掉，冒泡阶段根本
+     * 收不到，于是所有快捷键集体失效，用户实测六项全废）。
+     *
+     * 捕获阶段先于 CM6/vim 的键位层（它们监听的是 contentDOM 上的冒泡），
+     * 所以这里 preventDefault + stopPropagation 才能压过 vim 的 Prec.highest。
+     */
+    const onKeyDown = (event: KeyboardEvent): void => {
+      if (!runtime) return;
+      const mod = event.ctrlKey || event.metaKey;
+      if (!mod || event.altKey) return;
+      const shift = event.shiftKey;
+      const key = event.key.toLowerCase();
+
+      if (key === 'b' && shift) {
+        event.preventDefault();
+        event.stopPropagation();
+        setSidebarOpen((value) => !value);
+        return;
+      }
+      if (key === 'n' && shift) {
+        event.preventDefault();
+        event.stopPropagation();
+        runtime.createUntitledTab();
+        return;
+      }
+      if (event.key === 'Tab') {
+        event.preventDefault();
+        event.stopPropagation();
+        runtime.activateRelativeTab(shift ? -1 : 1);
+        return;
+      }
+      if (event.key === '0') {
+        event.preventDefault();
+        event.stopPropagation();
+        const target =
+          document.querySelector<HTMLElement>(
+            '.view-column [tabindex]:not([tabindex="-1"]), .view-column button, .view-column [role="treeitem"]',
+          ) ?? document.querySelector<HTMLElement>('.view-column');
+        target?.focus();
+      }
+    };
+    window.addEventListener('keydown', onKeyDown, true);
+    return () => window.removeEventListener('keydown', onKeyDown, true);
+  }, [runtime]);
 
   /*
    * 关闭窗口拦截（桌面壳）：有未保存修改时先确认，防误关丢内容。
@@ -384,16 +464,23 @@ function Toolbar({ runtime }: ToolbarProps): JSX.Element {
        * 现在**没有任何东西会强制源码模式**（预览面板不再拽着编辑区），
        * 所以 preferredSourceMode 就是 sourceMode，禁用态也一并去掉。
        */}
-      <button
-        type="button"
-        className={`tool-button${state.preferredSourceMode ? ' tool-button--on' : ''}`}
-        title={state.preferredSourceMode ? '退出源码模式 (Ctrl+/)' : '源码模式 (Ctrl+/)'}
-        aria-label={state.preferredSourceMode ? '退出源码模式' : '进入源码模式'}
-        aria-pressed={state.preferredSourceMode}
-        onClick={() => runtime.toggleSourceMode()}
-      >
-        <Icon name="code" />
-      </button>
+      {/*
+       * vim 模式下**不显示**源码模式按钮：vim 恒为源码态（块渲染与
+       * 行级光标本质冲突），按钮留着只会让人以为能切、点不动又困惑。
+       * 需要源码/渲染切换时先关掉 vim。
+       */}
+      {!state.vimMode && (
+        <button
+          type="button"
+          className={`tool-button${state.sourceMode ? ' tool-button--on' : ''}`}
+          title={state.sourceMode ? '退出源码模式 (Ctrl+/)' : '源码模式 (Ctrl+/)'}
+          aria-label={state.sourceMode ? '退出源码模式' : '进入源码模式'}
+          aria-pressed={state.sourceMode}
+          onClick={() => runtime.toggleSourceMode()}
+        >
+          <Icon name="code" />
+        </button>
+      )}
 
       {/*
        * 预览面板开关**已从工具栏移除**。
@@ -461,7 +548,17 @@ function StatusBar({ runtime }: { readonly runtime: AropytRuntime }): JSX.Elemen
         onClick={() => runtime.toggleVimMode()}
       >
         {state.vimMode ? (
-          <Icon name="vimMode" />
+          /*
+           * vim-mode 图标 + 子模式文字（NORMAL / INSERT / VISUAL）。
+           * 用户要的就是这个组合：图标标识"处于 vim 模式"，文字说明
+           * "在 vim 的哪个子模式里"。
+           */
+          <>
+            <Icon name="vimMode" />
+            <span className="status-bar__vim-mode">
+              {state.vimSubMode ? state.vimSubMode.toUpperCase() : 'NORMAL'}
+            </span>
+          </>
         ) : (
           <span
             className="status-bar__dot"
@@ -475,7 +572,6 @@ function StatusBar({ runtime }: { readonly runtime: AropytRuntime }): JSX.Elemen
             }}
           />
         )}
-        <span>VIM</span>
       </button>
       {/*
        * 「插件 4/4」已移除。
@@ -518,7 +614,7 @@ function StatusBar({ runtime }: { readonly runtime: AropytRuntime }): JSX.Elemen
         onClick={() =>
           void runtime.windowService.showMessage(
             [
-              'Aropyt v0.0.1',
+              `Aropyt v${__APP_VERSION__}`,
               '',
               'GitHub:',
               'https://github.com/Geekstrange/Aropyt',
@@ -529,7 +625,7 @@ function StatusBar({ runtime }: { readonly runtime: AropytRuntime }): JSX.Elemen
           )
         }
       >
-        Aropyt v0.0.1
+        Aropyt v{__APP_VERSION__}
       </button>
       {/*
        * 「预算超支 N 次」改成说明型提示 + 具体条目。
@@ -621,7 +717,17 @@ function TabBar({ runtime }: { readonly runtime: AropytRuntime }): JSX.Element |
             title={tab.preview ? `${tab.path}（预览，编辑后固定）` : tab.path}
             onClick={() => runtime.activateTab(tab.path)}
           >
-            <span className="tab__label">{name}</span>
+            <span
+              className="tab__label"
+              onAuxClick={(event) => {
+                if (event.button !== 1) return;
+                event.preventDefault();
+                event.stopPropagation();
+                runtime.closeTab(tab.path);
+              }}
+            >
+              {name}
+            </span>
             {dirty && (
               <span className="tab__dirty" aria-label="未保存">
                 ●
@@ -633,6 +739,13 @@ function TabBar({ runtime }: { readonly runtime: AropytRuntime }): JSX.Element |
               aria-label={`关闭 ${name}`}
               onClick={(event) => {
                 // 不冒泡：否则关标签会顺手把它激活一下，看起来像"点两次"
+                event.stopPropagation();
+                runtime.closeTab(tab.path);
+              }}
+              onAuxClick={(event) => {
+                // 中键关闭（浏览器/VSCode 的通用手势）
+                if (event.button !== 1) return;
+                event.preventDefault();
                 event.stopPropagation();
                 runtime.closeTab(tab.path);
               }}

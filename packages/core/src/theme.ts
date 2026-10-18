@@ -34,6 +34,62 @@ export const aropytEditorTheme: Extension = EditorView.theme(
      * 代价是每写一条模式样式都要多打一个前缀；收益是改样式时
      * 不再需要先猜"到底哪条在生效"。
      */
+    /*
+     * Ctrl+F / Ctrl+H 搜索面板。
+     *
+     * 写在 CM6 的 theme 里而不是外层 CSS：CM6 自己的搜索面板样式是
+     * `& .cm-panel.cm-search` 生成的，外层写法特异性相同、注入更早 →
+     * 被压掉（用户看到的是"纯黑的按钮 + 圆角矩形"）。
+     * theme 里的规则由同一个生成器输出，必然后置。
+     */
+    '& .cm-panel.cm-search': {
+      display: 'flex',
+      flexWrap: 'wrap',
+      alignItems: 'center',
+      gap: '6px',
+      padding: '6px 10px',
+      background: 'var(--md-surface-2)',
+      borderTop: '1px solid var(--md-border)',
+      fontFamily: 'var(--font-sans)',
+      fontSize: '13px',
+      color: 'var(--md-text)',
+    },
+    '& .cm-panel.cm-search input, & .cm-panel.cm-search button': {
+      font: 'inherit',
+      color: 'var(--md-text)',
+      background: 'var(--md-surface-1)',
+      border: '1px solid var(--md-border)',
+      // 用户明确要求：不要圆角矩形
+      borderRadius: '0',
+      padding: '3px 8px',
+      outline: 'none',
+      boxShadow: 'none',
+    },
+    '& .cm-panel.cm-search input:focus, & .cm-panel.cm-search button:focus-visible': {
+      borderColor: 'var(--md-link)',
+    },
+    '& .cm-panel.cm-search button': {
+      cursor: 'pointer',
+      background: 'var(--md-surface-3)',
+      color: 'var(--md-text)',
+    },
+    "& .cm-panel.cm-search button[name='close']": {
+      border: 'none',
+      background: 'transparent',
+      color: 'var(--md-muted)',
+      fontSize: '15px',
+      padding: '0 6px',
+    },
+    '& .cm-panel.cm-search label': {
+      color: 'var(--md-muted)',
+      fontSize: '12px',
+      display: 'inline-flex',
+      alignItems: 'center',
+      gap: '3px',
+    },
+    '& .cm-panel.cm-search input[type=checkbox]': {
+      accentColor: 'var(--md-link)',
+    },
     '&.aropyt-source-mode .cm-scroller': {
       fontFamily: 'var(--font-mono)',
       lineHeight: '1.75',

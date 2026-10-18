@@ -1564,8 +1564,12 @@ const aropytInlineTheme = EditorView.baseTheme({
     /*
      * 行高放在 scroller 上（行会继承）而不是每行各写一遍：
      * 一处定义，且源码模式卸载这套样式时它会跟着一起走。
+     *
+     * ⚠️ 这里是**渲染态行距的唯一真源** —— 之前两轮改的是 theme.ts 与
+     * .cm-md-block，都不在这条链上（行继承自 scroller），所以"行距过大"
+     * 两轮没修掉。1.8 → 1.55 与块内排版保持一致。
      */
-    lineHeight: '1.8',
+    lineHeight: '1.55',
   },
   '&.aropyt-render-mode .cm-content': {
     /*
@@ -1853,17 +1857,21 @@ const aropytInlineTheme = EditorView.baseTheme({
    */
   '.cm-md-block': {
     display: 'flow-root',
-    lineHeight: '1.7',
+    /*
+     * 1.7 在渲染态下显得松散（用户反馈"预览模式行间距过大"）。
+     * 1.55 接近 Typora 的正文行高，同时保留中文阅读的呼吸感。
+     */
+    lineHeight: '1.55',
   },
   '.cm-md-block > :first-child': { marginTop: 0 },
   '.cm-md-block > :last-child': { marginBottom: 0 },
-  '.cm-md-block h1': { fontSize: '1.9em', fontWeight: '600', margin: '0.9em 0 0.45em', paddingBottom: '0.25em', borderBottom: '1px solid var(--md-border)' },
+  '.cm-md-block h1': { fontSize: '1.9em', fontWeight: '600', margin: '0.7em 0 0.35em', paddingBottom: '0.25em', borderBottom: '1px solid var(--md-border)' },
   '.cm-md-block h2': { fontSize: '1.5em', fontWeight: '600', margin: '0.85em 0 0.4em' },
   '.cm-md-block h3': { fontSize: '1.25em', fontWeight: '600', margin: '0.8em 0 0.35em' },
   '.cm-md-block h4': { fontSize: '1.1em', fontWeight: '600', margin: '0.75em 0 0.3em' },
   '.cm-md-block h5': { fontSize: '1em', fontWeight: '600', margin: '0.7em 0 0.3em' },
   '.cm-md-block h6': { fontSize: '0.95em', fontWeight: '600', color: 'var(--md-muted)', margin: '0.7em 0 0.3em' },
-  '.cm-md-block p': { margin: '0.35em 0' },
+  '.cm-md-block p': { margin: '0.28em 0' },
   '.cm-md-block strong': { fontWeight: '600' },
   '.cm-md-block a': { color: 'var(--md-link)' },
   '.cm-md-block blockquote': {
