@@ -25,7 +25,7 @@ export function hasTauri(): boolean {
   return internals() !== null;
 }
 
-async function invoke<T>(command: string, args?: Record<string, unknown>): Promise<T> {
+export async function invokeNative<T>(command: string, args?: Record<string, unknown>): Promise<T> {
   const api = internals();
   if (!api) throw new Error('当前环境没有原生能力');
   return (await api.invoke(command, args)) as T;
@@ -38,23 +38,23 @@ function detailOf(error: unknown): string {
 /** 用原生命令读写 ~/.aropyt/settings.jsonc。 */
 export async function createTauriSettingsIo(): Promise<SettingsIo & { path: string }> {
   // 让原生侧解析家目录并确保 ~/.aropyt 存在，拿到绝对路径
-  const path = await invoke<string>('settings_path').catch((error: unknown) => {
+  const path = await invokeNative<string>('settings_path').catch((error: unknown) => {
     throw new Error(`解析配置路径失败：${detailOf(error)}`);
   });
 
   return {
     path,
     async read() {
-      const text = await invoke<string | null>('settings_read');
+      const text = await invokeNative<string | null>('settings_read');
       return text ?? null;
     },
     async write(text) {
-      await invoke('settings_write', { text }).catch((error: unknown) => {
+      await invokeNative('settings_write', { text }).catch((error: unknown) => {
         throw new Error(`写入配置失败：${detailOf(error)}`);
       });
     },
     async openExternal() {
-      await invoke('plugin:opener|open_path', { path }).catch((error: unknown) => {
+      await invokeNative('plugin:opener|open_path', { path }).catch((error: unknown) => {
         throw new Error(`打开配置失败：${detailOf(error)}`);
       });
     },

@@ -859,6 +859,84 @@ fn settings_write(app: tauri::AppHandle, text: String) -> Result<(), String> {
     Ok(())
 }
 
+/*
+ * ── 文件关联：命令行打开 ────────────────────────────────────
+ *
+ * Windows/macOS 双击文件时，系统把**文件路径作为第一个参数**传给 exe。
+ * 这里在 setup 阶段读出来存进 state，前端启动后调 `take_launch_file`
+ * 取走（一次性）—— 比事件订阅简单，也避免"前端还没加载完，事件已经
+ * emit 完"的时序问题。
+ *
+ * 二次打开（应用已运行时再双击文件）需要单实例插件把参数转交已有窗口，
+ * 那是下一步，本版只处理"冷启动带文件"。
+ */
+
+/// 允许通过命令行打开的文件扩展名（也是写盘的允许列表）。
+const EXTERNAL_EXTS: [&str; 5] = ["md", "markdown", "tex", "latex", "fountain"];
+
+fn is_supported_external(path: &Path) -> bool {
+    path
+        .extension()
+        .and_then(|ext| ext.to_str())
+        .map(|ext| EXTERNAL_EXTS.contains(&ext.to_ascii_lowercase().as_str()))
+        .unwrap_or(false)
+}
+
+/// 从命令行参数里找第一个受支持的文件路径。
+fn launch_file_from_args() -> Option<String> {
+    std::env::args()
+        .skip(1) // 第 0 个是 exe 自身
+        .find(|arg| !arg.starts_with('-') && is_supported_external(Path::new(arg)))
+}
+
+/// 待打开的外部文件（冷启动时由 argv 填充，前端取走后清空）。
+struct PendingOpen(Mutex<Option<String>>);
+
+/// 取走启动时要打开的文件（只返回一次）。
+#[tauri::command]
+fn take_launch_file(state: State<'_, PendingOpen>) -> Option<String> {
+    state.0.lock().ok().and_then(|mut slot| slot.take())
+}
+
+/// 读一个**工作区之外**的文件（文件关联打开用）。
+#[tauri::command]
+fn read_external_file(path: String) -> Result<String, String> {
+    let file = PathBuf::from(&path);
+    if !is_supported_external(&file) {
+        return Err(format!("不支持的文件类型：{}", file.display()));
+    }
+    let meta = fs::metadata(&file).map_err(|error| format!("{}: {}", file.display(), error))?;
+    // 防御：超大文件不走这条通道（编辑器不是为几十 MB 的文本设计的）
+    if meta.len() > 8 * 1024 * 1024 {
+        return Err("文件超过 8MB，无法打开".to_string());
+    }
+    fs::read_to_string(&file).map_err(|error| format!("读取失败 {}: {}", file.display(), error))
+}
+
+/// 把内容写回**工作区之外**的文件（文件关联编辑后保存用）。
+#[tauri::command]
+fn write_external_file(path: String, text: String) -> Result<(), String> {
+    let file = PathBuf::from(&path);
+    if !is_supported_external(&file) {
+        return Err(format!("不支持的文件类型：{}", file.display()));
+    }
+    let tmp = file.with_extension(format!(
+        "{}.tmp",
+        file.extension().and_then(|ext| ext.to_str()).unwrap_or("txt")
+    ));
+    {
+        let mut handle = fs::File::create(&tmp).map_err(|error| format!("创建临时文件失败: {}", error))?;
+        handle
+            .write_all(text.as_bytes())
+            .map_err(|error| format!("写入失败: {}", error))?;
+        handle.sync_all().map_err(|error| format!("flush 失败: {}", error))?;
+    }
+    if file.exists() {
+        let _ = fs::remove_file(&file);
+    }
+    fs::rename(&tmp, &file).map_err(|error| format!("替换失败 {}: {}", file.display(), error))
+}
+
 pub fn run() {
     let builder = tauri::Builder::default()
         .plugin(tauri_plugin_fs::init())
@@ -878,11 +956,15 @@ pub fn run() {
             save_markdown_file,
             settings_path,
             settings_read,
-            settings_write
+            settings_write,
+            take_launch_file,
+            read_external_file,
+            write_external_file
         ])
-        .setup(|_app| {
+        .setup(|app| {
+            app.manage(PendingOpen(Mutex::new(launch_file_from_args())));
             // 状态只在这里注册一次。命令里不再 manage —— 重复注册会 panic。
-            _app.manage(WorkspaceState {
+            app.manage(WorkspaceState {
                 root: Mutex::new(None),
             });
             log_line("应用启动");

@@ -65,7 +65,7 @@ import {
   type AppSettings,
   type SettingsIo,
 } from './config/settings.js';
-import { createTauriSettingsIo, hasTauri } from './config/tauri-io.js';
+import { createTauriSettingsIo, hasTauri, invokeNative } from './config/tauri-io.js';
 
 export interface ToolbarItem {
   readonly command: string;
@@ -173,6 +173,8 @@ export interface AropytRuntime {
   getSettings(): AppSettings;
   /** 合并写入配置：应用到运行时并落盘（失败会提示，不会静默丢）。 */
   updateSettings(patch: DeepPartial<AppSettings>): void;
+  /** 打开工作区之外的文件（文件关联 / 命令行传入）。 */
+  openExternalPath(path: string): Promise<void>;
   /** vim 模式开关（normal/insert/visual 操作方式）。持久化在 localStorage。 */
   toggleVimMode(): void;
   /**
@@ -647,6 +649,7 @@ export function createRuntime(options: RuntimeOptions): AropytRuntime {
       return currentSettings;
     },
     updateSettings,
+    openExternalPath,
     get settingsPath() {
       return settingsPathValue;
     },
@@ -1376,6 +1379,33 @@ export function createRuntime(options: RuntimeOptions): AropytRuntime {
     });
   }
 
+  /**
+   * 打开工作区之外的文件。
+   *
+   * 文件关联（双击 .md）与命令行传入都走这里：读文件 → 建标签 → 激活。
+   * 标签的 path 就是**绝对路径**，与工作区文件的相对路径天然区分开
+   * （保存逻辑据此走 write_external_file）。
+   */
+  async function openExternalPath(path: string): Promise<void> {
+    try {
+      const text = await invokeNative<string>('read_external_file', { path });
+      if (!state.tabs.some((tab) => tab.path === path)) {
+        state.tabs.push({
+          path,
+          language: guessLanguage(path),
+          preview: false,
+          text,
+          dirty: false,
+        });
+      }
+      activateTab(path);
+    } catch (error: unknown) {
+      const detail =
+        error instanceof Error ? error.message : typeof error === 'string' ? error : JSON.stringify(error);
+      void windowService.showMessage(`打开文件失败：${detail}`, { level: 'error' });
+    }
+  }
+
   function activateRelativeTab(delta: number): void {
     if (state.tabs.length < 2) return;
     const index = state.tabs.findIndex((tab) => tab.path === state.activePath);
@@ -1412,6 +1442,30 @@ export function createRuntime(options: RuntimeOptions): AropytRuntime {
   async function saveActiveFile(): Promise<void> {
     let workspace = state.workspace;
     let path = state.activePath;
+
+    /*
+     * 外部文件（文件关联打开的）走独立通道：
+     * 它的 path 是**绝对路径**，而工作区 API 只接受相对路径（Rust 侧
+     * 拒绝绝对路径是防路径穿越的设计）。直接调 write_external_file
+     * 写回原位置 —— 这正是"双击 .md 编辑后 Ctrl+S"该有的行为。
+     */
+    if (path && /^[a-zA-Z]:[\\/]|^\//.test(path)) {
+      const text = editor.getText();
+      try {
+        await invokeNative('write_external_file', { path, text });
+        // EditorTab 是只读结构：替换对象而不是就地改字段
+        state.tabs = state.tabs.map((item) =>
+          item.path === path ? { ...item, text, dirty: false } : item,
+        );
+        state.dirty = false;
+      } catch (error: unknown) {
+        const detail =
+          error instanceof Error ? error.message : typeof error === 'string' ? error : JSON.stringify(error);
+        await windowService.showMessage(`保存失败：${detail}`, { level: 'error' });
+      }
+      notify();
+      return;
+    }
     /*
      * 未命名标签（__untitled__-N）没有磁盘身份，必须强制走"另存为"。
      * 上一版只判了 `!path` —— 加号按钮引入带序号的未命名标签后，
@@ -1620,7 +1674,14 @@ export function createRuntime(options: RuntimeOptions): AropytRuntime {
     }
     // 外部插件（用户导入）先加载，再统一按 activationEvents 激活
     await loadExternalPlugins();
+    /*
+     * 冷启动带文件（双击 .md / 命令行传参）：原生侧在 setup 时读了 argv，
+     * 这里取走并打开。**必须在插件激活之后** —— 打开文件要经过编辑器与
+     * 标签系统，它们由内置插件在 onStartupFinished 里贡献。
+     */
     await host.activateFor('onStartupFinished');
+    const launchFile = await invokeNative<string | null>('take_launch_file').catch(() => null);
+    if (launchFile) await openExternalPath(launchFile);
     notify();
   })();
 
