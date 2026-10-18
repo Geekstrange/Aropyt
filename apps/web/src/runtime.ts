@@ -1476,31 +1476,42 @@ export function createRuntime(options: RuntimeOptions): AropytRuntime {
   }
 
   async function exportBackup(): Promise<void> {
-    const data = await assembleBackup();
-    const date = new Date().toISOString().slice(0, 10);
-    const picked = await invokeNative<string | null>('plugin:dialog|save', {
-      options: {
-        defaultPath: `aropyt-backup-${date}.json`,
-        filters: [{ name: 'JSON', extensions: ['json'] }],
-      },
-    }).catch((error: unknown) => {
-      // 对话框打开失败不能静默 —— 静默的表现就是"点了没反应"（用户实测）
-      throw new Error(
-        error instanceof Error ? error.message : typeof error === 'string' ? error : JSON.stringify(error),
-      );
-    });
-    if (!picked) return;
-    await invokeNative('backup_write', { path: picked, text: JSON.stringify(data, null, 2) }).catch(
-      (error: unknown) => {
-        const detail =
-          error instanceof Error ? error.message : typeof error === 'string' ? error : JSON.stringify(error);
-        void windowService.showMessage(`导出失败：${detail}`, { level: 'error' });
-      },
-    );
-    void windowService.showMessage(`数据已导出到 ${picked}`, { level: 'info' });
+    /*
+     * 整个函数包一层统一错误处理：
+     * assembleBackup（读 IndexedDB）、对话框、写文件，任何一步抛错
+     * 都必须显示出来 —— onClick 那边是 `void` 调用，不接 Promise，
+     * 这里不兜住就成了 unhandled rejection，表现是"点了没反应"（实测）。
+     */
+    try {
+      const data = await assembleBackup();
+      const date = new Date().toISOString().slice(0, 10);
+      const picked = await invokeNative<string | null>('plugin:dialog|save', {
+        options: {
+          defaultPath: `aropyt-backup-${date}.json`,
+          filters: [{ name: 'JSON', extensions: ['json'] }],
+        },
+      });
+      if (!picked) return;
+      await invokeNative('backup_write', { path: picked, text: JSON.stringify(data, null, 2) });
+      void windowService.showMessage(`数据已导出到 ${picked}`, { level: 'info' });
+    } catch (error: unknown) {
+      const detail =
+        error instanceof Error ? error.message : typeof error === 'string' ? error : JSON.stringify(error);
+      void windowService.showMessage(`导出失败：${detail}`, { level: 'error' });
+    }
   }
 
   async function importBackup(): Promise<void> {
+    try {
+      await importBackupInner();
+    } catch (error: unknown) {
+      const detail =
+        error instanceof Error ? error.message : typeof error === 'string' ? error : JSON.stringify(error);
+      void windowService.showMessage(`导入失败：${detail}`, { level: 'error' });
+    }
+  }
+
+  async function importBackupInner(): Promise<void> {
     const picked = await invokeNative<string | null>('plugin:dialog|open', {
       options: { multiple: false, filters: [{ name: 'JSON', extensions: ['json'] }] },
     }).catch((error: unknown) => {
@@ -1514,7 +1525,12 @@ export function createRuntime(options: RuntimeOptions): AropytRuntime {
         error instanceof Error ? error.message : typeof error === 'string' ? error : JSON.stringify(error),
       );
     });
-    const data = JSON.parse(text) as import('@aropyt/core').BackupFile;
+    let data: import('@aropyt/core').BackupFile;
+    try {
+      data = JSON.parse(text) as import('@aropyt/core').BackupFile;
+    } catch {
+      throw new Error('备份文件不是有效的 JSON');
+    }
     const counts = `草稿 ${Object.keys(data.drafts ?? {}).length} 份 · 历史 ${(data.history ?? []).length} 个版本`;
     const ok = await invokeNative<boolean>('plugin:dialog|ask', {
       options: {

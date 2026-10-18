@@ -40,6 +40,8 @@
           "path": "$HOME/.aropyt/**"
         }
       ]
-    }
+    },
+    "dialog:allow-save",
+    "dialog:allow-ask"
   ]
 }
