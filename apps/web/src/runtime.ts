@@ -54,6 +54,8 @@ import type { DocumentRef, ImportedFile, Memento, PluginManifest } from '@aropyt
 import { LanguagesService, WindowService } from './services.js';
 import { createThemeService, type ResolvedTheme, type ThemePreference, type ThemeService } from './theme.js';
 import { builtinPlugins } from './builtin/index.js';
+import { browserSettingsIo, loadSettings, type SettingsIo } from './config/settings.js';
+import { createTauriSettingsIo, hasTauri } from './config/tauri-io.js';
 
 export interface ToolbarItem {
   readonly command: string;
@@ -153,6 +155,10 @@ export interface AropytRuntime {
   createUntitledTab(): void;
   /** 按打开顺序循环切换标签（Ctrl+Tab / Ctrl+Shift+Tab）。 */
   activateRelativeTab(delta: number): void;
+  /** 用系统默认程序打开 settings.jsonc（浏览器模式下提示路径不存在）。 */
+  openSettingsFile(): void;
+  /** 配置文件路径（浏览器模式为 null）。 */
+  readonly settingsPath: string | null;
   /** vim 模式开关（normal/insert/visual 操作方式）。持久化在 localStorage。 */
   toggleVimMode(): void;
   /**
@@ -622,6 +628,10 @@ export function createRuntime(options: RuntimeOptions): AropytRuntime {
     createUntitledTab,
     toggleVimMode,
     activateRelativeTab,
+    openSettingsFile,
+    get settingsPath() {
+      return settingsPathValue;
+    },
     setPluginEnabled,
     importExternalPlugin,
     builtinPluginIds: new Set(builtinPlugins.map((plugin) => plugin.manifest.id)),
@@ -1286,6 +1296,40 @@ export function createRuntime(options: RuntimeOptions): AropytRuntime {
     }
   }, 250);
 
+  /*
+   * ── 用户配置（settings.jsonc）────────────────────────────
+   * 桌面壳读写 appConfigDir/settings.jsonc；浏览器开发模式回落 IndexedDB。
+   * 第一版只在启动时读取/生成，UI 里的修改下一轮接入。
+   */
+  let settingsIo: SettingsIo = browserSettingsIo;
+  let settingsPathValue: string | null = null;
+  /** 配置文件初始化失败的原因（桌面壳下失败必须如实报出来，不能伪装成"浏览器模式"）。 */
+  let settingsInitError: string | null = null;
+
+  function openSettingsFile(): void {
+    if (!settingsPathValue) {
+      void windowService.showMessage(
+        hasTauri()
+          ? `配置文件不可用：${settingsInitError ?? '未知原因'}`
+          : '浏览器模式下没有配置文件（桌面版才有磁盘配置）。',
+        { level: hasTauri() ? 'error' : 'info' },
+      );
+      return;
+    }
+    void settingsIo.openExternal().catch((error: unknown) => {
+      /*
+       * Tauri 的 IPC 错误经常是**字符串**而不是 Error（权限拒绝就是
+       * "opener.open_path not allowed"）。上一版只取 error.message，
+       * 于是全都显示成"未知错误"，把排查引向错误方向。
+       */
+      const detail =
+        error instanceof Error ? error.message : typeof error === 'string' ? error : JSON.stringify(error);
+      void windowService.showMessage(`打开配置文件失败：${detail}（路径：${settingsPathValue}）`, {
+        level: 'error',
+      });
+    });
+  }
+
   function activateRelativeTab(delta: number): void {
     if (state.tabs.length < 2) return;
     const index = state.tabs.findIndex((tab) => tab.path === state.activePath);
@@ -1509,6 +1553,29 @@ export function createRuntime(options: RuntimeOptions): AropytRuntime {
      */
     for (const pluginId of loadDisabledPlugins()) {
       host.disable(pluginId, '用户手动禁用');
+    }
+    /*
+     * 用户配置：桌面壳读写 appConfigDir/settings.jsonc，浏览器回落 IndexedDB。
+     * 首次启动会把旧的 localStorage 值迁移进配置文件（只做一次）。
+     */
+    if (hasTauri()) {
+      try {
+        const io = await createTauriSettingsIo();
+        settingsIo = io;
+        settingsPathValue = io.path;
+      } catch (error) {
+        settingsPathValue = null;
+        settingsInitError = error instanceof Error ? error.message : String(error);
+      }
+    }
+    const loaded = await loadSettings(settingsIo).catch(() => null);
+    if (loaded) {
+      if (loaded.problems.unknownKeys.length > 0 || loaded.problems.invalidValues.length > 0) {
+        void windowService.showMessage(
+          `settings.jsonc 有 ${loaded.problems.unknownKeys.length + loaded.problems.invalidValues.length} 处问题，已按默认值处理`,
+          { level: 'warning' },
+        );
+      }
     }
     // 外部插件（用户导入）先加载，再统一按 activationEvents 激活
     await loadExternalPlugins();

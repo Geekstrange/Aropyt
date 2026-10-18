@@ -1,0 +1,123 @@
+/**
+ * 设置面板（v0.0.5）。
+ *
+ * 形态选择：**模态**而不是独立视图 —— 设置项还很少，视图槽位留给内容区；
+ * 等插件开始贡献自己的设置页时再升级成视图（届时可以按 location 分组）。
+ *
+ * 这一版的边界：
+ *  - 能改的：主题、vim 开关（走运行时既有 API，改动立即生效）
+ *  - 只读展示：配置文件路径（+ 打开文件按钮）
+ *  - 还没接：把改动写回 settings.jsonc —— 需要先让配置成为"真源"
+ *    （现在 theme/vim 仍读 localStorage），那一步单独做，避免半套同步。
+ */
+import type { JSX } from 'react';
+import type { AropytRuntime } from '../runtime.js';
+
+interface SettingsDialogProps {
+  readonly runtime: AropytRuntime;
+  readonly themePreference: 'light' | 'dark' | 'auto';
+  readonly vimMode: boolean;
+  readonly settingsPath: string | null;
+  readonly onClose: () => void;
+}
+
+const THEME_OPTIONS: { value: 'light' | 'dark' | 'auto'; label: string }[] = [
+  { value: 'light', label: '浅色' },
+  { value: 'dark', label: '深色' },
+  { value: 'auto', label: '跟随系统' },
+];
+
+export function SettingsDialog({
+  runtime,
+  themePreference,
+  vimMode,
+  settingsPath,
+  onClose,
+}: SettingsDialogProps): JSX.Element {
+  return (
+    <div className="settings-backdrop" role="presentation" onClick={onClose}>
+      <div
+        className="settings-dialog"
+        role="dialog"
+        aria-modal="true"
+        aria-label="设置"
+        onClick={(event) => event.stopPropagation()}
+      >
+        <header className="settings-dialog__header">
+          <h2>设置</h2>
+          <button type="button" className="settings-dialog__close" aria-label="关闭" onClick={onClose}>
+            ×
+          </button>
+        </header>
+
+        <section className="settings-section">
+          <h3>外观</h3>
+          <div className="settings-row">
+            <span className="settings-row__label">主题</span>
+            <div className="settings-segmented">
+              {THEME_OPTIONS.map((option) => (
+                <button
+                  key={option.value}
+                  type="button"
+                  className={option.value === themePreference ? 'is-active' : ''}
+                  aria-pressed={option.value === themePreference}
+                  onClick={() => {
+                    // 循环切换 API 是三态的，这里按目标值直接定位
+                    const current = themePreference;
+                    const order: ('light' | 'dark' | 'auto')[] = ['light', 'dark', 'auto'];
+                    let steps = (order.indexOf(option.value) - order.indexOf(current) + 3) % 3;
+                    while (steps > 0) {
+                      runtime.theme.cycle();
+                      steps -= 1;
+                    }
+                  }}
+                >
+                  {option.label}
+                </button>
+              ))}
+            </div>
+          </div>
+        </section>
+
+        <section className="settings-section">
+          <h3>编辑</h3>
+          <div className="settings-row">
+            <span className="settings-row__label">Vim 模式</span>
+            <button
+              type="button"
+              className={`settings-switch${vimMode ? ' is-on' : ''}`}
+              aria-pressed={vimMode}
+              onClick={() => runtime.toggleVimMode()}
+            >
+              <span className="settings-switch__knob" />
+            </button>
+          </div>
+          <p className="settings-hint">
+            vim 模式固定源码态（渲染态下整块 Markdown 只是一个 DOM 块，j/k 无法逐行移动）。
+          </p>
+        </section>
+
+        <section className="settings-section">
+          <h3>配置文件</h3>
+          <div className="settings-row">
+            <span className="settings-row__label">settings.jsonc</span>
+            <code className="settings-path">{settingsPath ?? '浏览器模式：配置存于 IndexedDB'}</code>
+          </div>
+          <div className="settings-actions">
+            <button
+              type="button"
+              className="settings-button"
+              onClick={() => runtime.openSettingsFile()}
+              disabled={settingsPath === null}
+            >
+              打开配置文件
+            </button>
+          </div>
+          <p className="settings-hint">
+            桌面版才有磁盘配置。界面里的修改目前只作用于本次会话，写回文件在下一版接入。
+          </p>
+        </section>
+      </div>
+    </div>
+  );
+}

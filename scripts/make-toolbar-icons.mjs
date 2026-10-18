@@ -53,6 +53,7 @@ const NAME_MAP = {
   // vim 模式指示（状态栏左下角）
   'vim-mode': 'vimMode',
   formula: 'formula',
+  setting: 'setting',
   plugins: 'plugins',
 };
 

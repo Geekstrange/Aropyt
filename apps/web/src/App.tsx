@@ -26,6 +26,7 @@ import { createRuntime, type AropytRuntime, type RuntimeState } from './runtime.
 import type { ThemePreference } from './theme.js';
 import { Icon } from './components/Icons.js';
 import { ViewColumn } from './components/ViewHost.js';
+import { SettingsDialog } from './components/SettingsDialog.js';
 
 export function App(): JSX.Element {
   const editorHostRef = useRef<HTMLDivElement>(null);
@@ -39,6 +40,8 @@ export function App(): JSX.Element {
    * 侧栏开关：**保存用户的选择**（localStorage 同步读取，首帧就生效）。
    * 没存过才回落到"宽屏默认打开"—— 用户手动关过就尊重用户。
    */
+  const [settingsOpen, setSettingsOpen] = useState(false);
+
   const [sidebarOpen, setSidebarOpen] = useState(() => {
     try {
       const saved = localStorage.getItem('aropyt.sidebarOpen');
@@ -203,7 +206,22 @@ export function App(): JSX.Element {
         {runtime && <Header runtime={runtime} />}
       </header>
 
-      <Shell runtime={runtime} editorHostRef={editorHostRef} sidebarOpen={sidebarOpen} />
+      <Shell
+        runtime={runtime}
+        editorHostRef={editorHostRef}
+        sidebarOpen={sidebarOpen}
+        onOpenSettings={() => setSettingsOpen(true)}
+      />
+      {settingsOpen && runtime && (
+        <SettingsDialog
+          runtime={runtime}
+          // App 层不订阅运行时状态，这里按需取快照（面板打开时才读）
+          themePreference={runtime.getState().themePreference}
+          vimMode={runtime.getState().vimMode}
+          settingsPath={runtime.settingsPath}
+          onClose={() => setSettingsOpen(false)}
+        />
+      )}
 
       <footer className="status-bar">
         {runtime ? <StatusBar runtime={runtime} /> : <span className="status-item">正在启动…</span>}
@@ -231,17 +249,19 @@ function Shell({
   runtime,
   editorHostRef,
   sidebarOpen,
+  onOpenSettings,
 }: {
   readonly runtime: AropytRuntime | null;
   readonly editorHostRef: RefObject<HTMLDivElement>;
   readonly sidebarOpen: boolean;
+  readonly onOpenSettings: () => void;
 }): JSX.Element {
   return (
     <div className="app-body">
       {runtime && <ViewColumn runtime={runtime} location="sidebar" side="left" open={sidebarOpen} />}
 
       <main className="app-main">
-        {runtime ? <Toolbar runtime={runtime} /> : <div className="toolbar" />}
+        {runtime ? <Toolbar runtime={runtime} onOpenSettings={onOpenSettings} /> : <div className="toolbar" />}
         <div className="app-editor" ref={editorHostRef} />
       </main>
 
@@ -358,9 +378,10 @@ function isWideScreen(): boolean {
 
 interface ToolbarProps {
   readonly runtime: AropytRuntime;
+  readonly onOpenSettings: () => void;
 }
 
-function Toolbar({ runtime }: ToolbarProps): JSX.Element {
+function Toolbar({ runtime, onOpenSettings }: ToolbarProps): JSX.Element {
   const state = useRuntimeState(runtime);
   const details = new Map(runtime.commands.details().map((item) => [item.id, item]));
   const groups = groupToolbar(state.toolbar);
@@ -385,6 +406,17 @@ function Toolbar({ runtime }: ToolbarProps): JSX.Element {
        * 表达不了"跟随系统"。循环的代价是点击次数不固定，
        * 所以图标与提示文字必须清楚显示当前处于哪一态。
        */}
+      {/* 设置面板（外观 / 编辑 / 配置文件） */}
+      <button
+        type="button"
+        className="tool-button"
+        title="设置"
+        aria-label="设置"
+        onClick={onOpenSettings}
+      >
+        <Icon name="setting" />
+      </button>
+
       {/*
        * 插件管理入口（v0.0.3）：列出全部插件的启用状态与原因。
        * 完整的管理面板（启用/禁用开关）是下一步 —— 目前这条入口
@@ -780,6 +812,7 @@ function Toasts({ runtime }: { readonly runtime: AropytRuntime }): JSX.Element |
 
   return (
     <div className="toasts">
+
       {toasts.map((toast) => (
         <div
           key={toast.id}
