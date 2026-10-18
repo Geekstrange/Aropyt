@@ -50,8 +50,8 @@
           "md",
           "markdown"
         ],
-        "name": "Markdown 文档",
-        "description": "Markdown 文档",
+        "name": "Markdown Document",
+        "description": "Markdown Document",
         "role": "Editor"
       },
       {
@@ -59,16 +59,16 @@
           "tex",
           "latex"
         ],
-        "name": "LaTeX 文档",
-        "description": "LaTeX 文档",
+        "name": "LaTeX Document",
+        "description": "LaTeX Document",
         "role": "Editor"
       },
       {
         "ext": [
           "fountain"
         ],
-        "name": "Fountain 剧本",
-        "description": "Fountain 剧本",
+        "name": "Fountain Screenplay",
+        "description": "Fountain Screenplay",
         "role": "Editor"
       }
     ],
@@ -78,6 +78,11 @@
     "windows": {
       "nsis": {
         "installerHooks": "installer-hooks.nsi"
+      },
+      "wix": {
+        "language": [
+          "zh-CN"
+        ]
       }
     }
   },
