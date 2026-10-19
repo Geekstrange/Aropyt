@@ -1,142 +1,208 @@
+<div align="center">
+
 # Aropyt
 
-**Typora 式 Markdown 编辑器 —— 编辑区本身就是预览。**
+**A Typora-style Markdown editor where the editing area *is* the preview.**
 
-🌐 官网：<https://aropyt.com>（九种语言：English · 简体中文 · 繁體中文 · 日本語 · 한국어 · Deutsch · Français · Italiano · Русский）
+[![License: AGPL-3.0](https://img.shields.io/badge/License-AGPL--3.0-blue.svg)](https://www.gnu.org/licenses/agpl-3.0)
+[![Latest Release](https://img.shields.io/github/v/release/Geekstrange/Aropyt?label=release)](https://github.com/Geekstrange/Aropyt/releases/latest)
+[![Platforms](https://img.shields.io/badge/platform-Windows%20%7C%20macOS%20%7C%20Linux%20%7C%20Android-lightgrey)](https://github.com/Geekstrange/Aropyt/releases/latest)
+[![Website](https://img.shields.io/badge/website-aropyt.com-5bb44e)](https://aropyt.com)
 
-跨平台（Windows / macOS / Linux / Android）、文件即真理、极致轻量。
-浏览器形态仅为开发模式（`npm run dev`），发布形态统一 Tauri 2。
+[Website](https://aropyt.com) · [Download](https://github.com/Geekstrange/Aropyt/releases/latest) · [Features](#features) · [Building](#building-from-source)
 
-## 特点
+</div>
 
-### 块级所见即所得（WYSIWYG）
+---
 
-编辑区不是「源码 + 高亮」，而是**渲染本身**：文档按块切分，非光标块整体呈现为
-markdown-it 渲染的真实 HTML（真表格布局、真标题排版），光标所在块自动切回源码
-供编辑，移开即渲染 —— 与 Typora 相同的交互模型，且**编辑区与预览用的是同一个
-渲染引擎**，所见即所得是架构保证，不是近似。
+## Why Aropyt?
 
-### 完整的 Markdown 渲染
+Most Markdown editors force a choice: either a split pane (source on the left, preview on the right) or a proprietary document format that locks your writing inside an app. Aropyt refuses both.
 
-- **代码块语法高亮**：highlight.js，常见语言开箱即用，配色跟随主题
-- **数学公式**：`$…$` / `$$…$$` / `\(…\)` / `\[…\]` 四种定界符，KaTeX 排版
-  （分数、根号、矩阵、`cases` / `aligned`、`\tag` 编号、`\partial` 等全套语法），
-  引擎与字体按需加载，代码块里的 `$` 不会被误判
-- **Mermaid 图表**：` ```mermaid ` 代码块直接渲染成 SVG（流程图 / 时序图 / 类图 /
-  思维导图…），库按需加载；语法错误会显示具体原因，不静默失败
-- **表格**：真实 `<table>` 布局，表头加重、行分隔、对齐
-- **HTML 内联**：`<strong>` `<svg>` 等标签直接以真实元素呈现
-- **链接 / 转义 / 任务列表 / 引用 / 图片**：全套 GFM 支持，裸 URL 自动链接
+- **No split pane.** The editing area renders Markdown as you type — tables are real tables, headings are real headings. Move the cursor into a block and it becomes editable source; move away and it renders again.
+- **No lock-in.** Your document is a plain `.md` file on disk. Always. Rendering only changes *how it is drawn*, never *what is stored*.
+- **No subscription.** Free and open source, forever, under AGPL-3.0.
 
-### Vim 模式
+If you have used Typora, the editing model will feel immediately familiar. What Aropyt adds on top: **tabs**, **editing history with one-click restore**, **first-class Vim mode**, **a plugin system**, and **a fully open-source codebase**.
 
-底部状态栏一键开关，指示器显示当前子模式（`NORMAL` / `INSERT` / `VISUAL`）。
+> **Status**: actively developed. Windows is the primary build target; macOS, Linux and Android share the same Tauri 2 shell and are built via CI. The browser build (`npm run dev`) exists for development only — every release is a native app.
 
-- **normal 模式不误删字符**：`Backspace` / `Delete` 交给 vim，不进插入模式不动文本
-- **恒为源码态**：渲染态下整块 Markdown 在 DOM 里只是一个块，行级光标无处可落
-  （j/k 会跳过整段文字），所以 vim 模式固定源码态 —— 源码模式按钮隐藏、`Ctrl+/`
-  不响应，退出 vim 自动回到渲染态
-- **不吞宿主快捷键**：`Ctrl+Shift+B` / `Ctrl+Shift+N` / `Ctrl+Tab` / `Ctrl+0`
-  在 vim 下照常可用；`Ctrl+B`（翻页）、`Ctrl+N`（插入补全）留给 vim
-- **禁用鼠标选择**：vim 下单击定位光标可用，拖选/Shift 扩选被拦
+---
 
-### 文件关联
+## Quick start
 
-- 安装版注册 **Markdown（.md/.markdown）**、**LaTeX（.tex/.latex）**、
-  **Fountain 剧本（.fountain）**，双击即可用 Aropyt 打开
-- 三种文件类型各有独立图标（随安装包分发，由安装器写入注册表）
-- 命令行同样支持：`Aropyt.exe note.md`
-- 关联打开的文件可直接编辑并**保存回原位置**（原子写，8MB 上限）
-- ⚠️ 免安装的 exe 不注册关联；应用已运行时双击文件暂不会转到现有窗口（下一版）
+```bash
+# Clone and run the desktop app in development mode
+git clone https://github.com/Geekstrange/Aropyt.git
+cd Aropyt
+npm install
+npm run tauri dev
 
-### 编辑历史
+# Build a production release
+npm run tauri build
+```
 
-- **保存即版本**：每次保存自动记录，内容未变不重复记录
-- **自动保存版本**：按间隔（默认 60 秒）给当前内容记版本，写作途中不怕崩
-- **手动命名版本**：给重要节点留里程碑
-- **一键恢复**：恢复前自动保存当前内容 —— 任何操作都不丢内容
-- 每文件保留最近 N 个版本（设置里可调，默认 50），更早的自动淘汰
-- 工具栏时钟图标打开历史面板
+Prebuilt binaries for all platforms are on the [Releases](https://github.com/Geekstrange/Aropyt/releases/latest) page.
 
-### 设置与配置文件
+---
 
-- **设置面板**：工具栏齿轮入口，外观（浅色 / 深色 / 跟随系统）、编辑（Vim 开关）、配置文件
-- **`~/.aropyt/settings.jsonc`**：用户配置的真源，JSONC 格式（可写注释）
-  ```jsonc
-  {
-    "theme": "auto",           // light | dark | auto
-    "editor": { "fontSize": 15 },
-    "vim": { "enabled": false },
-    "sidebar": { "open": true },
-    "plugins": { "disabled": [] },
-    "history": { "limit": 50 } // 编辑历史（v0.0.7）预留
-  }
-  ```
-- 界面里的修改**立即写回文件**；手改文件重启后生效；非法值会提示而不是静默忽略
-- 首次启动自动从旧的浏览器存储迁移（只做一次）
-- **导出 / 导入数据**：全部草稿与编辑历史打包为单个 JSON，换机器 / 重装系统不丢内容
+## Features
 
-### 插件系统
+### The editing model
 
-VSCode 式声明式贡献 + 懒激活：大纲、文件树、格式化是内置插件；内核只保留
-编辑器、文档模型与渲染管线。
+**Block-level WYSIWYG.** The document is split into blocks. Every block except the one under the cursor is rendered as real HTML by markdown-it — actual `<table>` layout, actual heading typography. When the cursor enters a block it switches back to source for editing, and renders again on blur. The same interaction model as Typora.
 
-- **可管理**：工具栏插件图标查看已导入插件，可启用/禁用（禁用立即生效并记住）
-- **可导入**：选一个 `.js` 插件文件（导出 `manifest` + `activate`）即可扩展命令、
-  工具栏按钮、视图、键位；示例见 `test/sample-plugin.js`
-- 插件在渲染进程内运行（与 VS Code 插件同一信任模型），只导入可信插件
+Crucially, **the editor and the preview share a single rendering engine**. What-you-see-is-what-you-get is an architectural guarantee, not an approximation.
 
-### 快捷键
+**Full Markdown, honestly rendered.**
 
-| 快捷键 | 行为 |
+| Feature | What you get |
 | --- | --- |
-| `Ctrl/Cmd + Shift + B` | 开关侧栏（状态会被记住） |
-| `Ctrl/Cmd + Shift + N` | 新建标签 |
-| `Ctrl/Cmd + Tab` | 切换标签（`+Shift` 反向） |
-| `Ctrl/Cmd + 0` | 聚焦侧栏 |
-| `Ctrl/Cmd + S` | 保存 |
-| `Ctrl/Cmd + F` | 查找 / 替换 |
-| `Ctrl/Cmd + /` | 源码 / 渲染模式切换（vim 模式下不生效） |
-| 鼠标中键点标签 | 关闭标签 |
+| Code blocks | Syntax highlighting via highlight.js — common languages out of the box, theme-aware |
+| Math | `$…$`, `$$…$$`, `\(…\)`, `\[…\]` — four delimiters, KaTeX typesetting (fractions, roots, matrices, `cases`/`aligned`, `\tag`, `\partial`, full grammar) |
+| Diagrams | ` ```mermaid ` blocks render to SVG — flowcharts, sequence diagrams, class diagrams, mind maps. Engine loads on demand |
+| Tables | Real `<table>` layout, weighted headers, row separators, alignment |
+| Inline HTML | `<strong>`, `<svg>` and friends render as real elements |
+| GFM | Links, escapes, task lists, blockquotes, images, bare-URL auto-linking |
 
-### 轻量与性能
+Engine and fonts load on demand; `$` inside code blocks is never misparsed; Mermaid syntax errors surface the specific cause instead of failing silently.
 
-- 首屏 ≤ 320 KB（gzip），markdown-it / highlight.js / mermaid / KaTeX 全部按需加载
-- CodeMirror 6 视口虚拟化，长文档滚动零成本
-- 装饰冻结：输入法（IME）组合期间不重算渲染，中文输入零干扰
-- 帧预算监控：主线程卡顿可观测、可归因
+### Tabs and editing history
 
-### 安全与稳定
+**Tabs.** `Ctrl/Cmd + Tab` to switch, `Ctrl/Cmd + Shift + N` to open a new one, middle-click to close. The active tab is remembered across restarts.
 
-- **未保存确认**：关闭标签、关闭窗口前拦截确认（保存 / 不保存 / 取消）
-- **草稿自动保存**：编辑内容持续落盘（IndexedDB），崩溃或异常退出后自动恢复
-- 文档内容视为不可信输入，渲染管线与代码高亮在隔离环境执行
+**Editing history — every save is a version.**
 
-### 文件即真理
+- **Automatic**: recorded on every save; unchanged content is not recorded twice
+- **Periodic snapshots**: capture the current state on a timer (default: 60 s), so a crash mid-writing cannot lose your work
+- **Named milestones**: mark important checkpoints manually
+- **One-click restore**: the current content is saved *before* restoring — no operation ever loses content
+- **Bounded retention**: each file keeps its most recent N versions (configurable, default 50); older ones are pruned
 
-文档始终是磁盘上的纯 Markdown 源码。渲染只改变「怎么画」，复制粘贴出来
-的永远是源码 —— 不锁定、不私有格式、可版本控制。
+Open the history panel from the clock icon in the toolbar.
 
-## 构建与运行
+### Vim mode
+
+Toggle from the status bar; the indicator shows the current sub-mode (`NORMAL` / `INSERT` / `VISUAL`).
+
+- **Normal mode never deletes text accidentally.** `Backspace` and `Delete` are handed to Vim; nothing is touched outside insert mode
+- **Always in source view.** In rendered mode a whole block is a single DOM node, so there is no place for a line-level cursor to land (`j`/`k` would skip entire paragraphs). Vim mode therefore locks to source view — the source-mode button hides, `Ctrl+/` is ignored, and exiting Vim returns you to rendered view automatically
+- **Host shortcuts are preserved.** `Ctrl+Shift+B`, `Ctrl+Shift+N`, `Ctrl+Tab`, `Ctrl+0` keep working under Vim; `Ctrl+B` (page down) and `Ctrl+N` (insert completion) are left to Vim
+- **Mouse selection disabled.** Single-click to place the cursor still works; drag-select and Shift-extend are intercepted
+
+### Plugins
+
+VSCode-style declarative contributions with lazy activation. Outline, file tree and formatting ship as built-in plugins; the kernel is kept to the editor, the document model and the rendering pipeline.
+
+- **Manageable.** The plugin icon in the toolbar lists imported plugins; each can be enabled/disabled (disabling takes effect immediately and is remembered)
+- **Importable.** Select a `.js` plugin file exporting `manifest` + `activate` to extend commands, toolbar buttons, views and keybindings. See [`test/sample-plugin.js`](test/sample-plugin.js)
+- **Trust model.** Plugins run inside the renderer process (same model as VS Code extensions) — only import plugins you trust
+
+### Files, associations and portability
+
+- **Files as the source of truth.** Documents are always plain Markdown on disk. Copy out is always source text. No lock-in, no proprietary format, fully version-controllable
+- **File associations.** Installed builds register **Markdown** (`.md`/`.markdown`), **LaTeX** (`.tex`/`.latex`) and **Fountain screenplays** (`.fountain`). Double-click to open, edit and **save back in place** (atomic write, 8 MB limit). Each type has its own icon, written to the registry by the installer
+- **CLI.** `Aropyt.exe note.md` works too
+- **Portable builds.** Provided, but do **not** register associations
+- **Known gap.** Double-clicking a file while Aropyt is already running does not yet focus the existing window — planned for the next release
+
+### Configuration
+
+The source of truth for user configuration is **`~/.aropyt/settings.jsonc`** — JSONC format, so comments are allowed:
+
+```jsonc
+{
+  "theme": "auto",           // light | dark | auto
+  "editor": { "fontSize": 15 },
+  "vim": { "enabled": false },
+  "sidebar": { "open": true },
+  "plugins": { "disabled": [] },
+  "history": { "limit": 50 } // editing history (reserved for v0.0.7)
+}
+```
+
+- Changes made in the Settings panel (gear icon) are **written back immediately**
+- Manual edits take effect on restart
+- Invalid values surface an error instead of being silently ignored
+- On first launch, settings are migrated once from legacy browser storage
+- **Export / import**: all drafts and editing history pack into a single JSON file — switching machines or reinstalling the OS never loses content
+
+### Under the hood
+
+- **First paint ≤ 320 KB** (gzipped); markdown-it, highlight.js, Mermaid and KaTeX all load on demand
+- **CodeMirror 6 viewport virtualization** keeps long-document scrolling essentially free
+- **IME-safe rendering.** Decoration recomputation is frozen during IME composition — zero interference for CJK input
+- **Frame-budget monitoring.** Main-thread stalls are observable and attributable
+- **Untrusted input by default.** Document content is treated as untrusted; the rendering pipeline and code highlighting run in an isolated environment
+- **Crash-safe.** Unsaved-change confirmation on tab/window close (Save / Don't Save / Cancel); drafts are continuously persisted to IndexedDB and recovered automatically after abnormal exits
+
+---
+
+## Keyboard shortcuts
+
+**Navigation**
+
+| Shortcut | Action |
+| --- | --- |
+| `Ctrl/Cmd + Shift + B` | Toggle sidebar (state is remembered) |
+| `Ctrl/Cmd + 0` | Focus sidebar |
+| `Ctrl/Cmd + Tab` | Switch tab (`+Shift` for reverse) |
+| Middle-click on a tab | Close the tab |
+
+**Editing**
+
+| Shortcut | Action |
+| --- | --- |
+| `Ctrl/Cmd + S` | Save |
+| `Ctrl/Cmd + F` | Find / replace |
+| `Ctrl/Cmd + /` | Toggle source / rendered mode (ignored in Vim mode) |
+
+**Tabs**
+
+| Shortcut | Action |
+| --- | --- |
+| `Ctrl/Cmd + Shift + N` | New tab |
+| `Ctrl/Cmd + Tab` | Next tab |
+
+---
+
+## Building from source
 
 ```bash
 npm install
-npm run dev              # 浏览器开发模式
-npm run tauri dev        # 桌面开发模式
-npm run tauri build      # 发布构建（唯一正确的打包方式）
-npm run verify           # 全量验证（编译 + 行为闸门）
+npm run dev              # browser development mode
+npm run tauri dev        # desktop development mode
+npm run tauri build      # production build (the only supported packaging path)
+npm run verify           # full verification (compile + behavioral gates)
 ```
 
-> ⚠️ 打包请用 `npm run tauri build`。`cargo build --release` 只编译 Rust，
-> 前端资源的嵌入由 tauri CLI 负责 —— 手工组合会得到「源码改了、exe 还是旧行为」
-> 的假象。
+> ⚠️ **Always build with `npm run tauri build`.** `cargo build --release` only compiles the Rust side — embedding front-end assets is the Tauri CLI's job. Assembling the two by hand produces the illusion that "the source changed but the exe still behaves the old way".
 
-## 平台说明
+### Platform notes
 
-- **Windows**：本仓库当前构建环境，直接 `npm run tauri build`
-- **macOS / Linux / Android**：Tauri 2 多平台统一外壳，需在对应平台（或 CI）
-  构建；Linux 依赖 WebKitGTK（详见 Tauri 官方文档）
+- **Windows** — the current build environment for this repository. Just run `npm run tauri build`
+- **macOS / Linux / Android** — Tauri 2 provides a unified shell across platforms. Build on the target platform or in CI. Linux requires WebKitGTK (see the [Tauri documentation](https://v2.tauri.app/start/prerequisites/))
 
-## 许可证
+---
 
-AGPL-3.0
+## Contributing
+
+Issues and pull requests are welcome. Before opening a PR:
+
+1. Run `npm run verify` — it covers compilation and behavioral gates
+2. Keep changes scoped and describe the *why* in the PR body
+3. For feature work, open an issue first to align on direction
+
+If Aropyt is useful to you, a ⭐ on GitHub helps others find it.
+
+---
+
+## License
+
+[AGPL-3.0](https://www.gnu.org/licenses/agpl-3.0.en.html). Aropyt is free software; you can redistribute it and/or modify it under the terms of the GNU Affero General Public License as published by the Free Software Foundation, either version 3 of the License, or (at your option) any later version.
+
+---
+
+<div align="center">
+<sub>Built with <a href="https://tauri.app">Tauri 2</a>, <a href="https://codemirror.net">CodeMirror 6</a>, <a href="https://github.com/markdown-it/markdown-it">markdown-it</a>, <a href="https://katex.org">KaTeX</a> and <a href="https://mermaid.js.org">Mermaid</a>.</sub>
+</div>
