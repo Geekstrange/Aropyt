@@ -553,6 +553,7 @@ fn workspace_list(state: State<'_, WorkspaceState>, args: ListArgs) -> Result<Ve
 /// 打开文件夹选择器。返回选中的根目录绝对路径。
 #[tauri::command]
 async fn pick_folder(app: tauri::AppHandle) -> Result<Option<String>, String> {
+    #[cfg(desktop)]
     use tauri_plugin_dialog::DialogExt;
 
     log_line("pick_folder 打开选择器");

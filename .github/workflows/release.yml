@@ -162,6 +162,9 @@ jobs:
       - name: Patch Gradle signing
         run: python3 scripts/patch-android-gradle.py
 
+      - name: Ensure gradlew is executable
+        run: chmod +x src-tauri/gen/android/gradlew
+
       - name: Move keystore into project
         run: |
           mv release.keystore src-tauri/gen/android/release.keystore
