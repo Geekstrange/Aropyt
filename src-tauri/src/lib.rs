@@ -583,25 +583,30 @@ async fn pick_folder(app: tauri::AppHandle) -> Result<Option<String>, String> {
         let _ = app; // 移动端不用 dialog
         return Err("移动端暂不支持选择文件夹作为工作区，请使用内置草稿。".to_string());
     }
+    // 桌面实现在同一个 cfg 块里：mobile 分支 return 后，这段代码在 mobile
+    // 编译时不存在，picked 才不会悬空（上一版只 cfg 了 let picked，
+    // match/Ok 悬在外面 → E0425，实测）。
     #[cfg(desktop)]
-    let picked = tauri::async_runtime::spawn_blocking(move || {
-        app.dialog()
-            .file()
-            .set_title("打开文件夹作为工作区")
-            .blocking_pick_folder()
-    })
-    .await
-    .map_err(|error| {
-        log_line(&format!("pick_folder 线程异常：{error}"));
-        format!("选择器线程异常：{error}")
-    })?;
+    {
+        let picked = tauri::async_runtime::spawn_blocking(move || {
+            app.dialog()
+                .file()
+                .set_title("打开文件夹作为工作区")
+                .blocking_pick_folder()
+        })
+        .await
+        .map_err(|error| {
+            log_line(&format!("pick_folder 线程异常：{error}"));
+            format!("选择器线程异常：{error}")
+        })?;
 
-    match &picked {
-        Some(path) => log_line(&format!("pick_folder → {:?}", path.to_string())),
-        None => log_line("pick_folder → 没有选择（用户取消）"),
+        match &picked {
+            Some(path) => log_line(&format!("pick_folder → {:?}", path.to_string())),
+            None => log_line("pick_folder → 没有选择（用户取消）"),
+        }
+
+        Ok(picked.map(|path| path.to_string()))
     }
-
-    Ok(picked.map(|path| path.to_string()))
 }
 
 #[derive(Debug, Deserialize)]
