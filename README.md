@@ -4,12 +4,10 @@
 
 **A Typora-style Markdown editor where the editing area *is* the preview.**
 
-[![License: AGPL-3.0](https://img.shields.io/badge/License-AGPL--3.0-blue.svg)](https://www.gnu.org/licenses/agpl-3.0)
-[![Latest Release](https://img.shields.io/github/v/release/Geekstrange/Aropyt?label=release)](https://github.com/Geekstrange/Aropyt/releases/latest)
-[![Platforms](https://img.shields.io/badge/platform-Windows%20%7C%20macOS%20%7C%20Linux%20%7C%20Android-lightgrey)](https://github.com/Geekstrange/Aropyt/releases/latest)
-[![Website](https://img.shields.io/badge/website-aropyt.com-5bb44e)](https://aropyt.com)
-
-[Website](https://aropyt.com) · [Download](https://github.com/Geekstrange/Aropyt/releases/latest) · [Features](#features) · [Building](#building-from-source)
+[![License: AGPL-3.0](https://img.shields.io/badge/License-AGPL--3.0-blue?style=flat-square&logo=gnu&logoColor=white)](https://www.gnu.org/licenses/agpl-3.0)
+[![Latest Release](https://img.shields.io/github/v/release/Geekstrange/Aropyt?label=release&style=flat-square&logo=github&logoColor=white)](https://github.com/Geekstrange/Aropyt/releases/latest)
+[![Platforms](https://img.shields.io/badge/platform-Windows%20%7C%20macOS%20%7C%20Linux%20%7C%20Android-lightgrey?style=flat-square&logo=tauri&logoColor=white)](https://github.com/Geekstrange/Aropyt/releases/latest)
+[![Website](https://img.shields.io/badge/website-aropyt.com-5bb44e?style=flat-square&logo=googlechrome&logoColor=white)](https://aropyt.com)
 
 </div>
 
