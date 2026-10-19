@@ -54,8 +54,8 @@ jobs:
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         with:
-          tagName: v__VERSION__
-          releaseName: 'Aropyt v__VERSION__'
+          tagName: ${{ github.ref_name }}
+          releaseName: 'Aropyt ${{ github.ref_name }}'
           releaseBody: |
             Aropyt v__VERSION__ —— Typora 式 Markdown 编辑器。
 
