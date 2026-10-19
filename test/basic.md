@@ -16,7 +16,7 @@
 
 这是一个普通段落。Markdown 编辑器需要支持中英文混排：The quick brown fox jumps over the lazy dog.
 
-这是另一个段落，前面有空行分隔。  
+这是另一个段落，前面有空行分隔。
 这一行末尾有两个空格，应当渲染为软换行。
 
 ---

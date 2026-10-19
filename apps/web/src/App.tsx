@@ -462,7 +462,7 @@ function Toolbar({ runtime, onOpenSettings, onOpenHistory }: ToolbarProps): JSX.
           );
         }}
       >
-        <Icon name="plugins" />
+        <Icon name="plugin" />
       </button>
 
       {/*
@@ -491,7 +491,7 @@ function Toolbar({ runtime, onOpenSettings, onOpenHistory }: ToolbarProps): JSX.
           aria-pressed={state.sourceMode}
           onClick={() => runtime.toggleSourceMode()}
         >
-          <Icon name="code" />
+          <Icon name="invisible" />
         </button>
       )}
 
@@ -628,11 +628,8 @@ function StatusBar({ runtime }: { readonly runtime: AropytRuntime }): JSX.Elemen
           void runtime.windowService.showMessage(
             [
               `Aropyt v${__APP_VERSION__}`,
-              '',
-              'GitHub:',
-              'https://github.com/Geekstrange/Aropyt',
-              '',
-              '许可证: AGPL-3.0',
+              'aropyt.com',
+              'AGPL-3.0',
             ].join('\n'),
             { level: 'info' },
           )

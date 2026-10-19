@@ -71,6 +71,8 @@
   --md-text: #e6e6e3;
   --md-muted: #8b8a85;
   --md-faint: #6b6a66;
+  /* 源码模式空白字符标记：半透明，够看清又不抢正文 */
+  --md-ws-dot: rgba(139, 138, 133, 0.55);
   --md-border: rgba(255, 255, 255, 0.1);
   --md-border-strong: rgba(255, 255, 255, 0.18);
   /* 阴影与遮罩用独立变量：浅色下同一组 rgba 会糊成一片脏灰。 */
@@ -122,6 +124,7 @@
   --md-text: #26262b;
   --md-muted: #6b6a66;
   --md-faint: #8f8e88;
+  --md-ws-dot: rgba(140, 138, 130, 0.45);
   --md-border: rgba(0, 0, 0, 0.1);
   --md-border-strong: rgba(0, 0, 0, 0.18);
   --md-shadow: rgba(0, 0, 0, 0.13);
@@ -1185,6 +1188,9 @@ button {
 }
 
 .settings-dialog {
+  display: flex;
+  flex-direction: column;
+  max-height: 80vh;
   width: min(560px, calc(100vw - 48px));
   max-height: 80vh;
   overflow: auto;
@@ -1192,6 +1198,21 @@ button {
   border: 1px solid var(--md-border);
   box-shadow: 0 18px 48px rgba(0, 0, 0, 0.35);
   padding: 18px 20px 20px;
+}
+
+/*
+ * header 固定、内容区滚动（v0.0.8）：
+ * 滚动容器从整个 dialog 收窄到 body，"设置"标题不再跟着滚。
+ */
+.settings-dialog > .settings-dialog__header {
+  flex: 0 0 auto;
+}
+
+.settings-dialog__body {
+  flex: 1 1 auto;
+  overflow-y: auto;
+  min-height: 0;
+  padding-right: 6px;
 }
 
 .settings-dialog__header {
@@ -1436,4 +1457,28 @@ button {
 
 .history-number:disabled {
   opacity: 0.5;
+}
+
+/*
+ * 源码模式的空格可视化（v0.0.8）。
+ * 用径向渐变画一个中点，纯背景绘制 —— 不插入任何节点、不改文本，
+ * 空格仍然可以正常输入与删除。
+ */
+.cm-md-ws-space {
+  background-image: radial-gradient(circle, var(--md-ws-dot) 1.8px, transparent 1.8px);
+  background-size: 100% 100%;
+  background-position: center;
+  background-repeat: no-repeat;
+}
+
+/*
+ * tab 画向右箭头（SVG data URI 背景）。
+ * 不用 replace/widget：那会改变文本语义、影响光标；背景绘制对编辑零影响。
+ * 箭头按元素宽度居中，因此 4/8 空格宽的 tab 都能对上。
+ */
+.cm-md-ws-tab {
+  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 12 6'%3E%3Cpath d='M1 3h9M7.5 0.8 10.5 3 7.5 5.2' stroke='%23a8a69f' stroke-width='1.2' fill='none' stroke-linecap='round' stroke-linejoin='round'/%3E%3C/svg%3E");
+  background-repeat: no-repeat;
+  background-position: center;
+  background-size: 10px 5px;
 }

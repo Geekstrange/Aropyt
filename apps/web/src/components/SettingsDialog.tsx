@@ -12,7 +12,6 @@
  */
 import { useCallback, useSyncExternalStore, type JSX } from 'react';
 import type { AropytRuntime, RuntimeState } from '../runtime.js';
-import { LOCALES, LOCALE_LABELS, t } from '../i18n.js';
 
 interface SettingsDialogProps {
   readonly runtime: AropytRuntime;
@@ -60,28 +59,17 @@ export function SettingsDialog({
         onClick={(event) => event.stopPropagation()}
       >
         <header className="settings-dialog__header">
-          <h2>{t("settings.title")}</h2>
+          <h2>{"设置"}</h2>
           <button type="button" className="settings-dialog__close" aria-label="关闭" onClick={onClose}>
             ×
           </button>
         </header>
+        <div className="settings-dialog__body">
 
         <section className="settings-section">
-          <h3>{t('settings.appearance')}</h3>
+          <h3>{"外观"}</h3>
           <div className="settings-row">
-            <span className="settings-row__label">{t('settings.language')}</span>
-            <select
-              className="history-number"
-              value={state.locale}
-              onChange={(event) => runtime.updateSettings({ locale: event.target.value as never })}
-            >
-              {LOCALES.map((code) => (
-                <option key={code} value={code}>{LOCALE_LABELS[code]}</option>
-              ))}
-            </select>
-          </div>
-          <div className="settings-row">
-            <span className="settings-row__label">{t("settings.theme")}</span>
+            <span className="settings-row__label">{"主题"}</span>
             <div className="settings-segmented">
               {THEME_OPTIONS.map((option) => (
                 <button
@@ -108,7 +96,7 @@ export function SettingsDialog({
         <section className="settings-section">
           <h3>编辑</h3>
           <div className="settings-row">
-            <span className="settings-row__label">{t("settings.editor.vim")}</span>
+            <span className="settings-row__label">{"Vim 模式"}</span>
             <button
               type="button"
               className={`settings-switch${vimMode ? ' is-on' : ''}`}
@@ -124,15 +112,15 @@ export function SettingsDialog({
         </section>
 
         <section className="settings-section">
-          <h3>{t("settings.backup.title")}</h3>
+          <h3>{"数据备份"}</h3>
           <div className="settings-row">
             <span className="settings-row__label">草稿与编辑历史</span>
             <div className="settings-actions" style={{ marginTop: 0 }}>
               <button type="button" className="settings-button" onClick={() => void runtime.exportBackup()}>
-                {t("settings.backup.export")}
+                {"导出数据"}
               </button>
               <button type="button" className="settings-button" onClick={() => void runtime.importBackup()}>
-                {t("settings.backup.import")}
+                {"导入数据"}
               </button>
             </div>
           </div>
@@ -143,9 +131,9 @@ export function SettingsDialog({
         </section>
 
         <section className="settings-section">
-          <h3>{t("settings.history.title")}</h3>
+          <h3>{"编辑历史"}</h3>
           <div className="settings-row">
-            <span className="settings-row__label">{t("settings.history.limit")}</span>
+            <span className="settings-row__label">{"每文件保留版本数"}</span>
             <input
               type="number"
               className="history-number"
@@ -159,7 +147,7 @@ export function SettingsDialog({
             />
           </div>
           <div className="settings-row">
-            <span className="settings-row__label">{t("settings.history.autoSave")}</span>
+            <span className="settings-row__label">{"自动保存版本"}</span>
             <button
               type="button"
               className={`settings-switch${state.historyAutoSave ? ' is-on' : ''}`}
@@ -170,7 +158,7 @@ export function SettingsDialog({
             </button>
           </div>
           <div className="settings-row">
-            <span className="settings-row__label">{t("settings.history.autoSaveInterval")}</span>
+            <span className="settings-row__label">{"自动保存间隔（秒）"}</span>
             <input
               type="number"
               className="history-number"
@@ -191,7 +179,7 @@ export function SettingsDialog({
         </section>
 
         <section className="settings-section">
-          <h3>{t("settings.config.title")}</h3>
+          <h3>{"配置文件"}</h3>
           <div className="settings-row">
             <span className="settings-row__label">settings.jsonc</span>
             <code className="settings-path">{settingsPath ?? '浏览器模式：配置存于 IndexedDB'}</code>
@@ -207,9 +195,10 @@ export function SettingsDialog({
             </button>
           </div>
           <p className="settings-hint">
-            桌面版才有磁盘配置。界面里的修改目前只作用于本次会话，写回文件在下一版接入。
+            桌面版才有磁盘配置；界面里的修改会立即写回这个文件。
           </p>
         </section>
+        </div>
       </div>
     </div>
   );

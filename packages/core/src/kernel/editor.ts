@@ -1,4 +1,41 @@
 /**
+ * 空格可视化：把视口内的空格标成装饰，由 CSS 画成中点。
+ *
+ * 为什么用 mark + CSS 而不是 replace：replace 会改变文本语义（不可编辑），
+ * 空格必须始终可以正常输入/删除。CSS 画点对文档零影响。
+ */
+function showWhitespace(): Extension {
+  return ViewPlugin.fromClass(
+    class {
+      decorations: DecorationSet;
+      constructor(view: EditorView) {
+        this.decorations = buildSpaceDecorations(view);
+      }
+      update(update: ViewUpdate): void {
+        if (update.docChanged || update.viewportChanged) {
+          this.decorations = buildSpaceDecorations(update.view);
+        }
+      }
+    },
+    { decorations: (plugin) => plugin.decorations },
+  );
+}
+
+function buildSpaceDecorations(view: EditorView): DecorationSet {
+  const builder = new RangeSetBuilder<Decoration>();
+  const to = Math.min(view.viewport.to, view.state.doc.length);
+  for (let pos = view.viewport.from; pos < to; pos += 1) {
+    const ch = view.state.doc.sliceString(pos, pos + 1);
+    if (ch === ' ') {
+      builder.add(pos, pos + 1, Decoration.mark({ class: 'cm-md-ws-space' }));
+    } else if (ch === '\t') {
+      builder.add(pos, pos + 1, Decoration.mark({ class: 'cm-md-ws-tab' }));
+    }
+  }
+  return builder.finish();
+}
+
+/**
  * 编辑器适配器 —— 内核里唯一"真正碰 CodeMirror"的地方。
  *
  * 它的职责就一件事：把 CodeMirror 的实例语义，翻译成插件能用的语义操作。
@@ -9,7 +46,9 @@
  * 都执行、而且是同步代码无法超时，它是整个防挂起体系里最需要被盯住的入口。
  */
 
-import { Compartment, EditorState, Prec, type Extension } from '@codemirror/state';
+import { Compartment, EditorState, Prec, type Extension,
+  RangeSetBuilder,
+} from '@codemirror/state';
 import {
   EditorView,
   crosshairCursor,
@@ -21,6 +60,10 @@ import {
   keymap,
   lineNumbers,
   rectangularSelection,
+  ViewPlugin,
+  Decoration,
+  type DecorationSet,
+  type ViewUpdate,
 } from '@codemirror/view';
 import { defaultKeymap, history, historyKeymap, indentWithTab } from '@codemirror/commands';
 import { bracketMatching, foldGutter, foldKeymap, indentOnInput } from '@codemirror/language';
@@ -348,7 +391,19 @@ export class EditorAdapter implements EditorApi {
       //
       // 折叠栏也放这里而不是无条件装载：它同样会创建 .cm-gutters，
       // 在渲染态留下一列视觉噪音（Typora 的阅读视图没有它）。
-      return [lineNumbers(), highlightActiveLineGutter(), foldGutter()];
+      return [
+        lineNumbers(),
+        highlightActiveLineGutter(),
+        foldGutter(),
+        /*
+         * 非打印字符可视化（v0.0.8）：
+         *  - highlightSpecialChars：tab → 箭头、控制字符 → 转义符号（CM6 内置）
+         *  - showWhitespace：空格画成中点（自定义装饰，纯 CSS 渲染，不改文本）
+         * 与"源码模式是排障模式"的定位一致 —— 看得见空白，才找得到缩进错。
+         */
+        highlightSpecialChars(),
+        showWhitespace(),
+      ];
     }
     // 渲染态：行号是纯噪音。Typora 就没有行号，
     // 而且标记隐藏后行内不再有等宽符号，一列数字贴在正文左边
