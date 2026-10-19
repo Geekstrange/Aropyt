@@ -1,0 +1,607 @@
+<!DOCTYPE html>
+<html lang="en" data-lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Aropyt — A Markdown editor that feels invisible</title>
+<link rel="icon" type="image/svg+xml" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 500 500'%3E%3Cpath fill='%235bb44e' d='M106,250v-99.5c0-25.6,15.9-45.8,40.9-51.4,3.9-.9,7.9-1.1,11.9-1.1h182.5c30.3,0,52.7,22.5,52.7,52.7v129c0,13.7-4.7,25.2-14.4,34.9-24.5,24.3-48.8,48.7-73.2,73.2-9.4,9.4-20.5,14.2-34,14.2-38.3-.2-76.7-.1-115-.1s-51.3-22.6-51.4-51.3v-100.6h0Z'/%3E %3Cpath fill='%23fefefe' d='M162.6,135.3c-10.7,0-19.3,8.7-19.3,19.3v201c0,5,4,9,9,9h118c5.2,0,9.4-4.2,9.4-9.4v-66.2h67.7c5.2,0,9.4-4.2,9.4-9.4v-29l-4,2.5h-.2c0,.1-4.3,2.8-4.3,2.8-1.8,1.1-4.1,1.1-5.9,0l-4.3-2.7-4.4-2.8h.1l-4.8-3.1c-1.7-1.1-4-1.1-5.7,0-1.6,1-4.7,3.1-4.7,3.1l-4.5,2.8-4.3,2.7c-1.8,1.1-4.1,1.1-5.9,0l-4.3-2.7-4.1-2.6-4.8-3.1c-1.7-1.1-4-1.1-5.7,0-1.6,1-3.2,2-4.8,3.1l-4.1,2.6-4.3,2.7c-1.8,1.1-4.1,1.1-5.9,0l-4.3-2.7s-8.1-5.1-9-5.6c-1.4-1.1-6-2.3-8.7-2.1h-16.3c-5.5,0-9.9-4.4-9.9-9.9v-9.2c0-.8.3-1.5.9-2.1.9-.8,1.9-.9,2.1-.9h25.6c.9,0,5.3,1.2,6.1,1.7,4.4,2.8,8.8,5.6,13.3,8.4,1.7,1.1,4,1.1,5.7,0l12.2-7.7,1.3-.8c1.8-1.1,4.1-1.1,5.9,0l4.3,2.7,9.8,6.2c1.3.8,3,.8,4.3,0l12.9-8.2,1.3-.8c1.8-1.1,4.1-1.1,5.9,0l4.3,2.7,8.5,5.4c.2.1.3.2.5.3,1.7,1.1,4,1.1,5.7,0l3.9-2.5c3.4-2.2,4.5-4.6,4.5-8.6v-67.9c0-10.7-8.7-19.3-19.3-19.3l-174.8.3Z'/%3E %3Cpath fill='%23e1e1e1' d='m239.5 289.1h-5.4c-2.2 0-3.2 2.8-1.6 4.3l1.6 1.5 45.6 43.8v-49.6h-40.2z'/%3E %3Cpath fill='%235bb44e' d='M339.3,184.9c-.3-6.8-3.1-12.9-7.4-17.6h-.1c-.2-.3-.5-.6-.7-.8s-.5-.5-.7-.7h-.2c-4.7-4.4-10.8-7.1-17.6-7.5h0c-.6,0-1.1.2-1.4.6-.3.3-.6.8-.6,1.3h0v13.3h0c0,.7.6,1.3,1.4,1.4h0c2.2.1,4.2.8,5.8,2h0c.2.2.5.3.7.5,0,0,.1,0,.2.1.2.1.3.3.5.4.1,0,.2.2.3.3.1.1.2.2.3.3.1.2.3.3.4.5,0,0,0,.1.1.2.2.2.3.4.5.7h0c1.1,1.7,1.9,3.7,2,5.8h0c0,.7.6,1.3,1.4,1.4h13.3c.5,0,1-.3,1.3-.6.4-.4.6-.9.6-1.4s0,0,0,0h0v-.2Z'/%3E %3Cpath fill='%235bb44e' d='m226.1 158.4c-15.3 0-30.6-0.2-45.8-0.3h-0.3-6.3c-1 0-1.8 0.8-1.8 1.8v8.4c0 4.4 3.6 7.9 7.9 7.9h2.7s0 0 0 0c0 12.5 10 22.6 22.5 23 13 0.3 23.7-10.7 23.7-23.7v-14.4c0-1.5-1.2-2.7-2.7-2.7z'/%3E%3C/svg%3E">
+
+<meta name="description" content="Typora-style Markdown editor. Block-based live rendering, files stay plain text, editing history, plugin system. Windows / macOS / Linux / Android.">
+<style>
+/*
+ * 配色与 Aropyt 应用同源（styles.css 的 @palette:dark / light）。
+ * 深色是默认（与应用一致）；浅色用 [data-theme='light'] 切换。
+ * 切换由 JS 写 html 的 data-theme，优先级：localStorage > 系统偏好。
+ */
+:root {
+  color-scheme: dark;
+  --bg: #131315;          /* md-surface-0 */
+  --card: #1a1a1c;        /* md-surface-1 */
+  --card-2: #232326;      /* md-surface-2 */
+  --fg: #e6e6e3;          /* md-text */
+  --muted: #8b8a85;       /* md-muted */
+  --border: rgba(255, 255, 255, 0.1);
+  --accent: #5bb44e;      /* logo 品牌绿 */
+  --accent-strong: #6fc95f;
+  --accent-contrast: #0d2a0c;
+  --green: #5dcaa5;       /* md-link，与 logo 的品牌绿同族 */
+  --shadow: rgba(0, 0, 0, 0.45);
+}
+
+:root[data-theme='light'] {
+  color-scheme: light;
+  --bg: #ffffff;
+  --card: #f7f7f5;
+  --card-2: #eeedea;
+  --fg: #26262b;
+  --muted: #6b6a66;
+  --border: rgba(0, 0, 0, 0.1);
+  --accent: #0d7259;      /* md-link */
+  --accent-strong: #0a5c48;
+  --accent-contrast: #ffffff;
+  --green: #0d7259;
+  --shadow: rgba(0, 0, 0, 0.13);
+}
+
+* { box-sizing: border-box; margin: 0; padding: 0; }
+html { scroll-behavior: smooth; }
+body {
+  font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", "Noto Sans", "Helvetica Neue", Arial, "PingFang SC", "Hiragino Sans", "Microsoft YaHei", sans-serif;
+  background: var(--bg);
+  color: var(--fg);
+  line-height: 1.65;
+  -webkit-font-smoothing: antialiased;
+}
+a { color: var(--accent); text-decoration: none; }
+a:hover { color: var(--accent-strong); text-decoration: underline; }
+code, .mono { font-family: "SF Mono", Consolas, "Cascadia Code", monospace; }
+
+/* ── nav ── */
+nav {
+  position: sticky; top: 0; z-index: 10;
+  display: flex; align-items: center; gap: 20px;
+  padding: 14px 24px;
+  background: var(--bg);
+  backdrop-filter: blur(10px);
+  border-bottom: 1px solid var(--border);
+}
+.brand { display: flex; align-items: center; gap: 10px; font-weight: 700; font-size: 17px; color: var(--fg); }
+.brand:hover { text-decoration: none; }
+.brand img { width: 26px; height: 26px; }
+nav .links { display: flex; gap: 18px; margin-left: auto; align-items: center; font-size: 14px; }
+nav .links a { color: var(--muted); }
+nav .links a:hover { color: var(--fg); }
+.theme-toggle {
+  display: inline-flex; align-items: center; justify-content: center;
+  width: 30px; height: 30px;
+  background: var(--card); color: var(--muted);
+  border: 1px solid var(--border); border-radius: 4px;
+  cursor: pointer;
+}
+.theme-toggle:hover { color: var(--fg); }
+:root .icon-sun { display: none; }
+:root .icon-moon { display: inline-block; }
+:root[data-theme='light'] .icon-sun { display: inline-block; }
+:root[data-theme='light'] .icon-moon { display: none; }
+
+select#lang {
+  font: inherit; font-size: 13px;
+  background: var(--card); color: var(--fg);
+  border: 1px solid var(--border); border-radius: 4px;
+  padding: 4px 8px; cursor: pointer;
+}
+
+/* ── hero ── */
+.hero { text-align: center; padding: 96px 24px 72px; max-width: 860px; margin: 0 auto; }
+.hero h1 {
+  font-size: clamp(44px, 8vw, 76px);
+  letter-spacing: -0.02em;
+  line-height: 1.05;
+  margin-bottom: 20px;
+}
+.hero .slogan { font-size: clamp(19px, 3vw, 25px); color: var(--muted); margin-bottom: 18px; }
+.hero .desc { font-size: 16px; max-width: 640px; margin: 0 auto 34px; color: var(--fg); }
+.dl-buttons { display: flex; flex-wrap: wrap; gap: 12px; justify-content: center; }
+.btn {
+  display: inline-flex; align-items: center; gap: 8px;
+  padding: 10px 22px; border-radius: 6px; font-size: 15px; font-weight: 600;
+  border: 1px solid var(--border); color: var(--fg); background: var(--card);
+  transition: transform 120ms ease, border-color 120ms ease;
+}
+.btn:hover { transform: translateY(-2px); border-color: var(--accent); text-decoration: none; }
+.btn.primary { background: var(--accent); border-color: var(--accent); color: var(--accent-contrast); }
+.btn.primary:hover { background: var(--accent-strong); border-color: var(--accent-strong); color: var(--accent-contrast); }
+.platforms { margin-top: 26px; font-size: 13px; color: var(--muted); }
+.version-badge {
+  display: inline-block; font-size: 12px; color: var(--green);
+  border: 1px solid var(--green); padding: 1px 10px; border-radius: 999px;
+  margin-bottom: 22px; font-family: monospace;
+}
+
+/* ── sections ── */
+section { max-width: 1040px; margin: 0 auto; padding: 64px 24px; }
+section > h2 { font-size: 30px; letter-spacing: -0.01em; margin-bottom: 10px; }
+section > .sub { color: var(--muted); margin-bottom: 40px; font-size: 15px; }
+.grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(280px, 1fr)); gap: 18px; }
+.card {
+  background: var(--card); border: 1px solid var(--border); border-radius: 8px;
+  padding: 24px;
+}
+.card h3 { font-size: 17px; margin-bottom: 8px; }
+.card p { font-size: 14px; color: var(--muted); }
+
+/* ── download table ── */
+table { width: 100%; border-collapse: collapse; font-size: 14px; }
+th, td { text-align: left; padding: 12px 14px; border-bottom: 1px solid var(--border); }
+th { color: var(--muted); font-weight: 600; font-size: 13px; }
+td a { font-weight: 600; }
+
+/* ── footer ── */
+footer {
+  border-top: 1px solid var(--border);
+  padding: 36px 24px; text-align: center;
+  color: var(--muted); font-size: 13px;
+}
+footer a { color: var(--muted); }
+
+@media (max-width: 640px) {
+  nav .links a.hide-mobile { display: none; }
+  .hero { padding: 64px 20px 48px; }
+}
+</style>
+</head>
+<body>
+
+<nav>
+  <a class="brand" href="#">
+    <svg viewBox="0 0 500 500" width="26" height="26" aria-hidden="true" role="img">
+<path fill="#5bb44e" d="M106,250v-99.5c0-25.6,15.9-45.8,40.9-51.4,3.9-.9,7.9-1.1,11.9-1.1h182.5c30.3,0,52.7,22.5,52.7,52.7v129c0,13.7-4.7,25.2-14.4,34.9-24.5,24.3-48.8,48.7-73.2,73.2-9.4,9.4-20.5,14.2-34,14.2-38.3-.2-76.7-.1-115-.1s-51.3-22.6-51.4-51.3v-100.6h0Z"/>
+<path fill="#fefefe" d="M162.6,135.3c-10.7,0-19.3,8.7-19.3,19.3v201c0,5,4,9,9,9h118c5.2,0,9.4-4.2,9.4-9.4v-66.2h67.7c5.2,0,9.4-4.2,9.4-9.4v-29l-4,2.5h-.2c0,.1-4.3,2.8-4.3,2.8-1.8,1.1-4.1,1.1-5.9,0l-4.3-2.7-4.4-2.8h.1l-4.8-3.1c-1.7-1.1-4-1.1-5.7,0-1.6,1-4.7,3.1-4.7,3.1l-4.5,2.8-4.3,2.7c-1.8,1.1-4.1,1.1-5.9,0l-4.3-2.7-4.1-2.6-4.8-3.1c-1.7-1.1-4-1.1-5.7,0-1.6,1-3.2,2-4.8,3.1l-4.1,2.6-4.3,2.7c-1.8,1.1-4.1,1.1-5.9,0l-4.3-2.7s-8.1-5.1-9-5.6c-1.4-1.1-6-2.3-8.7-2.1h-16.3c-5.5,0-9.9-4.4-9.9-9.9v-9.2c0-.8.3-1.5.9-2.1.9-.8,1.9-.9,2.1-.9h25.6c.9,0,5.3,1.2,6.1,1.7,4.4,2.8,8.8,5.6,13.3,8.4,1.7,1.1,4,1.1,5.7,0l12.2-7.7,1.3-.8c1.8-1.1,4.1-1.1,5.9,0l4.3,2.7,9.8,6.2c1.3.8,3,.8,4.3,0l12.9-8.2,1.3-.8c1.8-1.1,4.1-1.1,5.9,0l4.3,2.7,8.5,5.4c.2.1.3.2.5.3,1.7,1.1,4,1.1,5.7,0l3.9-2.5c3.4-2.2,4.5-4.6,4.5-8.6v-67.9c0-10.7-8.7-19.3-19.3-19.3l-174.8.3Z"/>
+<path fill="#e1e1e1" d="m239.5 289.1h-5.4c-2.2 0-3.2 2.8-1.6 4.3l1.6 1.5 45.6 43.8v-49.6h-40.2z"/>
+<path fill="#5bb44e" d="M339.3,184.9c-.3-6.8-3.1-12.9-7.4-17.6h-.1c-.2-.3-.5-.6-.7-.8s-.5-.5-.7-.7h-.2c-4.7-4.4-10.8-7.1-17.6-7.5h0c-.6,0-1.1.2-1.4.6-.3.3-.6.8-.6,1.3h0v13.3h0c0,.7.6,1.3,1.4,1.4h0c2.2.1,4.2.8,5.8,2h0c.2.2.5.3.7.5,0,0,.1,0,.2.1.2.1.3.3.5.4.1,0,.2.2.3.3.1.1.2.2.3.3.1.2.3.3.4.5,0,0,0,.1.1.2.2.2.3.4.5.7h0c1.1,1.7,1.9,3.7,2,5.8h0c0,.7.6,1.3,1.4,1.4h13.3c.5,0,1-.3,1.3-.6.4-.4.6-.9.6-1.4s0,0,0,0h0v-.2Z"/>
+<path fill="#5bb44e" d="m226.1 158.4c-15.3 0-30.6-0.2-45.8-0.3h-0.3-6.3c-1 0-1.8 0.8-1.8 1.8v8.4c0 4.4 3.6 7.9 7.9 7.9h2.7s0 0 0 0c0 12.5 10 22.6 22.5 23 13 0.3 23.7-10.7 23.7-23.7v-14.4c0-1.5-1.2-2.7-2.7-2.7z"/>
+</svg>
+    Aropyt
+  </a>
+  <div class="links">
+    <a href="#features" data-i18n="nav.features" class="hide-mobile">Features</a>
+    <a href="#download" data-i18n="nav.download">Download</a>
+    <a href="https://github.com/Geekstrange/Aropyt" target="_blank" rel="noopener">GitHub</a>
+    <button id="theme" type="button" class="theme-toggle" aria-label="Toggle theme" title="Theme">
+      <svg class="icon-sun" viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><circle cx="12" cy="12" r="4"/><path d="M12 2v2M12 20v2M4.9 4.9l1.4 1.4M17.7 17.7l1.4 1.4M2 12h2M20 12h2M4.9 19.1l1.4-1.4M17.7 6.3l1.4-1.4"/></svg>
+      <svg class="icon-moon" viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 12.8A9 9 0 1 1 11.2 3a7 7 0 0 0 9.8 9.8z"/></svg>
+    </button>
+    <select id="lang" aria-label="Language"></select>
+  </div>
+</nav>
+
+<header class="hero">
+  <div class="version-badge" data-i18n="hero.version">--</div>
+  <h1>Aropyt</h1>
+  <p class="slogan" data-i18n="hero.slogan"></p>
+  <p class="desc" data-i18n="hero.desc"></p>
+  <div class="dl-buttons">
+    <a class="btn primary" href="#download" data-i18n="hero.download">Download</a>
+    <a class="btn" href="https://github.com/Geekstrange/Aropyt" target="_blank" rel="noopener" data-i18n="hero.github">View on GitHub</a>
+  </div>
+  <p class="platforms" data-i18n="hero.platforms">Windows · macOS · Linux · Android</p>
+</header>
+
+<section id="features">
+  <h2 data-i18n="features.title"></h2>
+  <p class="sub" data-i18n="features.sub"></p>
+  <div class="grid">
+    <div class="card">
+      <h3 data-i18n="f1.title"></h3>
+      <p data-i18n="f1.desc"></p>
+    </div>
+    <div class="card">
+      <h3 data-i18n="f2.title"></h3>
+      <p data-i18n="f2.desc"></p>
+    </div>
+    <div class="card">
+      <h3 data-i18n="f3.title"></h3>
+      <p data-i18n="f3.desc"></p>
+    </div>
+    <div class="card">
+      <h3 data-i18n="f4.title"></h3>
+      <p data-i18n="f4.desc"></p>
+    </div>
+    <div class="card">
+      <h3 data-i18n="f5.title"></h3>
+      <p data-i18n="f5.desc"></p>
+    </div>
+    <div class="card">
+      <h3 data-i18n="f6.title"></h3>
+      <p data-i18n="f6.desc"></p>
+    </div>
+  </div>
+</section>
+
+<section id="download">
+  <h2 data-i18n="download.title"></h2>
+  <p class="sub" data-i18n="download.sub"></p>
+  <table>
+    <tr><th data-i18n="download.platform"></th><th data-i18n="download.requirement"></th><th data-i18n="download.file"></th></tr>
+    <tr>
+      <td>Windows</td><td>Windows 10 / 11</td>
+      <td><a href="https://github.com/Geekstrange/Aropyt/releases/latest" target="_blank" rel="noopener">setup.exe / .msi</a></td>
+    </tr>
+    <tr>
+      <td>macOS</td><td>macOS 11+ · Apple Silicon</td>
+      <td><a href="https://github.com/Geekstrange/Aropyt/releases/latest" target="_blank" rel="noopener">.dmg</a></td>
+    </tr>
+    <tr>
+      <td>Linux</td><td>WebKitGTK required</td>
+      <td><a href="https://github.com/Geekstrange/Aropyt/releases/latest" target="_blank" rel="noopener">.AppImage / .deb</a></td>
+    </tr>
+    <tr>
+      <td>Android</td><td>Android 10+</td>
+      <td><a href="https://github.com/Geekstrange/Aropyt/releases/latest" target="_blank" rel="noopener">.apk</a></td>
+    </tr>
+  </table>
+</section>
+
+<footer>
+  <p>
+    <span data-i18n="footer.license">Open source under AGPL-3.0</span> ·
+    <a href="https://github.com/Geekstrange/Aropyt" target="_blank" rel="noopener">GitHub</a> ·
+    aropyt.com · © 2026 Aropyt
+  </p>
+</footer>
+
+<script>
+/* ── i18n ──────────────────────────────────────────────────────
+ * 单文件静态站：九种语言的文案内嵌在这张字典里。
+ * 语言选择优先级：URL ?lang= > localStorage > 浏览器语言。
+ * 切换只替换 data-i18n 节点的文本，不刷新页面。
+ * ────────────────────────────────────────────────────────────── */
+const I18N = {
+  en: {
+    "html:lang": "en",
+    "nav.features": "Features", "nav.download": "Download",
+    "hero.version": "{version} · latest",
+    "hero.slogan": "A Markdown editor that feels invisible.",
+    "hero.desc": "Write Markdown, see the finished document. Block-based live rendering — your files stay plain text, forever yours.",
+    "hero.download": "Download", "hero.github": "View on GitHub",
+    "hero.platforms": "Windows · macOS · Linux · Android",
+    "features.title": "Everything you need, nothing you don't",
+    "features.sub": "Built on three principles: files are the truth, rendering is honest, and the editor stays out of your way.",
+    "f1.title": "True live rendering",
+    "f1.desc": "Block-based WYSIWYG: tables render as tables, code as code, headings as headings. What you type is what you get — no split panes.",
+    "f2.title": "Files are the truth",
+    "f2.desc": "Plain .md on disk. No lock-in, no proprietary database, works with git and any sync tool. Copy out is always source text.",
+    "f3.title": "First-class Vim",
+    "f3.desc": "NORMAL / INSERT / VISUAL with a live indicator. Vim mode keeps you in source view where line-based motion belongs.",
+    "f4.title": "Editing history",
+    "f4.desc": "Every save is a version. Auto-snapshots on a timer, named milestones, one-click restore — and restoring never loses your latest work.",
+    "f5.title": "Plugin system",
+    "f5.desc": "VSCode-style declarative contribution with lazy activation. Import a single .js file to add commands, views and keybindings.",
+    "f6.title": "Feather-light",
+    "f6.desc": "Under 320 KB gzipped core. Renderers load on demand. IME-safe input for CJK writing out of the box.",
+    "download.title": "Download Aropyt",
+    "download.sub": "Free and open source. No account, no telemetry.",
+    "download.platform": "Platform", "download.requirement": "Requires", "download.file": "Package",
+    "footer.license": "Open source under AGPL-3.0"
+  },
+  "zh-CN": {
+    "html:lang": "zh-CN",
+    "nav.features": "特性", "nav.download": "下载",
+    "hero.version": "{version} · 最新版",
+    "hero.slogan": "让 Markdown 隐形的编辑器。",
+    "hero.desc": "书写 Markdown，看见成品文档。块级实时渲染 —— 文件永远是纯文本，永远属于你。",
+    "hero.download": "下载", "hero.github": "在 GitHub 查看",
+    "hero.platforms": "Windows · macOS · Linux · Android",
+    "features.title": "需要的都有，多余的一概没有",
+    "features.sub": "三个原则：文件即真理、渲染不撒谎、编辑器不挡路。",
+    "f1.title": "真正的实时渲染",
+    "f1.desc": "块级所见即所得：表格就是表格、代码就是代码、标题就是标题。所见即所得，无需分栏。",
+    "f2.title": "文件即真理",
+    "f2.desc": "磁盘上永远是纯 .md 文本。不锁定、无私有格式，git 与任何同步工具无缝配合，复制出来永远是源码。",
+    "f3.title": "一等 Vim 支持",
+    "f3.desc": "NORMAL / INSERT / VISUAL 模式与实时指示器。Vim 模式自动保持源码视图 —— 行级移动本该在那里。",
+    "f4.title": "编辑历史",
+    "f4.desc": "每次保存都是一个版本。自动快照、命名里程碑、一键恢复 —— 恢复也绝不丢最新内容。",
+    "f5.title": "插件系统",
+    "f5.desc": "VSCode 式声明式贡献与懒激活。导入一个 .js 文件即可扩展命令、视图与快捷键。",
+    "f6.title": "极致轻量",
+    "f6.desc": "核心压缩后不足 320 KB，渲染器按需加载。中日韩输入法开箱即用，零干扰。",
+    "download.title": "下载 Aropyt",
+    "download.sub": "免费开源。无账号，无遥测。",
+    "download.platform": "平台", "download.requirement": "系统要求", "download.file": "安装包",
+    "footer.license": "基于 AGPL-3.0 开源"
+  },
+  "zh-TW": {
+    "html:lang": "zh-TW",
+    "nav.features": "特性", "nav.download": "下載",
+    "hero.version": "{version} · 最新版",
+    "hero.slogan": "讓 Markdown 隱形的編輯器。",
+    "hero.desc": "書寫 Markdown，看見成品文件。區塊即時渲染 —— 檔案永遠是純文字，永遠屬於你。",
+    "hero.download": "下載", "hero.github": "在 GitHub 查看",
+    "hero.platforms": "Windows · macOS · Linux · Android",
+    "features.title": "需要的都有，多餘的一概沒有",
+    "features.sub": "三個原則：檔案即真理、渲染不說謊、編輯器不擋路。",
+    "f1.title": "真正的即時渲染",
+    "f1.desc": "區塊所見即所得：表格就是表格、程式碼就是程式碼、標題就是標題。所見即所得，無需分欄。",
+    "f2.title": "檔案即真理",
+    "f2.desc": "磁碟上永遠是純 .md 文字。不鎖定、無私有格式，git 與任何同步工具無縫配合，複製出來永遠是原始碼。",
+    "f3.title": "一等 Vim 支援",
+    "f3.desc": "NORMAL / INSERT / VISUAL 模式與即時指示器。Vim 模式自動保持原始碼檢視 —— 行級移動本該在那裡。",
+    "f4.title": "編輯歷史",
+    "f4.desc": "每次儲存都是一個版本。自動快照、命名里程碑、一鍵還原 —— 還原也絕不丟最新內容。",
+    "f5.title": "外掛系統",
+    "f5.desc": "VSCode 式宣告式貢獻與懶載入。匯入一個 .js 檔案即可擴充命令、檢視與快捷鍵。",
+    "f6.title": "極致輕量",
+    "f6.desc": "核心壓縮後不足 320 KB，渲染器按需載入。中日韓輸入法開箱即用，零干擾。",
+    "download.title": "下載 Aropyt",
+    "download.sub": "免費開源。無帳號，無遙測。",
+    "download.platform": "平台", "download.requirement": "系統需求", "download.file": "安裝包",
+    "footer.license": "基於 AGPL-3.0 開源"
+  },
+  ja: {
+    "html:lang": "ja",
+    "nav.features": "機能", "nav.download": "ダウンロード",
+    "hero.version": "{version} · 最新版",
+    "hero.slogan": "Markdown が「見えなく」なるエディタ。",
+    "hero.desc": "Markdown を書きながら、完成形がその場で見える。ブロック単位のライブレンダリング——ファイルはずっとプレーンテキストのまま、あなたのもの。",
+    "hero.download": "ダウンロード", "hero.github": "GitHub で見る",
+    "hero.platforms": "Windows · macOS · Linux · Android",
+    "features.title": "必要なものだけ、余計なものは一切なく",
+    "features.sub": "三つの原則：ファイルこそが真実、レンダリングは嘘をつかない、エディタは邪魔をしない。",
+    "f1.title": "真のライブレンダリング",
+    "f1.desc": "ブロック単位の WYSIWYG：表は表、コードはコード、見出しは見出しとして表示。分割ペイン不要の彻底した見たまま編集。",
+    "f2.title": "ファイルこそが真実",
+    "f2.desc": "ディスク上は常にプレーンな .md。ロックインも独自形式もなく、git や同期ツールと自在に連携。コピーすれば常にソース。",
+    "f3.title": "第一級の Vim",
+    "f3.desc": "NORMAL / INSERT / VISUAL とライブインジケータ。Vim モードはソースビューを維持——行単位の移動はそこにあるべきだから。",
+    "f4.title": "編集履歴",
+    "f4.desc": "保存のたびにバージョンを記録。自動スナップショット、名前付きマイルストーン、ワンクリック復元——復元しても最新の作業は失われません。",
+    "f5.title": "プラグインシステム",
+    "f5.desc": "VSCode 流の宣言的コントリビューションと遅延ロード。.js ファイル 1 つでコマンド・ビュー・キーバインドを拡張。",
+    "f6.title": "圧倒的に軽量",
+    "f6.desc": "コアは gzip 320 KB 未満。レンダラはオンデマンドロード。日本語 IME も最初から快適。",
+    "download.title": "Aropyt をダウンロード",
+    "download.sub": "無料・オープンソース。アカウント登録もテレメトリもありません。",
+    "download.platform": "プラットフォーム", "download.requirement": "要件", "download.file": "パッケージ",
+    "footer.license": "AGPL-3.0 で公開"
+  },
+  ko: {
+    "html:lang": "ko",
+    "nav.features": "기능", "nav.download": "다운로드",
+    "hero.version": "{version} · 최신",
+    "hero.slogan": "마크다운이 보이지 않게 되는 에디터.",
+    "hero.desc": "마크다운을 쓰면서 완성된 문서를 봅니다. 블록 단위 실시간 렌더링 — 파일은 언제나 일반 텍스트로, 언제나 당신의 것.",
+    "hero.download": "다운로드", "hero.github": "GitHub에서 보기",
+    "hero.platforms": "Windows · macOS · Linux · Android",
+    "features.title": "필요한 것만, 그리고 전부",
+    "features.sub": "세 가지 원칙: 파일이 곧 진실, 렌더링은 거짓말하지 않음, 에디터는 방해하지 않음.",
+    "f1.title": "진짜 실시간 렌더링",
+    "f1.desc": "블록 단위 위지위그: 표는 표로, 코드는 코드로, 제목은 제목으로. 분할 화면 없이 쓰는 대로 보이는 편집.",
+    "f2.title": "파일이 곧 진실",
+    "f2.desc": "디스크에는 언제나 일반 .md 텍스트. 잠금도 독점 형식도 없고, git과 모든 동기화 도구와 자연스럽게 작동합니다.",
+    "f3.title": "일급 Vim 지원",
+    "f3.desc": "NORMAL / INSERT / VISUAL 모드와 실시간 표시기. Vim 모드는 소스 뷰를 유지합니다 — 행 단위 이동은 거기에 있어야 하니까요.",
+    "f4.title": "편집 기록",
+    "f4.desc": "저장할 때마다 버전이 기록됩니다. 자동 스냅샷, 이름 붙인 마일스톤, 원클릭 복원 — 복원해도 최신 작업은 사라지지 않습니다.",
+    "f5.title": "플러그인 시스템",
+    "f5.desc": "VSCode 방식의 선언적 기여와 지연 로딩. .js 파일 하나로 명령, 뷰, 단축키를 확장할 수 있습니다.",
+    "f6.title": "압도적으로 가벼움",
+    "f6.desc": "코어는 gzip 320 KB 미만. 렌더러는 필요할 때 로드. 한국어 입력기도 기본으로 매끄럽습니다.",
+    "download.title": "Aropyt 다운로드",
+    "download.sub": "무료 오픈 소스. 계정도 텔레메트리도 없습니다.",
+    "download.platform": "플랫폼", "download.requirement": "요구 사항", "download.file": "패키지",
+    "footer.license": "AGPL-3.0 오픈 소스"
+  },
+  de: {
+    "html:lang": "de",
+    "nav.features": "Funktionen", "nav.download": "Download",
+    "hero.version": "{version} · aktuell",
+    "hero.slogan": "Ein Markdown-Editor, der unsichtbar wird.",
+    "hero.desc": "Markdown schreiben, das fertige Dokument sehen. Blockbasiertes Live-Rendering — deine Dateien bleiben reiner Text, für immer deine.",
+    "hero.download": "Herunterladen", "hero.github": "Auf GitHub ansehen",
+    "hero.platforms": "Windows · macOS · Linux · Android",
+    "features.title": "Alles, was du brauchst. Nichts, was du nicht brauchst.",
+    "features.sub": "Drei Prinzipien: Dateien sind die Wahrheit, Rendering lügt nicht, der Editor steht nicht im Weg.",
+    "f1.title": "Echtes Live-Rendering",
+    "f1.desc": "Blockbasiertes WYSIWYG: Tabellen als Tabellen, Code als Code, Überschriften als Überschriften. Ohne geteilte Ansicht.",
+    "f2.title": "Dateien sind die Wahrheit",
+    "f2.desc": "Reines .md auf der Festplatte. Kein Lock-in, keine proprietäre Datenbank — kompatibel mit git und jedem Sync-Tool.",
+    "f3.title": "Vim auf höchstem Niveau",
+    "f3.desc": "NORMAL / INSERT / VISUAL mit Live-Anzeige. Der Vim-Modus bleibt in der Quellansicht — dort gehören zeilenweise Bewegungen hin.",
+    "f4.title": "Bearbeitungsverlauf",
+    "f4.desc": "Jedes Speichern ist eine Version. Automatische Snapshots, benannte Meilensteine, Wiederherstellen mit einem Klick — ohne den letzten Stand zu verlieren.",
+    "f5.title": "Plugin-System",
+    "f5.desc": "Deklarative Beiträge im VSCode-Stil mit Lazy Activation. Eine einzige .js-Datei erweitert Befehle, Ansichten und Tastenkürzel.",
+    "f6.title": "Federleicht",
+    "f6.desc": "Weniger als 320 KB gezippter Kern. Renderer laden bei Bedarf. Sichere IME-Eingabe für CJK ab Werk.",
+    "download.title": "Aropyt herunterladen",
+    "download.sub": "Frei und Open Source. Kein Konto, keine Telemetrie.",
+    "download.platform": "Plattform", "download.requirement": "Voraussetzungen", "download.file": "Paket",
+    "footer.license": "Open Source unter AGPL-3.0"
+  },
+  fr: {
+    "html:lang": "fr",
+    "nav.features": "Fonctionnalités", "nav.download": "Télécharger",
+    "hero.version": "{version} · dernière",
+    "hero.slogan": "Un éditeur Markdown qui se fait oublier.",
+    "hero.desc": "Écrivez en Markdown, voyez le document final. Rendu live par blocs — vos fichiers restent du texte brut, et vous appartiennent pour toujours.",
+    "hero.download": "Télécharger", "hero.github": "Voir sur GitHub",
+    "hero.platforms": "Windows · macOS · Linux · Android",
+    "features.title": "Tout ce qu'il faut, rien de superflu",
+    "features.sub": "Trois principes : les fichiers sont la vérité, le rendu ne ment pas, l'éditeur ne vous gêne pas.",
+    "f1.title": "Véritable rendu live",
+    "f1.desc": "WYSIWYG par blocs : les tableaux s'affichent en tableaux, le code en code, les titres en titres. Sans panneau scindé.",
+    "f2.title": "Les fichiers sont la vérité",
+    "f2.desc": "Du .md brut sur le disque. Aucun enfermement, aucune base propriétaire — compatible git et tout outil de synchronisation.",
+    "f3.title": "Vim de premier ordre",
+    "f3.desc": "NORMAL / INSERT / VISUAL avec indicateur en direct. Le mode Vim reste en vue source — les déplacements ligne par ligne y ont leur place.",
+    "f4.title": "Historique d'édition",
+    "f4.desc": "Chaque sauvegarde est une version. Snapshots automatiques, jalons nommés, restauration en un clic — sans jamais perdre votre dernier travail.",
+    "f5.title": "Système de plugins",
+    "f5.desc": "Contribution déclarative façon VSCode avec activation paresseuse. Un seul fichier .js ajoute commandes, vues et raccourcis.",
+    "f6.title": "Légèreté absolue",
+    "f6.desc": "Moins de 320 KB de noyau compressé. Moteurs de rendu chargés à la demande. Saisie IME sûre pour le CJK, sans réglage.",
+    "download.title": "Télécharger Aropyt",
+    "download.sub": "Gratuit et open source. Sans compte, sans télémétrie.",
+    "download.platform": "Plateforme", "download.requirement": "Prérequis", "download.file": "Paquet",
+    "footer.license": "Open source sous AGPL-3.0"
+  },
+  it: {
+    "html:lang": "it",
+    "nav.features": "Funzionalità", "nav.download": "Scarica",
+    "hero.version": "{version} · ultima",
+    "hero.slogan": "Un editor Markdown che scompare.",
+    "hero.desc": "Scrivi in Markdown, vedi il documento finale. Rendering live a blocchi — i tuoi file restano testo semplice, per sempre tuoi.",
+    "hero.download": "Scarica", "hero.github": "Vedi su GitHub",
+    "hero.platforms": "Windows · macOS · Linux · Android",
+    "features.title": "Tutto ciò che serve, niente di superfluo",
+    "features.sub": "Tre principi: i file sono la verità, il rendering non mente, l'editor non ti è di mezzo.",
+    "f1.title": "Vero rendering live",
+    "f1.desc": "WYSIWYG a blocchi: le tabelle come tabelle, il codice come codice, i titoli come titoli. Senza pannello diviso.",
+    "f2.title": "I file sono la verità",
+    "f2.desc": "Plain .md sul disco. Nessun lock-in, nessun formato proprietario — compatibile con git e qualsiasi strumento di sync.",
+    "f3.title": "Vim di primo livello",
+    "f3.desc": "NORMAL / INSERT / VISUAL con indicatore live. La modalità Vim resta nella vista sorgente — i movimenti riga per riga stanno lì.",
+    "f4.title": "Cronologia delle modifiche",
+    "f4.desc": "Ogni salvataggio è una versione. Snapshot automatici, milestone nominate, ripristino con un clic — senza perdere l'ultimo lavoro.",
+    "f5.title": "Sistema di plugin",
+    "f5.desc": "Contributi dichiarativi in stile VSCode con attivazione lazy. Un solo file .js aggiunge comandi, viste e scorciatoie.",
+    "f6.title": "Leggerissimo",
+    "f6.desc": "Meno di 320 KB di core compresso. Renderer caricati on demand. Input IME sicuro per CJK, senza configurazione.",
+    "download.title": "Scarica Aropyt",
+    "download.sub": "Gratuito e open source. Nessun account, nessuna telemetria.",
+    "download.platform": "Piattaforma", "download.requirement": "Requisiti", "download.file": "Pacchetto",
+    "footer.license": "Open source sotto AGPL-3.0"
+  },
+  ru: {
+    "html:lang": "ru",
+    "nav.features": "Возможности", "nav.download": "Загрузить",
+    "hero.version": "{version} · последняя",
+    "hero.slogan": "Редактор Markdown, который исчезает.",
+    "hero.desc": "Пишите Markdown, видите готовый документ. Живой рендеринг по блокам — файлы остаются обычным текстом, навсегда вашими.",
+    "hero.download": "Загрузить", "hero.github": "Открыть на GitHub",
+    "hero.platforms": "Windows · macOS · Linux · Android",
+    "features.title": "Всё, что нужно. И ничего лишнего",
+    "features.sub": "Три принципа: файлы — истина, рендеринг не лжёт, редактор не мешает.",
+    "f1.title": "Настоящий живой рендеринг",
+    "f1.desc": "Блочный WYSIWYG: таблицы как таблицы, код как код, заголовки как заголовки. Без разделённых панелей.",
+    "f2.title": "Файлы — истина",
+    "f2.desc": "Чистый .md на диске. Никакой привязки и проприетарных форматов — работает с git и любыми средствами синхронизации.",
+    "f3.title": "Vim первого класса",
+    "f3.desc": "NORMAL / INSERT / VISUAL с живым индикатором. Режим Vim остаётся в исходном виде — построчные перемещения там и место.",
+    "f4.title": "История правок",
+    "f4.desc": "Каждое сохранение — версия. Автоснимки по таймеру, именованные вехи, восстановление в один клик — без потери последних правок.",
+    "f5.title": "Система плагинов",
+    "f5.desc": "Декларативные расширения в стиле VSCode с ленивой активацией. Один файл .js добавляет команды, панели и сочетания клавиш.",
+    "f6.title": "Невероятно лёгкий",
+    "f6.desc": "Менее 320 KB ядра в gzip. Рендереры загружаются по требованию. Безопасный ввод IME для CJK из коробки.",
+    "download.title": "Загрузить Aropyt",
+    "download.sub": "Бесплатно и открыто. Без аккаунтов и телеметрии.",
+    "download.platform": "Платформа", "download.requirement": "Требования", "download.file": "Пакет",
+    "footer.license": "Открытый код под AGPL-3.0"
+  }
+};
+
+const LANG_LABELS = {
+  en: "English", "zh-CN": "简体中文", "zh-TW": "繁體中文", ja: "日本語",
+  ko: "한국어", de: "Deutsch", fr: "Français", it: "Italiano", ru: "Русский"
+};
+
+function detectLang() {
+  const fromUrl = new URLSearchParams(location.search).get("lang");
+  if (fromUrl && I18N[fromUrl]) return fromUrl;
+  const saved = localStorage.getItem("aropyt.lang");
+  if (saved && I18N[saved]) return saved;
+  const nav = navigator.language || "en";
+  if (I18N[nav]) return nav;
+  const base = nav.split("-")[0];
+  const byBase = Object.keys(I18N).find((code) => code.split("-")[0] === base);
+  return byBase || "en";
+}
+
+let currentVersionTag = null;
+
+/** 把 {version} 占位替换成最新 tag（applyLang 与版本拉取都会走这里）。 */
+function patchVersion() {
+  if (!currentVersionTag) return;
+  document.querySelectorAll('[data-i18n="hero.version"]').forEach((el) => {
+    const tpl = (I18N[document.documentElement.getAttribute('data-lang')] || I18N.en)['hero.version'] || '';
+    el.textContent = tpl.replace('{version}', currentVersionTag);
+  });
+}
+
+/**
+ * 从 GitHub Releases 拉最新版本号 —— 发版后官网自动更新，零维护。
+ * 失败（离线/限流）时用 localStorage 缓存兜底；都没有就显示 --。
+ */
+async function loadLatestVersion() {
+  try {
+    const res = await fetch('https://api.github.com/repos/Geekstrange/Aropyt/releases/latest');
+    const data = await res.json();
+    if (data.tag_name) {
+      currentVersionTag = data.tag_name;
+      localStorage.setItem('aropyt.version', data.tag_name);
+      patchVersion();
+    }
+  } catch {
+    /* 用缓存或占位，静默 */
+  }
+}
+
+function applyLang(lang) {
+  const dict = I18N[lang];
+  document.documentElement.lang = dict["html:lang"] || lang;
+  document.title = "Aropyt — " + dict["hero.slogan"];
+  document.querySelectorAll("[data-i18n]").forEach((el) => {
+    const key = el.getAttribute("data-i18n");
+    if (dict[key]) el.textContent = dict[key];
+  });
+  localStorage.setItem("aropyt.lang", lang);
+  const url = new URL(location.href);
+  url.searchParams.set("lang", lang);
+  history.replaceState(null, "", url);
+  document.getElementById("lang").value = lang;
+  patchVersion();
+}
+
+// 填充语言下拉
+const select = document.getElementById("lang");
+Object.keys(I18N).forEach((code) => {
+  const option = document.createElement("option");
+  option.value = code;
+  option.textContent = LANG_LABELS[code];
+  select.appendChild(option);
+});
+select.addEventListener("change", () => applyLang(select.value));
+
+/* ── 主题 ─────────────────────────────────────────────────────
+ * 两态按钮 + 跟随系统默认：
+ * localStorage 未存 → 跟随 prefers-color-scheme；点按钮 → 显式持久化。
+ * 与应用一致：深色是默认，浅色用 [data-theme='light']。
+ * ────────────────────────────────────────────────────────────── */
+function systemTheme() {
+  return window.matchMedia('(prefers-color-scheme: light)').matches ? 'light' : 'dark';
+}
+function applyTheme(theme) {
+  document.documentElement.setAttribute('data-theme', theme);
+}
+(function initTheme() {
+  const saved = localStorage.getItem('aropyt.theme');
+  applyTheme(saved || systemTheme());
+  window.matchMedia('(prefers-color-scheme: light)').addEventListener('change', () => {
+    if (!localStorage.getItem('aropyt.theme')) applyTheme(systemTheme());
+  });
+})();
+document.getElementById('theme').addEventListener('click', () => {
+  const next = document.documentElement.getAttribute('data-theme') === 'light' ? 'dark' : 'light';
+  applyTheme(next);
+  localStorage.setItem('aropyt.theme', next);
+});
+
+applyLang(detectLang());
+currentVersionTag = localStorage.getItem('aropyt.version');
+patchVersion();
+void loadLatestVersion();
+</script>
+</body>
+</html>
