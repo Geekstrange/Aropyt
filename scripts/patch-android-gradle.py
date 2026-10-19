@@ -52,8 +52,24 @@ RELEASE_SIGNING = f"""
 
 source = io.open(GRADLE, encoding="utf-8").read()
 
+# 防御：清理重复的 Properties/FileInputStream import（历史补丁可能插了多份）
+seen_props = source.count("import java.util.Properties")
+if seen_props > 1:
+    lines = source.split(chr(10))
+    out, found = [], False
+    for line in lines:
+        if line.strip() == "import java.util.Properties" or line.strip() == "import java.io.FileInputStream":
+            if found and (line.strip() == "import java.util.Properties"):
+                continue
+            if line.strip() == "import java.util.Properties":
+                found = True
+        out.append(line)
+    source = chr(10).join(out)
+    print(f"清理了 {seen_props - 1} 份重复 import")
+
 # ① keystore.properties 读取：插在 plugins 块结束后
-if "keystorePropertiesFile" not in source:
+# 用 import 语句判断（旧条件查 keystorePropertiesFile，在 import 重复时失效）
+if "import java.util.Properties" not in source:
     m = re.search(r"plugins\s*\{[^}]*\}\n", source)
     assert m, "找不到 plugins 块"
     source = source[: m.end()] + IMPORT_SNIPPET + source[m.end() :]
