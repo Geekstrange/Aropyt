@@ -1,3 +1,4 @@
+.keystore/
 node_modules/
 dist/
 dist-ssr/

@@ -10,10 +10,13 @@
  * 4. **首次启动迁移**：文件不存在时把旧的 localStorage 值写进去，只做一次。
  */
 import { idbGet, idbSet, STORE } from '@aropyt/core';
+import { LOCALES, type Locale } from '../i18n.js';
 
 export type ThemePreference = 'light' | 'dark' | 'auto';
 
 export interface AppSettings {
+  /** 界面语言。 */
+  locale: Locale;
   theme: ThemePreference;
   editor: { fontSize: number };
   vim: { enabled: boolean };
@@ -24,6 +27,7 @@ export interface AppSettings {
 }
 
 export const DEFAULT_SETTINGS: AppSettings = {
+  locale: 'en',
   theme: 'auto',
   editor: { fontSize: 15 },
   vim: { enabled: false },
@@ -132,6 +136,10 @@ export function normalizeSettings(raw: unknown): {
   const known = new Set(Object.keys(DEFAULT_SETTINGS));
   for (const key of Object.keys(obj)) {
     if (!known.has(key)) unknownKeys.push(key);
+  }
+  if (obj.locale !== undefined) {
+    if ((LOCALES as readonly string[]).includes(obj.locale as string)) settings.locale = obj.locale as Locale;
+    else invalidValues.push('locale');
   }
   if (obj.theme !== undefined) {
     if (obj.theme === 'light' || obj.theme === 'dark' || obj.theme === 'auto') settings.theme = obj.theme;

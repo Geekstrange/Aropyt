@@ -62,6 +62,7 @@ import { builtinPlugins } from './builtin/index.js';
 /** 配置补丁：允许只给嵌套对象的一部分。 */
 export type DeepPartial<T> = { [K in keyof T]?: T[K] extends object ? Partial<T[K]> : T[K] };
 
+import { setLocale } from './i18n.js';
 import {
   browserSettingsIo,
   DEFAULT_SETTINGS,
@@ -125,6 +126,8 @@ export interface RuntimeState {
   readonly historyAutoSave: boolean;
   /** 编辑历史：自动保存间隔（秒）。 */
   readonly historyInterval: number;
+  /** 界面语言。 */
+  readonly locale: string;
   /** 恢复自草稿/崩溃日志的文件路径；null = 本次会话没有恢复过。状态栏黄点用它，且只在**当前激活**文件是它时才亮。 */
   readonly recoveredPath: string | null;
   readonly plugins: readonly PluginRecord[];
@@ -332,6 +335,7 @@ export function createRuntime(options: RuntimeOptions): AropytRuntime {
     historyLimit: currentSettings.history.limit,
     historyAutoSave: currentSettings.history.autoSave,
     historyInterval: currentSettings.history.autoSaveInterval,
+    locale: currentSettings.locale,
     recoveredPath: state.recoveredPath,
     plugins: host.records,
     sourceMode: editor.sourceMode,
@@ -1351,6 +1355,7 @@ export function createRuntime(options: RuntimeOptions): AropytRuntime {
   /** 把配置应用到运行时（启动与每次修改都走这里，保证单一入口）。 */
   function applySettings(next: AppSettings): void {
     currentSettings = next;
+    setLocale(next.locale);
     theme.set(next.theme);
     if (state.vimMode !== next.vim.enabled) {
       state.vimMode = next.vim.enabled;
