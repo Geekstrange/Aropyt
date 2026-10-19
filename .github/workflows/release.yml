@@ -168,7 +168,7 @@ jobs:
           mv keystore.properties src-tauri/gen/android/keystore.properties
 
       - name: Build APK (aarch64)
-        run: npm run tauri android build -- --apk --target aarch64-linux-android
+        run: npm run tauri android build -- --apk --target aarch64
 
       - name: Upload APK to release
         env:
