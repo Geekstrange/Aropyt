@@ -105,44 +105,72 @@ jobs:
 
             许可证：AGPL-3.0
 
-  # ── Android APK ─────────────────────────────────────────────
-  # debug 签名（可直接安装）；正式发布换 release 签名需配 keystore secrets。
-  # gen/android 工程不存在时由 CI 自动 `tauri android init`。
-  # android:
-  #   runs-on: ubuntu-22.04
-  #   needs: build
-  #   permissions:
-  #     contents: write
-  #   steps:
-  #     - uses: actions/checkout@v4
 
-  #     - uses: actions/setup-node@v4
-  #       with:
-  #         node-version: 22
-  #         cache: npm
+  # ── Android APK（release 签名）──────────────────────────────
+  # gen/android 不提交：CI 里 tauri android init 生成，
+  # scripts/patch-android-gradle.py 注入签名配置（幂等）。
+  # keystore 从 Secrets 解码；needs: build 等 tauri-action 建好 Release 再附加。
+  android:
+    permissions:
+      contents: write
+    runs-on: ubuntu-22.04
+    needs: build
+    steps:
+      - uses: actions/checkout@v4
 
-  #     - uses: dtolnay/rust-toolchain@stable
-  #       with:
-  #         targets: aarch64-linux-android,armv7-linux-androideabi,i686-linux-android,x86_64-linux-android
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
 
-  #     - uses: actions/setup-java@v4
-  #       with:
-  #         distribution: temurin
-  #         java-version: 17
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: aarch64-linux-android
 
-  #     - name: Install frontend dependencies
-  #       run: npm install
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: 17
 
-  #     - name: Init Android project（首次构建时生成 gen/android）
-  #       run: |
-  #         [ -d src-tauri/gen/android ] || npx tauri android init
+      - uses: android-actions/setup-android@v3
 
-  #     - name: Build debug APK
-  #       run: npx tauri android build --apk --debug
+      - name: Install frontend dependencies
+        run: npm install
 
-  #     - name: Upload APK to release
-  #       env:
-  #         GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-  #       run: |
-  #         APK=$(find src-tauri/gen/android -name '*.apk' | head -1)
-  #         gh release upload "$GITHUB_REF_NAME" "$APK" --repo "$GITHUB_REPOSITORY" --clobber
+      - name: Decode signing keystore
+        env:
+          ANDROID_KEYSTORE_BASE64: ${{ secrets.ANDROID_KEYSTORE_BASE64 }}
+          ANDROID_KEYSTORE_PASSWORD: ${{ secrets.ANDROID_KEYSTORE_PASSWORD }}
+          ANDROID_KEY_ALIAS: ${{ secrets.ANDROID_KEY_ALIAS }}
+          ANDROID_KEY_PASSWORD: ${{ secrets.ANDROID_KEY_PASSWORD }}
+        run: |
+          echo "$ANDROID_KEYSTORE_BASE64" | base64 -d > release.keystore
+          cat > keystore.properties <<EOF
+          storeFile=release.keystore
+          storePassword=$ANDROID_KEYSTORE_PASSWORD
+          keyAlias=$ANDROID_KEY_ALIAS
+          keyPassword=$ANDROID_KEY_PASSWORD
+          EOF
+
+      - name: Init Android project
+        run: npm run tauri android init
+
+      - name: Patch Gradle signing
+        run: python3 scripts/patch-android-gradle.py
+
+      - name: Move keystore into project
+        run: |
+          mv release.keystore src-tauri/gen/android/release.keystore
+          mv keystore.properties src-tauri/gen/android/keystore.properties
+
+      - name: Build APK (aarch64)
+        run: npm run tauri android build -- --apk --target aarch64-linux-android
+
+      - name: Upload APK to release
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          APK=$(find src-tauri/gen/android/app/build/outputs -name "*.apk" -path "*release*" | head -1)
+          echo "APK: $APK"
+          gh release view "$GITHUB_REF_NAME" >/dev/null 2>&1 || gh release create "$GITHUB_REF_NAME" --draft --title "Aropyt $GITHUB_REF_NAME"
+          gh release upload "$GITHUB_REF_NAME" "$APK" --clobber
