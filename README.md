@@ -2,6 +2,8 @@
 
 **Typora 式 Markdown 编辑器 —— 编辑区本身就是预览。**
 
+🌐 官网：<https://aropyt.com>（九种语言：English · 简体中文 · 繁體中文 · 日本語 · 한국어 · Deutsch · Français · Italiano · Русский）
+
 跨平台（Windows / macOS / Linux / Android）、文件即真理、极致轻量。
 浏览器形态仅为开发模式（`npm run dev`），发布形态统一 Tauri 2。
 
