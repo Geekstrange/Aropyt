@@ -108,7 +108,8 @@ jobs:
 
   # ── Android APK（release 签名）──────────────────────────────
   # gen/android 不提交：CI 里 tauri android init 生成，
-  # scripts/patch-android-gradle.py 注入签名配置（幂等）。
+  # 签名经 Gradle init script（scripts/init-release-signing.gradle）注入，
+  # 不修改 init 生成的任何文件。
   # keystore 从 Secrets 解码；needs: build 等 tauri-action 建好 Release 再附加。
   android:
     permissions:
@@ -159,8 +160,13 @@ jobs:
       - name: Init Android project
         run: npm run tauri android init
 
-      - name: Patch Gradle signing
-        run: python3 scripts/patch-android-gradle.py
+      - name: Install signing init script
+        # init script 在 Gradle 模型就绪后注入签名，完全不修改
+        # tauri android init 生成的 build.gradle.kts —— patch 方案实测
+        # 三轮失败（import 冲突 / 未定义引用 / 受限作用域），已弃用。
+        run: |
+          mkdir -p ~/.gradle/init.d
+          cp scripts/init-release-signing.gradle ~/.gradle/init.d/release-signing.gradle
 
       - name: Ensure gradlew is executable
         run: chmod +x src-tauri/gen/android/gradlew

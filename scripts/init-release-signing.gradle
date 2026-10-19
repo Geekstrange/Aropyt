@@ -1,0 +1,46 @@
+/**
+ * Gradle init script：为 Android 工程注入 release 签名。
+ *
+ * 部署方式：复制到 CI 的 ~/.gradle/init.d/ 下 —— Gradle 会在所有构建前
+ * 自动应用，**完全不修改 tauri android init 生成的 build.gradle.kts**。
+ *
+ * 为什么走 init script 而不是 patch build.gradle.kts：
+ * patch 方案实测三轮全挂 —— ① 插 import 与模板自带的重叠（Conflicting
+ * import）；② 幂等条件查 import 被模板骗过（Unresolved reference）；
+ * ③ FQN 在 plugins 块附近的受限作用域里解析不了（Unresolved 'util'）。
+ * init script 在工程模型就绪后运行，用 Groovy 动态访问，无编译期约束。
+ *
+ * keystore.properties 由 CI 从 Secrets 解码生成，放在 gen/android/ 根
+ * （rootProject），内容：
+ *   storeFile=release.keystore
+ *   storePassword=...
+ *   keyAlias=aropyt-release
+ *   keyPassword=...
+ */
+
+allprojects { project ->
+    afterEvaluate {
+        if (!project.plugins.hasPlugin('com.android.application')) return
+        def propsFile = project.rootProject.file('keystore.properties')
+        if (!propsFile.exists()) return
+
+        def props = new Properties()
+        propsFile.withInputStream { props.load(it) }
+
+        def android = project.extensions.findByName('android')
+        if (android == null) return
+
+        def storeFilePath = props['storeFile']
+        def storeFile = new File(propsFile.parentFile, storeFilePath)
+
+        android.signingConfigs.create('aropytRelease') {
+            storeFile storeFile
+            storePassword props['storePassword']
+            keyAlias props['keyAlias']
+            keyPassword props['keyPassword']
+        }
+        android.buildTypes.release.signingConfig = android.signingConfigs.aropytRelease
+
+        println "AROPYT-SIGNING: applied release signing (alias=${props['keyAlias']}) to ${project.name}"
+    }
+}
