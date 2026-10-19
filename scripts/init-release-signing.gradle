@@ -33,13 +33,16 @@ allprojects { project ->
         def storeFilePath = props['storeFile']
         def storeFile = new File(propsFile.parentFile, storeFilePath)
 
-        android.signingConfigs.create('aropytRelease') {
-            storeFile storeFile
-            storePassword props['storePassword']
-            keyAlias props['keyAlias']
-            keyPassword props['keyPassword']
+        // AGP 9 的新 DSL（ApplicationExtension）里 signingConfigs 的闭包
+        // 是属性接口 —— 用 **属性赋值（=）**，不能用 Groovy 的方法调用式
+        // （storeFile xxx 会报 java.io.File.call() 不适用，实测）。
+        android.signingConfigs.create('aropytRelease') { config ->
+            config.storeFile = storeFile
+            config.storePassword = props['storePassword']
+            config.keyAlias = props['keyAlias']
+            config.keyPassword = props['keyPassword']
         }
-        android.buildTypes.release.signingConfig = android.signingConfigs.aropytRelease
+        android.buildTypes.release.signingConfig = android.signingConfigs.getByName('aropytRelease')
 
         println "AROPYT-SIGNING: applied release signing (alias=${props['keyAlias']}) to ${project.name}"
     }

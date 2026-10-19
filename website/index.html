@@ -36,9 +36,9 @@
   --fg: #26262b;
   --muted: #6b6a66;
   --border: rgba(0, 0, 0, 0.1);
-  --accent: #0d7259;      /* md-link */
-  --accent-strong: #0a5c48;
-  --accent-contrast: #ffffff;
+  --accent: #5bb44e;      /* 品牌绿，深浅一致 */
+  --accent-strong: #4aa63d;
+  --accent-contrast: #0d2a0c;
   --green: #0d7259;
   --shadow: rgba(0, 0, 0, 0.13);
 }
@@ -59,8 +59,8 @@ code, .mono { font-family: "SF Mono", Consolas, "Cascadia Code", monospace; }
 /* ── nav ── */
 nav {
   position: sticky; top: 0; z-index: 10;
-  display: flex; align-items: center; gap: 20px;
-  padding: 14px 24px;
+  display: flex; align-items: center; gap: 22px;
+  padding: 16px 26px;
   background: var(--bg);
   backdrop-filter: blur(10px);
   border-bottom: 1px solid var(--border);
@@ -75,7 +75,7 @@ nav .links a:hover { color: var(--fg); }
   display: inline-flex; align-items: center; justify-content: center;
   width: 30px; height: 30px;
   background: var(--card); color: var(--muted);
-  border: 1px solid var(--border); border-radius: 4px;
+  border: 1px solid var(--border);
   cursor: pointer;
 }
 .theme-toggle:hover { color: var(--fg); }
@@ -87,24 +87,25 @@ nav .links a:hover { color: var(--fg); }
 select#lang {
   font: inherit; font-size: 13px;
   background: var(--card); color: var(--fg);
-  border: 1px solid var(--border); border-radius: 4px;
+  border: 1px solid var(--border);
   padding: 4px 8px; cursor: pointer;
 }
 
 /* ── hero ── */
-.hero { text-align: center; padding: 96px 24px 72px; max-width: 860px; margin: 0 auto; }
+.hero { text-align: center; padding: 110px 24px 80px; max-width: 860px; margin: 0 auto; }
 .hero h1 {
-  font-size: clamp(44px, 8vw, 76px);
-  letter-spacing: -0.02em;
+  font-size: clamp(46px, 8vw, 78px);
+  font-weight: 600;
+  letter-spacing: -0.03em;
   line-height: 1.05;
-  margin-bottom: 20px;
+  margin-bottom: 22px;
 }
 .hero .slogan { font-size: clamp(19px, 3vw, 25px); color: var(--muted); margin-bottom: 18px; }
 .hero .desc { font-size: 16px; max-width: 640px; margin: 0 auto 34px; color: var(--fg); }
 .dl-buttons { display: flex; flex-wrap: wrap; gap: 12px; justify-content: center; }
 .btn {
   display: inline-flex; align-items: center; gap: 8px;
-  padding: 10px 22px; border-radius: 6px; font-size: 15px; font-weight: 600;
+  padding: 10px 22px; font-size: 15px; font-weight: 600;
   border: 1px solid var(--border); color: var(--fg); background: var(--card);
   transition: transform 120ms ease, border-color 120ms ease;
 }
@@ -112,22 +113,27 @@ select#lang {
 .btn.primary { background: var(--accent); border-color: var(--accent); color: var(--accent-contrast); }
 .btn.primary:hover { background: var(--accent-strong); border-color: var(--accent-strong); color: var(--accent-contrast); }
 .platforms { margin-top: 26px; font-size: 13px; color: var(--muted); }
-.version-badge {
-  display: inline-block; font-size: 12px; color: var(--green);
-  border: 1px solid var(--green); padding: 1px 10px; border-radius: 999px;
-  margin-bottom: 22px; font-family: monospace;
-}
 
 /* ── sections ── */
 section { max-width: 1040px; margin: 0 auto; padding: 64px 24px; }
-section > h2 { font-size: 30px; letter-spacing: -0.01em; margin-bottom: 10px; }
+section > h2 {
+  font-size: 28px;
+  font-weight: 600;
+  letter-spacing: -0.015em;
+  margin-bottom: 10px;
+}
 section > .sub { color: var(--muted); margin-bottom: 40px; font-size: 15px; }
 .grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(280px, 1fr)); gap: 18px; }
 .card {
-  background: var(--card); border: 1px solid var(--border); border-radius: 8px;
+  background: var(--card); border: 1px solid var(--border);
   padding: 24px;
 }
-.card h3 { font-size: 17px; margin-bottom: 8px; }
+.card h3 {
+  font-size: 16px;
+  font-weight: 600;
+  margin-bottom: 8px;
+  color: var(--fg);
+}
 .card p { font-size: 14px; color: var(--muted); }
 
 /* ── download table ── */
@@ -176,7 +182,6 @@ footer a { color: var(--muted); }
 </nav>
 
 <header class="hero">
-  <div class="version-badge" data-i18n="hero.version">--</div>
   <h1>Aropyt</h1>
   <p class="slogan" data-i18n="hero.slogan"></p>
   <p class="desc" data-i18n="hero.desc"></p>
@@ -260,7 +265,6 @@ const I18N = {
   en: {
     "html:lang": "en",
     "nav.features": "Features", "nav.download": "Download",
-    "hero.version": "{version} · latest",
     "hero.slogan": "A Markdown editor that feels invisible.",
     "hero.desc": "Write Markdown, see the finished document. Block-based live rendering — your files stay plain text, forever yours.",
     "hero.download": "Download", "hero.github": "View on GitHub",
@@ -287,7 +291,6 @@ const I18N = {
   "zh-CN": {
     "html:lang": "zh-CN",
     "nav.features": "特性", "nav.download": "下载",
-    "hero.version": "{version} · 最新版",
     "hero.slogan": "让 Markdown 隐形的编辑器。",
     "hero.desc": "书写 Markdown，看见成品文档。块级实时渲染 —— 文件永远是纯文本，永远属于你。",
     "hero.download": "下载", "hero.github": "在 GitHub 查看",
@@ -314,7 +317,6 @@ const I18N = {
   "zh-TW": {
     "html:lang": "zh-TW",
     "nav.features": "特性", "nav.download": "下載",
-    "hero.version": "{version} · 最新版",
     "hero.slogan": "讓 Markdown 隱形的編輯器。",
     "hero.desc": "書寫 Markdown，看見成品文件。區塊即時渲染 —— 檔案永遠是純文字，永遠屬於你。",
     "hero.download": "下載", "hero.github": "在 GitHub 查看",
@@ -341,7 +343,6 @@ const I18N = {
   ja: {
     "html:lang": "ja",
     "nav.features": "機能", "nav.download": "ダウンロード",
-    "hero.version": "{version} · 最新版",
     "hero.slogan": "Markdown が「見えなく」なるエディタ。",
     "hero.desc": "Markdown を書きながら、完成形がその場で見える。ブロック単位のライブレンダリング——ファイルはずっとプレーンテキストのまま、あなたのもの。",
     "hero.download": "ダウンロード", "hero.github": "GitHub で見る",
@@ -368,7 +369,6 @@ const I18N = {
   ko: {
     "html:lang": "ko",
     "nav.features": "기능", "nav.download": "다운로드",
-    "hero.version": "{version} · 최신",
     "hero.slogan": "마크다운이 보이지 않게 되는 에디터.",
     "hero.desc": "마크다운을 쓰면서 완성된 문서를 봅니다. 블록 단위 실시간 렌더링 — 파일은 언제나 일반 텍스트로, 언제나 당신의 것.",
     "hero.download": "다운로드", "hero.github": "GitHub에서 보기",
@@ -395,7 +395,6 @@ const I18N = {
   de: {
     "html:lang": "de",
     "nav.features": "Funktionen", "nav.download": "Download",
-    "hero.version": "{version} · aktuell",
     "hero.slogan": "Ein Markdown-Editor, der unsichtbar wird.",
     "hero.desc": "Markdown schreiben, das fertige Dokument sehen. Blockbasiertes Live-Rendering — deine Dateien bleiben reiner Text, für immer deine.",
     "hero.download": "Herunterladen", "hero.github": "Auf GitHub ansehen",
@@ -422,7 +421,6 @@ const I18N = {
   fr: {
     "html:lang": "fr",
     "nav.features": "Fonctionnalités", "nav.download": "Télécharger",
-    "hero.version": "{version} · dernière",
     "hero.slogan": "Un éditeur Markdown qui se fait oublier.",
     "hero.desc": "Écrivez en Markdown, voyez le document final. Rendu live par blocs — vos fichiers restent du texte brut, et vous appartiennent pour toujours.",
     "hero.download": "Télécharger", "hero.github": "Voir sur GitHub",
@@ -449,7 +447,6 @@ const I18N = {
   it: {
     "html:lang": "it",
     "nav.features": "Funzionalità", "nav.download": "Scarica",
-    "hero.version": "{version} · ultima",
     "hero.slogan": "Un editor Markdown che scompare.",
     "hero.desc": "Scrivi in Markdown, vedi il documento finale. Rendering live a blocchi — i tuoi file restano testo semplice, per sempre tuoi.",
     "hero.download": "Scarica", "hero.github": "Vedi su GitHub",
@@ -476,7 +473,6 @@ const I18N = {
   ru: {
     "html:lang": "ru",
     "nav.features": "Возможности", "nav.download": "Загрузить",
-    "hero.version": "{version} · последняя",
     "hero.slogan": "Редактор Markdown, который исчезает.",
     "hero.desc": "Пишите Markdown, видите готовый документ. Живой рендеринг по блокам — файлы остаются обычным текстом, навсегда вашими.",
     "hero.download": "Загрузить", "hero.github": "Открыть на GitHub",
@@ -519,35 +515,6 @@ function detectLang() {
   return byBase || "en";
 }
 
-let currentVersionTag = null;
-
-/** 把 {version} 占位替换成最新 tag（applyLang 与版本拉取都会走这里）。 */
-function patchVersion() {
-  if (!currentVersionTag) return;
-  document.querySelectorAll('[data-i18n="hero.version"]').forEach((el) => {
-    const tpl = (I18N[document.documentElement.getAttribute('data-lang')] || I18N.en)['hero.version'] || '';
-    el.textContent = tpl.replace('{version}', currentVersionTag);
-  });
-}
-
-/**
- * 从 GitHub Releases 拉最新版本号 —— 发版后官网自动更新，零维护。
- * 失败（离线/限流）时用 localStorage 缓存兜底；都没有就显示 --。
- */
-async function loadLatestVersion() {
-  try {
-    const res = await fetch('https://api.github.com/repos/Geekstrange/Aropyt/releases/latest');
-    const data = await res.json();
-    if (data.tag_name) {
-      currentVersionTag = data.tag_name;
-      localStorage.setItem('aropyt.version', data.tag_name);
-      patchVersion();
-    }
-  } catch {
-    /* 用缓存或占位，静默 */
-  }
-}
-
 function applyLang(lang) {
   const dict = I18N[lang];
   document.documentElement.lang = dict["html:lang"] || lang;
@@ -561,7 +528,6 @@ function applyLang(lang) {
   url.searchParams.set("lang", lang);
   history.replaceState(null, "", url);
   document.getElementById("lang").value = lang;
-  patchVersion();
 }
 
 // 填充语言下拉
@@ -599,9 +565,6 @@ document.getElementById('theme').addEventListener('click', () => {
 });
 
 applyLang(detectLang());
-currentVersionTag = localStorage.getItem('aropyt.version');
-patchVersion();
-void loadLatestVersion();
 </script>
 </body>
 </html>
