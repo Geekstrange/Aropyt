@@ -573,6 +573,17 @@ async fn pick_folder(app: tauri::AppHandle) -> Result<Option<String>, String> {
      * 外面再套 `spawn_blocking`：blocking_pick_folder 会阻塞当前线程直到
      * 用户选完，不该占用异步运行时的工作线程。
      */
+    /*
+     * `blocking_pick_folder` 是**桌面专属** API —— 移动端（Android/iOS）的
+     * FileDialogBuilder 上不存在，编译即错（实测）。移动端没有"文件夹"概念，
+     * 这里直接返回错误，命令保留（前端调用点不用分平台）。
+     */
+    #[cfg(mobile)]
+    {
+        let _ = app; // 移动端不用 dialog
+        return Err("移动端暂不支持选择文件夹作为工作区，请使用内置草稿。".to_string());
+    }
+    #[cfg(desktop)]
     let picked = tauri::async_runtime::spawn_blocking(move || {
         app.dialog()
             .file()
@@ -805,7 +816,6 @@ fn set_workspace(state: State<'_, WorkspaceState>, root: String) -> Result<(), S
     Ok(())
 }
 
-#[cfg_attr(mobile, tauri::mobile_entry_point)]
 /*
  * ── 用户配置（~/.aropyt/settings.jsonc）────────────────────────
  *
@@ -963,6 +973,9 @@ fn backup_write(path: String, text: String) -> Result<(), String> {
     fs::rename(&tmp, &file).map_err(|error| format!("替换失败: {}", error))
 }
 
+/// mobile_entry_point 必须紧贴无参函数：中间插过注释块后 attribute
+/// 挂到了别的 fn 上，Android 编译直接报 E0593（实测）。
+#[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
     let builder = tauri::Builder::default()
         .plugin(tauri_plugin_fs::init())
