@@ -15,7 +15,42 @@ on:
       - 'v*'
 
 jobs:
+  # ── 先建 Release，避免多个 build job 并发创建（Resource not accessible） ──
+  #
+  # tauri-action 在每个 job 里都会"查找 Release，找不到就创建"。5 个平台
+  # 并行时它们几乎同时查不到 → 同时创建 → 竞态报错
+  # （Resource not accessible by integration，实测）。
+  # 这里用 gh 先建好（幂等：已存在则跳过），build job 只负责上传资产。
+  prepare-release:
+    permissions:
+      contents: write
+    runs-on: ubuntu-22.04
+    outputs:
+      release_id: ${{ steps.create.outputs.id }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Create release if absent
+        id: create
+        shell: bash
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          TAG="${GITHUB_REF_NAME}"
+          if gh release view "$TAG" >/dev/null 2>&1; then
+            echo "Release $TAG 已存在"
+          else
+            NOTES="docs/releases/${TAG}.md"
+            if [ -f "$NOTES" ]; then
+              gh release create "$TAG" --title "Aropyt $TAG" --notes-file "$NOTES"
+            else
+              gh release create "$TAG" --title "Aropyt $TAG" --notes "Aropyt $TAG"
+            fi
+          fi
+          echo "id=$(gh release view "$TAG" --json databaseId --jq .databaseId)" >> "$GITHUB_OUTPUT"
+
   build:
+    needs: prepare-release
     permissions:
       contents: write
     strategy:
@@ -63,31 +98,15 @@ jobs:
       - name: Install frontend dependencies
         run: npm install
 
-      - name: Read release notes
-        id: notes
-        # ⚠️ 必须显式 shell: bash —— Windows runner 默认用 PowerShell 执行
-        # run，而下面这段是 bash 语法（在 pwsh 里报 Missing '(' after 'if'，
-        # 实测）。
-        shell: bash
-        # release notes 按 tag 版本化：docs/releases/<tag>.md。
-        # 之前 releaseBody 硬编码 v0.0.7 的文案，每次发版都复用同一段（bug）。
-        run: |
-          NOTES="docs/releases/${GITHUB_REF_NAME}.md"
-          if [ -f "$NOTES" ]; then
-            echo "body<<__NOTES__" >> "$GITHUB_OUTPUT"
-            cat "$NOTES" >> "$GITHUB_OUTPUT"
-            echo "__NOTES__" >> "$GITHUB_OUTPUT"
-          else
-            echo "body=Aropyt ${GITHUB_REF_NAME}" >> "$GITHUB_OUTPUT"
-          fi
-
+      # release notes 与 Release 创建都在 prepare-release 里完成，
+      # 这里只负责构建 + 把资产传上去（releaseId 直接复用，不再查找）。
       - uses: tauri-apps/tauri-action@v0
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         with:
           tagName: ${{ github.ref_name }}
           releaseName: 'Aropyt ${{ github.ref_name }}'
-          releaseBody: ${{ steps.notes.outputs.body }}
+          releaseId: ${{ needs.prepare-release.outputs.release_id }}
           args: ${{ matrix.args }}
 
 
