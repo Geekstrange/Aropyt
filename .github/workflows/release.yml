@@ -65,6 +65,10 @@ jobs:
 
       - name: Read release notes
         id: notes
+        # ⚠️ 必须显式 shell: bash —— Windows runner 默认用 PowerShell 执行
+        # run，而下面这段是 bash 语法（在 pwsh 里报 Missing '(' after 'if'，
+        # 实测）。
+        shell: bash
         # release notes 按 tag 版本化：docs/releases/<tag>.md。
         # 之前 releaseBody 硬编码 v0.0.7 的文案，每次发版都复用同一段（bug）。
         run: |
