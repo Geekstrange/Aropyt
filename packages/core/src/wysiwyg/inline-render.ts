@@ -1230,6 +1230,7 @@ function build(
     }
   } while (cursor.next());
 
+  addAlerts(ranges, view);
   collectPairedMarkers(ranges, pairMarks, active);
   addFenceCollapse(ranges, view, active);
   addFenceBody(ranges, view, active, fenceRanges);
@@ -1396,6 +1397,36 @@ function addListMarkers(
  * 只剩一个的时候不隐藏 —— 那正是"用户正在输入"的表现，
  * 隐藏了反而看不见自己在干嘛。跨行的也不配对，那同样是未完成状态。
  */
+
+/**
+ * GitHub alerts：`> [!NOTE]` 之类的块整体加类型 class（按行）。
+ * 纯行装饰 —— 不改文本、不插节点，编辑体验零影响。
+ */
+function addAlerts(
+  ranges: { from: number; to: number; value: Decoration }[],
+  view: EditorView,
+): void {
+  const doc = view.state.doc;
+  const tree = syntaxTree(view.state);
+  tree.iterate({
+    enter(node) {
+      if (node.name !== 'Blockquote') return;
+      const head = doc.sliceString(node.from, Math.min(node.to, node.from + 80));
+      const match = /^>\s*\[!(NOTE|TIP|IMPORTANT|WARNING|CAUTION)\]/i.exec(head);
+      if (!match) return;
+      const cls = `cm-md-alert cm-md-alert-${match[1].toLowerCase()}`;
+      const firstLine = doc.lineAt(node.from).number;
+      const lastLine = doc.lineAt(Math.min(node.to, doc.length)).number;
+      for (let ln = firstLine; ln <= lastLine; ln += 1) {
+        const line = doc.line(ln);
+        // 首行额外带 -head：图标只画一次，每行都画会很吵
+        const lineCls = ln === firstLine ? `${cls} cm-md-alert-head` : cls;
+        ranges.push({ from: line.from, to: line.from, value: Decoration.line({ class: lineCls }) });
+      }
+    },
+  });
+}
+
 function collectPairedMarkers(
   ranges: { from: number; to: number; value: Decoration }[],
   marks: readonly { from: number; to: number; line: number }[],

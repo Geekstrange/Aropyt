@@ -125,6 +125,8 @@ export interface RuntimeState {
   readonly historyAutoSave: boolean;
   /** 编辑历史：自动保存间隔（秒）。 */
   readonly historyInterval: number;
+  /** 侧栏是否展开（真源：settings.sidebar.open）。 */
+  readonly sidebarOpen: boolean;
   /** 恢复自草稿/崩溃日志的文件路径；null = 本次会话没有恢复过。状态栏黄点用它，且只在**当前激活**文件是它时才亮。 */
   readonly recoveredPath: string | null;
   readonly plugins: readonly PluginRecord[];
@@ -332,6 +334,7 @@ export function createRuntime(options: RuntimeOptions): AropytRuntime {
     historyLimit: currentSettings.history.limit,
     historyAutoSave: currentSettings.history.autoSave,
     historyInterval: currentSettings.history.autoSaveInterval,
+    sidebarOpen: currentSettings.sidebar.open,
     recoveredPath: state.recoveredPath,
     plugins: host.records,
     sourceMode: editor.sourceMode,

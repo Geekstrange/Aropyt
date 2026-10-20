@@ -127,6 +127,58 @@ function taskListPlugin(md: MarkdownIt): void {
   });
 }
 
+
+/**
+ * GitHub 风格警报块（alerts）。
+ *
+ *   > [!NOTE]
+ *   > 内容
+ *
+ * 标记行与内容是同一个段落（软换行），所以在 core 阶段识别：
+ * 改 blockquote 的 class、剥掉标记、插入标题 span。
+ * 不引第三方插件 —— 规则只有一条，自己写更可控。
+ */
+const ALERT_LABELS: Record<string, string> = {
+  NOTE: 'Note',
+  TIP: 'Tip',
+  IMPORTANT: 'Important',
+  WARNING: 'Warning',
+  CAUTION: 'Caution',
+};
+
+function githubAlertsPlugin(md: MarkdownIt): void {
+  md.core.ruler.after('inline', 'aropyt-github-alerts', (state) => {
+    const { tokens } = state;
+    for (let i = 0; i < tokens.length; i += 1) {
+      if (tokens[i].type !== 'blockquote_open') continue;
+
+      // 块内第一个 inline（跳过 paragraph_open）
+      let j = i + 1;
+      while (j < tokens.length && tokens[j].type !== 'inline' && tokens[j].type !== 'blockquote_close') {
+        j += 1;
+      }
+      if (j >= tokens.length || tokens[j].type !== 'inline') continue;
+
+      const match = /^\[!(NOTE|TIP|IMPORTANT|WARNING|CAUTION)\][ \t]*(?:\n|$)/i.exec(tokens[j].content);
+      if (!match) continue;
+
+      const type = match[1].toUpperCase();
+      tokens[j].content = tokens[j].content.slice(match[0].length);
+
+      const first = tokens[j].children?.[0];
+      if (first && first.type === 'text') {
+        first.content = first.content.replace(/^\[!(NOTE|TIP|IMPORTANT|WARNING|CAUTION)\][ \t]*\n?/i, '');
+      }
+
+      tokens[i].attrJoin('class', `markdown-alert markdown-alert-${type.toLowerCase()}`);
+      const title = new state.Token('html_inline', '', 0);
+      title.content =
+        `<span class="alert-title"><span class="alert-icon"></span>${ALERT_LABELS[type]}</span>`;
+      tokens[j].children = [title, ...(tokens[j].children ?? [])];
+    }
+  });
+}
+
 export const md: MarkdownIt = new MarkdownIt({
   html: true,
   linkify: true,
@@ -134,7 +186,8 @@ export const md: MarkdownIt = new MarkdownIt({
   breaks: false,
   highlight: highlightCode,
 }).use(taskListPlugin)
-  .use(mathPlugin);
+  .use(mathPlugin)
+  .use(githubAlertsPlugin);
 
 /** 外链一律加 target=_blank + rel，避免在 PWA 里把应用本身导航走。 */
 const defaultLinkOpen =

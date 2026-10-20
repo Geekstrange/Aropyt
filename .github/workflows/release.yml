@@ -50,60 +50,27 @@ jobs:
       - name: Install frontend dependencies
         run: npm install
 
+      - name: Read release notes
+        id: notes
+        # release notes 按 tag 版本化：docs/releases/<tag>.md。
+        # 之前 releaseBody 硬编码 v0.0.7 的文案，每次发版都复用同一段（bug）。
+        run: |
+          NOTES="docs/releases/${GITHUB_REF_NAME}.md"
+          if [ -f "$NOTES" ]; then
+            echo "body<<__NOTES__" >> "$GITHUB_OUTPUT"
+            cat "$NOTES" >> "$GITHUB_OUTPUT"
+            echo "__NOTES__" >> "$GITHUB_OUTPUT"
+          else
+            echo "body=Aropyt ${GITHUB_REF_NAME}" >> "$GITHUB_OUTPUT"
+          fi
+
       - uses: tauri-apps/tauri-action@v0
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         with:
           tagName: ${{ github.ref_name }}
           releaseName: 'Aropyt ${{ github.ref_name }}'
-          releaseBody: |
-            Aropyt v__VERSION__ —— Typora 式 Markdown 编辑器。
-
-            ## 本次更新（v0.0.7：编辑历史 + 数据备份）
-
-            ### 编辑历史
-
-            - **保存即版本**：每次保存自动记录一个版本（内容未变不重复记录）
-            - **自动保存版本**：可设间隔（默认 60 秒），写作途中不怕崩
-            - **手动命名版本**：给重要节点留个里程碑
-            - **一键恢复**：恢复前自动把当前内容存为"恢复前快照"，任何操作都不丢内容
-            - 每个文件保留最近 N 个版本（默认 50，可在设置调整），更早的自动淘汰
-            - 工具栏新增编辑历史入口，版本列表显示时间 / 标签 / 大小
-            - 单版本上限 4MB；写入原子化，断电不留半截数据
-
-            ### 数据导出 / 导入
-
-            - 设置面板新增「数据备份」：一键导出**全部草稿与编辑历史**为单个 JSON
-            - 导入会覆盖现有数据（导入前有明确警告与数量确认）
-            - 用途：换机器、重装系统、跨平台迁移、备份存档
-            - 文件可读可手工修，与系统路径完全解耦
-
-            ### 其他
-
-            - 修复 CI：Windows/macOS/Linux 三平台构建恢复
-            - 工具栏新增编辑历史图标
-
-            ## 安装
-
-            - **Windows**：`*-setup.exe`（推荐）或 `.msi`
-            - **macOS**：`.dmg`（Apple Silicon 选 aarch64）
-            - **Linux**：`.AppImage`（免安装）或 `.deb`
-            - **Android**：`.apk`（debug 签名，安装时允许未知来源）
-
-            > macOS 未签名，首次打开需右键 → 打开，或到系统设置放行。
-
-            ## 已知限制
-
-            - 历史面板暂不显示**版本间 diff**（下一版加入）
-            - 编辑历史的自动保存间隔最短 15 秒
-            - `.tex` / `.fountain` 渲染需插件支持（后续版本）
-
-            ## 链接
-
-            - 文档与源码：https://github.com/Geekstrange/Aropyt#readme
-            - 问题反馈：https://github.com/Geekstrange/Aropyt/issues
-
-            许可证：AGPL-3.0
+          releaseBody: ${{ steps.notes.outputs.body }}
 
 
   # ── Android APK（release 签名）──────────────────────────────

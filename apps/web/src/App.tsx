@@ -36,10 +36,6 @@ export function App(): JSX.Element {
   // 默认值随宽度走：宽屏（桌面）面板默认打开，因为 Typora 的核心体验
   // 就是编辑器与预览并排；窄屏（Android）默认全关，否则一进来就被
   // 两个覆盖层糊住屏幕，连字都打不了。
-  /*
-   * 侧栏开关：**保存用户的选择**（localStorage 同步读取，首帧就生效）。
-   * 没存过才回落到"宽屏默认打开"—— 用户手动关过就尊重用户。
-   */
   const [settingsOpen, setSettingsOpen] = useState(false);
   const [historyOpen, setHistoryOpen] = useState(false);
 
@@ -47,13 +43,17 @@ export function App(): JSX.Element {
    * 侧栏开合：真源是 settings.jsonc（配置就绪后由 Effect 同步一次，
    * 在此之前先用宽屏默认值，避免"先闪一下再收起"）。
    */
-  const [sidebarOpen, setSidebarOpen] = useState(() => isWideScreen());
-
-  useEffect(() => {
-    if (!runtime) return;
-    const desired = runtime.getSettings().sidebar.open;
-    setSidebarOpen(desired);
-  }, [runtime]);
+  /*
+   * 侧栏开关**不在组件里存 state**：真源是 settings.jsonc 的
+   * sidebar.open，经 RuntimeState 投影订阅。
+   *
+   * 之前用 useState + 只在 runtime 变化时 Effect 读一次 —— 配置是异步
+   * 加载的，那一刻读到的还是默认值（open: true），于是"配置里写了
+   * false、界面照样展开"（实测）。
+   */
+  const liveState = useMaybeRuntimeState(runtime);
+  // 云配置尚未加载时先用宽屏默认值；加载完成后跟着投影走
+  const sidebarOpen = liveState?.sidebarOpen ?? isWideScreen();
 
   useEffect(() => {
     const host = editorHostRef.current;
@@ -98,7 +98,7 @@ export function App(): JSX.Element {
       if (key === 'b' && shift) {
         event.preventDefault();
         event.stopPropagation();
-        setSidebarOpen((value) => !value);
+        void runtime?.updateSettings({ sidebar: { open: !sidebarOpen } });
         return;
       }
       if (key === 'n' && shift) {
@@ -183,7 +183,7 @@ export function App(): JSX.Element {
           title="侧栏"
           aria-label="侧栏"
           aria-pressed={sidebarOpen}
-          onClick={() => setSidebarOpen((value) => !value)}
+          onClick={() => void runtime?.updateSettings({ sidebar: { open: !sidebarOpen } })}
         >
           <Icon name={sidebarOpen ? 'sidebarActive' : 'sidebar'} />
         </button>
