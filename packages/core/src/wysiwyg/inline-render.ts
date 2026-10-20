@@ -1231,6 +1231,8 @@ function build(
   } while (cursor.next());
 
   addAlerts(ranges, view);
+  addParagraphRhythm(ranges, view);
+  addEmptyLineCollapse(ranges, view);
   collectPairedMarkers(ranges, pairMarks, active);
   addFenceCollapse(ranges, view, active);
   addFenceBody(ranges, view, active, fenceRanges);
@@ -1402,6 +1404,76 @@ function addListMarkers(
  * GitHub alerts：`> [!NOTE]` 之类的块整体加类型 class（按行）。
  * 纯行装饰 —— 不改文本、不插节点，编辑体验零影响。
  */
+
+/**
+ * 段落节奏（v0.0.9）：段内紧凑、段间留白。
+ *
+ * CM6 是逐行 DOM，一个段落的多个软换行是多个独立行 —— 行距只能由
+ * line-height 控制，而段间距只能由"段落末行"的 padding 补齐。
+ * 这里只给 **Paragraph 节点的最后一行** 加 class，由 CSS 加下留白；
+ * 段内行什么都不加（靠收紧后的 line-height 自然紧凑）。
+ *
+ * 标题不参与 —— 它们已有各自的上下 padding，再叠一层会打架。
+ */
+
+/**
+ * 空行压缩（v0.0.9）：段落之间那一行空白不该占满一行高度。
+ *
+ * Markdown 用空行分隔段落，而空行在 CM6 里同样是一个 `.cm-line` ——
+ * line-height 1.35 意味着它凭空吃掉约 20px，段与段之间看起来像
+ * "空了一行"。这里把**不含文字的行**压到 0.5em 高。
+ *
+ * 光标所在的空行**不压缩** —— 编辑时需要一个正常高度的落点，
+ * 否则光标线几乎看不见。
+ */
+function addEmptyLineCollapse(
+  ranges: { from: number; to: number; value: Decoration }[],
+  view: EditorView,
+): void {
+  const doc = view.state.doc;
+  const sel = view.state.selection;
+  for (const range of view.visibleRanges) {
+    let pos = range.from;
+    while (pos <= range.to) {
+      const line = doc.lineAt(pos);
+      if (line.text.trim() === '') {
+        const caretInside = sel.ranges.some((r) => r.from <= line.to && r.to >= line.from);
+        if (!caretInside) {
+          ranges.push({ from: line.from, to: line.from, value: Decoration.line({ class: 'cm-md-empty-line' }) });
+        }
+      }
+      if (line.to >= doc.length) break;
+      pos = line.to + 1;
+    }
+  }
+}
+
+function addParagraphRhythm(
+  ranges: { from: number; to: number; value: Decoration }[],
+  view: EditorView,
+): void {
+  const doc = view.state.doc;
+  const tree = syntaxTree(view.state);
+  const { from, to } = view.viewport;
+  tree.iterate({
+    from,
+    to,
+    enter(node) {
+      if (node.name !== 'Paragraph') return;
+      /*
+       * 列表项内的段落**不参与段间距** —— 否则每个列表项都被撑开
+       * 0.15em，整个列表看起来散成一块一块，不像一个整体（实测反馈）。
+       * 列表的紧凑感由行高本身保证。
+       */
+      if (node.node.parent?.name === 'ListItem') return;
+      // 末行：node.to 可能正好落在下一行行首，减一取本行
+      const endPos = Math.min(Math.max(node.to - 1, node.from), doc.length);
+      const line = doc.lineAt(endPos);
+      ranges.push({ from: line.from, to: line.from, value: Decoration.line({ class: 'cm-md-para-end' }) });
+    },
+  });
+}
+
 function addAlerts(
   ranges: { from: number; to: number; value: Decoration }[],
   view: EditorView,
@@ -1600,7 +1672,7 @@ const aropytInlineTheme = EditorView.baseTheme({
      * .cm-md-block，都不在这条链上（行继承自 scroller），所以"行距过大"
      * 两轮没修掉。1.8 → 1.55 与块内排版保持一致。
      */
-    lineHeight: '1.55',
+    lineHeight: '1.2',
   },
   '&.aropyt-render-mode .cm-content': {
     /*
@@ -1670,7 +1742,7 @@ const aropytInlineTheme = EditorView.baseTheme({
      * 同一条规则里的 `margin: 0` 则必须留着 —— 它不是冗余，
      * 是防"行上出现 margin"的硬约束（那会让点击落点累积偏移，见下）。
      */
-    lineHeight: '1.8',
+    lineHeight: '1.2',
     /*
      * 同上：CM6 给 `.cm-line` 自己设了 `white-space: pre`，
      * 不显式覆盖的话它不会从 `.cm-content` 继承 —— 那一层改了等于没改。
@@ -1749,14 +1821,14 @@ const aropytInlineTheme = EditorView.baseTheme({
   '.cm-line.cm-md-h2': {
     fontSize: '1.45em',
     fontWeight: '600',
-    lineHeight: '1.35',
+    lineHeight: '1.2',
     paddingTop: '0.8em',
     paddingBottom: '0.3em',
   },
   '.cm-line.cm-md-h3': {
     fontSize: '1.22em',
     fontWeight: '600',
-    lineHeight: '1.4',
+    lineHeight: '1.2',
     paddingTop: '0.7em',
     paddingBottom: '0.25em',
   },
@@ -1892,23 +1964,29 @@ const aropytInlineTheme = EditorView.baseTheme({
      * 1.7 在渲染态下显得松散（用户反馈"预览模式行间距过大"）。
      * 1.55 接近 Typora 的正文行高，同时保留中文阅读的呼吸感。
      */
-    lineHeight: '1.55',
+    lineHeight: '1.2',
   },
   '.cm-md-block > :first-child': { marginTop: 0 },
   '.cm-md-block > :last-child': { marginBottom: 0 },
-  '.cm-md-block h1': { fontSize: '1.9em', fontWeight: '600', margin: '0.7em 0 0.35em', paddingBottom: '0.25em', borderBottom: '1px solid var(--md-border)' },
-  '.cm-md-block h2': { fontSize: '1.5em', fontWeight: '600', margin: '0.85em 0 0.4em' },
-  '.cm-md-block h3': { fontSize: '1.25em', fontWeight: '600', margin: '0.8em 0 0.35em' },
-  '.cm-md-block h4': { fontSize: '1.1em', fontWeight: '600', margin: '0.75em 0 0.3em' },
-  '.cm-md-block h5': { fontSize: '1em', fontWeight: '600', margin: '0.7em 0 0.3em' },
-  '.cm-md-block h6': { fontSize: '0.95em', fontWeight: '600', color: 'var(--md-muted)', margin: '0.7em 0 0.3em' },
-  '.cm-md-block p': { margin: '0.28em 0' },
+  '.cm-md-block h1': { fontSize: '1.9em', fontWeight: '600', margin: '0.34em 0 0.16em', paddingBottom: '0.16em', borderBottom: '1px solid var(--md-border)' },
+  '.cm-md-block h2': { fontSize: '1.5em', fontWeight: '600', margin: '0.42em 0 0.18em' },
+  '.cm-md-block h3': { fontSize: '1.25em', fontWeight: '600', margin: '0.38em 0 0.16em' },
+  '.cm-md-block h4': { fontSize: '1.1em', fontWeight: '600', margin: '0.34em 0 0.15em' },
+  '.cm-md-block h5': { fontSize: '1em', fontWeight: '600', margin: '0.32em 0 0.15em' },
+  '.cm-md-block h6': { fontSize: '0.95em', fontWeight: '600', color: 'var(--md-muted)', margin: '0.3em 0 0.15em' },
+  '.cm-md-block p': { margin: '0.05em 0' },
   '.cm-md-block strong': { fontWeight: '600' },
   '.cm-md-block a': { color: 'var(--md-link)' },
+  '.cm-md-block blockquote > p': { margin: '0' },
   '.cm-md-block blockquote': {
+    /*
+     * ⚠️ 必须显式设 margin —— 浏览器对 blockquote 的默认值是 1em 40px，
+     * 主题不重置的话引用块上下各空 15px、左右各缩 40px（实测"引用间距
+     * 很大"的根源）。
+     */
     borderLeft: '3px solid var(--md-border-strong)',
     paddingLeft: '0.9em',
-    margin: '0.5em 0',
+    margin: '0.2em 0',
     color: 'var(--md-muted)',
   },
   '.cm-md-block pre': {
@@ -1940,8 +2018,10 @@ const aropytInlineTheme = EditorView.baseTheme({
   '.cm-md-block td': { border: '1px solid var(--md-border)', padding: '5px 12px' },
   '.cm-md-block img': { maxWidth: '100%' },
   '.cm-md-block hr': { border: 'none', borderTop: '1px solid var(--md-border)', margin: '1em 0' },
-  '.cm-md-block ul': { paddingLeft: '1.5em', margin: '0.35em 0' },
-  '.cm-md-block ol': { paddingLeft: '1.5em', margin: '0.35em 0' },
+  '.cm-md-block ul': { paddingLeft: '1.5em', margin: '0.08em 0' },
+  /* 列表项内部的段落不参与段距 —— 否则每个项都被撑开（与行装饰侧同理） */
+  '.cm-md-block li > p': { margin: '0' },
+  '.cm-md-block ol': { paddingLeft: '1.5em', margin: '0.08em 0' },
   '.cm-md-block input[type=checkbox]': { marginRight: '0.45em', verticalAlign: 'middle' },
   '.cm-md-block .katex-display': { margin: '0.6em 0', overflowX: 'auto' },
 

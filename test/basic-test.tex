@@ -1,0 +1,115 @@
+% basic-test.tex
+\documentclass[12pt,a4paper]{article}
+
+\usepackage[utf8]{inputenc}
+\usepackage[T1]{fontenc}
+\usepackage{amsmath,amssymb}
+\usepackage{graphicx}
+\usepackage{hyperref}
+\usepackage{booktabs}
+
+\title{Basic \LaTeX{} Test Document}
+\author{Test Author}
+\date{\today}
+
+\begin{document}
+
+\maketitle
+
+\begin{abstract}
+This is a basic test document for checking editor support of \LaTeX{} syntax.
+It contains sections, lists, math, tables, code, quotes, and references.
+\end{abstract}
+
+\tableofcontents
+\newpage
+
+\section{Introduction}
+
+This paragraph tests plain text, \textbf{bold}, \textit{italic}, \texttt{monospace},
+and inline math such as $E = mc^2$ and $\alpha + \beta = \gamma$.
+
+A second paragraph tests line wrapping and paragraph spacing. The quick brown fox
+jumps over the lazy dog. Pack my box with five dozen liquor jugs.
+
+\section{Lists}
+
+\subsection{Itemize}
+
+\begin{itemize}
+  \item First item
+  \item Second item with \textbf{bold} text
+  \item Third item with inline math $x^2 + y^2 = z^2$
+\end{itemize}
+
+\subsection{Enumerate}
+
+\begin{enumerate}
+  \item First step
+  \item Second step
+  \item Third step
+\end{enumerate}
+
+\section{Mathematics}
+
+\subsection{Inline and Display}
+
+Inline: $a^2 + b^2 = c^2$.
+
+Display:
+\[
+  \int_{0}^{1} x^2 \, dx = \frac{1}{3}
+\]
+
+\subsection{Aligned Equations}
+
+\begin{align}
+  f(x) &= x^2 + 2x + 1 \\
+       &= (x + 1)^2
+\end{align}
+
+\section{Tables}
+
+\begin{table}[h]
+  \centering
+  \begin{tabular}{lcr}
+    \toprule
+    Name & Value & Unit \\
+    \midrule
+    Alpha & 1.0 & m \\
+    Beta  & 2.5 & s \\
+    Gamma & 3.7 & kg \\
+    \bottomrule
+  \end{tabular}
+  \caption{A simple table.}
+  \label{tab:simple}
+\end{table}
+
+Table~\ref{tab:simple} shows a basic table.
+
+\section{Code}
+
+\begin{verbatim}
+public class Hello {
+    public static void main(String[] args) {
+        System.out.println("Hello, LaTeX!");
+    }
+}
+\end{verbatim}
+
+\section{Quote}
+
+\begin{quote}
+This is a quoted paragraph. It tests indentation and spacing inside a quote environment.
+\end{quote}
+
+\section{References}
+
+See Section~\ref{sec:conclusion} for the conclusion.
+
+\section{Conclusion}
+\label{sec:conclusion}
+
+This is the end of the basic test document.
+
+\end{document}

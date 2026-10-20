@@ -1506,8 +1506,8 @@ button {
 .markdown-alert {
   border-left: 3px solid var(--alert-color);
   background: color-mix(in srgb, var(--alert-color) 7%, transparent);
-  padding: 8px 14px;
-  margin: 10px 0;
+  padding: 5px 12px;
+  margin: 4px 0;
 }
 
 .markdown-alert > p {
@@ -1569,3 +1569,25 @@ button {
 .cm-md-alert-caution,
 .markdown-alert-caution { --alert-icon: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 16 16'%3E%3Cpath d='M4.47.22A.749.749 0 0 1 5 0h6c.199 0 .389.079.53.22l4.25 4.25c.141.14.22.331.22.53v6a.749.749 0 0 1-.22.53l-4.25 4.25A.749.749 0 0 1 11 16H5a.749.749 0 0 1-.53-.22L.22 11.53A.749.749 0 0 1 0 11V5c0-.199.079-.389.22-.53Zm.84 1.28L1.5 5.31v5.38l3.81 3.81h5.38l3.81-3.81V5.31L10.69 1.5ZM8 4a.75.75 0 0 1 .75.75v3.5a.75.75 0 0 1-1.5 0v-3.5A.75.75 0 0 1 8 4Zm0 8a1 1 0 1 1 0-2 1 1 0 0 1 0 2Z'/%3E%3C/svg%3E");
   --alert-color: var(--md-danger); }
+
+/*
+ * 段落节奏（v0.0.9）：段落末行的下留白 = 段间距。
+ * 行距已由 line-height 1.65 收紧，段内紧凑；这里补段与段之间的呼吸。
+ * 只用 padding（行上的 margin 会让 CM6 的点击落点累积偏移）。
+ */
+.cm-md-para-end {
+  padding-bottom: 0.08em;
+}
+
+/*
+ * 空行压缩（v0.0.9）：段落之间的空行不再是"一整行的空白"。
+ * 只压 line-height（空行没有文字，压缩不影响任何内容），
+ * 光标所在的空行不加这个 class（见 addEmptyLineCollapse）。
+ */
+.cm-md-empty-line {
+  /* 空行只留一条缝（约 1.5px）—— 段间呼吸交给段落自身 */
+  line-height: 0.1em;
+}
+
+
+

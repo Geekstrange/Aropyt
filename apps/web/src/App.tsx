@@ -98,7 +98,9 @@ export function App(): JSX.Element {
       if (key === 'b' && shift) {
         event.preventDefault();
         event.stopPropagation();
-        void runtime?.updateSettings({ sidebar: { open: !sidebarOpen } });
+        // 读**当前配置**而不是闭包里的 sidebarOpen —— 那个是 handler
+        // 创建时的旧值，会导致"只能关、不能开"（实测）
+        void runtime.updateSettings({ sidebar: { open: !runtime.getSettings().sidebar.open } });
         return;
       }
       if (key === 'n' && shift) {

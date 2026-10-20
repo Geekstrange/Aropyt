@@ -26,6 +26,12 @@
   `[!WARNING]` / `[!CAUTION]`，五套官方 Octicon 图标与类型配色
   （CSS mask + data URI，颜色取语义令牌，深浅主题自适应）
 
+### Changed
+
+- **排版节奏收紧**：正文行高 1.2；段落间的空行压缩至 0.1em；
+  重置 `blockquote` / `pre` 的 UA 默认 margin（1em 40px / 1em）；
+  引用与列表项内部段落不吃段间距；警告块 padding/margin 收紧
+
 ### Fixed
 
 - **侧栏开合状态不持久**：sidebarOpen 改为 RuntimeState 投影订阅。

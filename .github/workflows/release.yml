@@ -23,8 +23,17 @@ jobs:
       matrix:
         include:
           - platform: windows-latest
+            args: ''
+          # Windows ARM64：x64 runner 交叉编译，**只出 NSIS**（WiX 对 arm64 支持不完整）
+          - platform: windows-latest
+            args: '--target aarch64-pc-windows-msvc --bundles nsis'
           - platform: macos-latest
+            args: ''
           - platform: ubuntu-22.04
+            args: ''
+          # Linux ARM64：用 GitHub 原生 arm64 runner，不做交叉编译
+          - platform: ubuntu-24.04-arm
+            args: ''
     runs-on: ${{ matrix.platform }}
     steps:
       - uses: actions/checkout@v4
@@ -36,8 +45,12 @@ jobs:
 
       - uses: dtolnay/rust-toolchain@stable
 
+      - name: Add Windows ARM64 target
+        if: contains(matrix.args, 'aarch64-pc-windows-msvc')
+        run: rustup target add aarch64-pc-windows-msvc
+
       - name: Install Linux dependencies (WebKitGTK 等)
-        if: matrix.platform == 'ubuntu-22.04'
+        if: startsWith(matrix.platform, 'ubuntu')
         run: |
           sudo apt-get update
           sudo apt-get install -y \
@@ -71,6 +84,7 @@ jobs:
           tagName: ${{ github.ref_name }}
           releaseName: 'Aropyt ${{ github.ref_name }}'
           releaseBody: ${{ steps.notes.outputs.body }}
+          args: ${{ matrix.args }}
 
 
   # ── Android APK（release 签名）──────────────────────────────
