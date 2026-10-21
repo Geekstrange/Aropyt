@@ -118,7 +118,18 @@ export class ConfigurationStore implements ConfigurationApi {
 
   register(contribution: ConfigurationContribution, ownerLabel = '未命名插件'): Disposable {
     const keys: string[] = [];
-    for (const [key, schema] of Object.entries(contribution.properties)) {
+    /*
+     * 防御：旧版示例/手写插件可能写成扁平对象（没有 properties）。
+     * 之前这里直接 Object.entries(undefined) 抛
+     * "Cannot convert undefined or null to object"，把整个插件的贡献
+     * 声明打掉 —— 一个配置项写法错误不该让命令、视图一起消失。
+     */
+    const properties = (contribution as { properties?: Record<string, ConfigurationPropertySchema> }).properties;
+    if (!properties || typeof properties !== 'object' || Array.isArray(properties)) {
+      console.warn('[configuration] 插件配置缺少 properties 对象，已跳过', ownerLabel);
+      return { dispose: () => undefined };
+    }
+    for (const [key, schema] of Object.entries(properties)) {
       this.#schemas.set(key, { schema, ownerLabel });
       keys.push(key);
     }

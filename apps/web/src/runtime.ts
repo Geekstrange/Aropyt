@@ -1354,6 +1354,20 @@ interface StoredExternalPlugin {
        * 文件操作只剩保存，重启必复发（v0.0.9 实测事故的直接原因）。
        */
       host.load([...(options.plugins ?? builtinPlugins), ...externals]);
+
+      /*
+       * 应用用户的禁用名单（settings.jsonc 的 plugins.disabled）。
+       *
+       * 之前禁用只写了配置、从来没人读 —— 面板点"禁用"、重启后照样启用
+       * （实测）。必须在 load 之后、activateFor 之前把名单里那些插件
+       * 主动 disable 掉，否则"已禁用"只是一次性的内存状态。
+       */
+      const disabledIds = new Set(currentSettings.plugins.disabled);
+      for (const plugin of externals) {
+        if (disabledIds.has(plugin.manifest.id)) {
+          host.disable(plugin.manifest.id, '已在插件面板中禁用');
+        }
+      }
     }
   }
 
@@ -1396,14 +1410,25 @@ function validateContributions(manifest: PluginManifest): void {
     }
   }
 
-  const configuration = contributes.configuration as Record<string, unknown> | undefined;
+  const configuration = contributes.configuration as
+    | { properties?: Record<string, unknown> }
+    | undefined;
   if (configuration !== undefined) {
     if (
       configuration === null ||
       typeof configuration !== 'object' ||
       Array.isArray(configuration)
     ) {
-      throw new Error('contributes.configuration 必须是对象（键是配置项名）');
+      throw new Error('contributes.configuration 必须是对象');
+    }
+    /*
+     * 必须是 `{ properties: { ... } }` —— 扁平写法会在注册时
+     * Object.entries(undefined) 抛 "Cannot convert undefined or null
+     * to object"，把整个插件的贡献声明打掉（实测）。
+     */
+    const properties = configuration.properties;
+    if (properties === null || typeof properties !== 'object' || Array.isArray(properties)) {
+      throw new Error('contributes.configuration 需要一个 properties 对象');
     }
   }
 

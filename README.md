@@ -223,7 +223,7 @@ Import via **Settings → Plugins → Import plugin…**, then restart.
 | `keybindings` | `{ command, key, when? }[]` | CodeMirror key syntax, e.g. `Mod-Shift-k` |
 | `views` | `{ id, title, location, order? }[]` | `location`: `sidebar` / `main` / `right` |
 | `menus` | `{ [location]: { command, group?, order? }[] }` | Adds entries to existing menus |
-| `configuration` | `{ [key]: { type, default, description } }` | Rendered in Settings |
+| `configuration` | `{ properties: { [key]: { type, default, description } } }` | Rendered in Settings |
 
 ### Lifecycle
 

@@ -24,6 +24,7 @@ import {
 
 import { createRuntime, type AropytRuntime, type RuntimeState } from './runtime.js';
 import { Icon } from './components/Icons.js';
+import { PluginsPanel } from './components/plugins-panel';
 import { ViewColumn } from './components/ViewHost.js';
 import { SettingsDialog } from './components/SettingsDialog.js';
 import { HistoryDialog } from './components/HistoryDialog.js';
@@ -36,68 +37,36 @@ export function App(): JSX.Element {
   // 默认值随宽度走：宽屏（桌面）面板默认打开，因为 Typora 的核心体验
   // 就是编辑器与预览并排；窄屏（Android）默认全关，否则一进来就被
   // 两个覆盖层糊住屏幕，连字都打不了。
+  /*
+   * 侧栏开关：**保存用户的选择**（localStorage 同步读取，首帧就生效）。
+   * 没存过才回落到"宽屏默认打开"—— 用户手动关过就尊重用户。
+   */
   const [settingsOpen, setSettingsOpen] = useState(false);
+  const [pluginsOpen, setPluginsOpen] = useState(false);
   const [historyOpen, setHistoryOpen] = useState(false);
 
   /*
-   * 侧栏开合：真源是 settings.jsonc（配置就绪后由 Effect 同步一次，
-   * 在此之前先用宽屏默认值，避免"先闪一下再收起"）。
-   */
-  /*
    * 侧栏开关**不在组件里存 state**：真源是 settings.jsonc 的
-   * sidebar.open，经 RuntimeState 投影订阅。
+   * sidebar.open，经 RuntimeState 投影订阅（v0.0.9）。
    *
-   * 之前用 useState + 只在 runtime 变化时 Effect 读一次 —— 配置是异步
-   * 加载的，那一刻读到的还是默认值（open: true），于是"配置里写了
-   * false、界面照样展开"（实测）。
+   * 旧实现是 useState + 只在 runtime 变化时 Effect 读一次 —— 配置异步
+   * 加载，那一刻拿到的是默认值（open: true），之后永不更新，表现为
+   * "配置写 false、界面照样展开"。
    */
   const liveState = useMaybeRuntimeState(runtime);
-  // 云配置尚未加载时先用宽屏默认值；加载完成后跟着投影走
   const sidebarOpen = liveState?.sidebarOpen ?? isWideScreen();
 
   useEffect(() => {
     const host = editorHostRef.current;
     if (!host) return undefined;
 
-    /*
-     * 自动安全模式（v0.1.0）。
-     *
-     * 桌面版没法传 ?safe，插件把 UI 搞挂时用户只能卸载软件（实测事故）。
-     * 这里用"启动标记"判断上次启动是否正常走完：
-     *   启动时写入标记 → 2 秒后（插件加载完毕、首帧已渲染）清除
-     * 下次启动时标记还在 = 上次没走完 → 本次以安全模式启动（禁用全部插件），
-     * 用户就能进去把坏插件删掉。
-     */
-    const BOOT_FLAG = 'aropyt.booting';
-    const crashedLastLaunch = localStorage.getItem(BOOT_FLAG) === '1';
-    const urlSafeMode = new URLSearchParams(window.location.search).has('safe');
-    const safeMode = urlSafeMode || crashedLastLaunch;
-    try {
-      localStorage.setItem(BOOT_FLAG, '1');
-    } catch {
-      /* 隐私模式：标记不可用，退化为不影响启动 */
-    }
+    // ?safe 打开安全模式：禁用全部插件，对应 VS Code 的 --disable-extensions。
+    // 插件把编辑器搞挂时，这是唯一还能进去的路。
+    const safeMode = new URLSearchParams(window.location.search).has('safe');
 
     const instance = createRuntime({ editorHost: host, safeMode });
     setRuntime(instance);
-
-    if (crashedLastLaunch) {
-      console.warn('[app] 上次启动未正常完成，本次以安全模式启动（插件已禁用）');
-    }
-
-    // 启动成功（插件已加载、界面已渲染）→ 清掉标记
-    const bootTimer = window.setTimeout(() => {
-      try {
-        localStorage.removeItem(BOOT_FLAG);
-      } catch {
-        /* 同上 */
-      }
-    }, 2000);
-
-    return () => {
-      window.clearTimeout(bootTimer);
-      instance.dispose();
-    };
+    return () => instance.dispose();
   }, []);
 
   /*
@@ -130,9 +99,7 @@ export function App(): JSX.Element {
       if (key === 'b' && shift) {
         event.preventDefault();
         event.stopPropagation();
-        // 读**当前配置**而不是闭包里的 sidebarOpen —— 那个是 handler
-        // 创建时的旧值，会导致"只能关、不能开"（实测）
-        void runtime.updateSettings({ sidebar: { open: !runtime.getSettings().sidebar.open } });
+        void runtime?.updateSettings({ sidebar: { open: !sidebarOpen } });
         return;
       }
       if (key === 'n' && shift) {
@@ -212,7 +179,7 @@ export function App(): JSX.Element {
     <div className="app">
       {liveState?.safeMode && (
         <div className="safe-banner" role="status">
-          安全模式：所有插件已停用（上次启动可能异常）。可在「插件管理」里删除可疑插件后重启。
+          安全模式：所有插件已停用（上次启动可能异常）。可在「插件」面板里删除可疑插件后重启。
         </div>
       )}
       <header className="app-header">
@@ -240,6 +207,7 @@ export function App(): JSX.Element {
       </header>
 
       <Shell
+            onOpenPlugins={() => setPluginsOpen(true)}
         runtime={runtime}
         editorHostRef={editorHostRef}
         sidebarOpen={sidebarOpen}
@@ -251,6 +219,14 @@ export function App(): JSX.Element {
           runtime={runtime}
           path={runtime.getState().activePath ?? ''}
           onClose={() => setHistoryOpen(false)}
+        />
+      )}
+
+      {pluginsOpen && runtime && (
+        <PluginsPanel
+          runtime={runtime}
+          records={runtime.getState().plugins}
+          onClose={() => setPluginsOpen(false)}
         />
       )}
 
@@ -290,19 +266,21 @@ function Shell({
   sidebarOpen,
   onOpenSettings,
   onOpenHistory,
+  onOpenPlugins,
 }: {
   readonly runtime: AropytRuntime | null;
   readonly editorHostRef: RefObject<HTMLDivElement>;
   readonly sidebarOpen: boolean;
   readonly onOpenSettings: () => void;
   readonly onOpenHistory: () => void;
+  readonly onOpenPlugins: () => void;
 }): JSX.Element {
   return (
     <div className="app-body">
       {runtime && <ViewColumn runtime={runtime} location="sidebar" side="left" open={sidebarOpen} />}
 
       <main className="app-main">
-        {runtime ? <Toolbar runtime={runtime} onOpenSettings={onOpenSettings} onOpenHistory={onOpenHistory} /> : <div className="toolbar" />}
+        {runtime ? <Toolbar runtime={runtime} onOpenSettings={onOpenSettings} onOpenHistory={onOpenHistory} onOpenPlugins={onOpenPlugins} /> : <div className="toolbar" />}
         <div className="app-editor" ref={editorHostRef} />
       </main>
 
@@ -403,9 +381,10 @@ interface ToolbarProps {
   readonly runtime: AropytRuntime;
   readonly onOpenSettings: () => void;
   readonly onOpenHistory: () => void;
+  readonly onOpenPlugins: () => void;
 }
 
-function Toolbar({ runtime, onOpenSettings, onOpenHistory }: ToolbarProps): JSX.Element {
+function Toolbar({ runtime, onOpenSettings, onOpenHistory, onOpenPlugins }: ToolbarProps): JSX.Element {
   const state = useRuntimeState(runtime);
   const details = new Map(runtime.commands.details().map((item) => [item.id, item]));
   const groups = groupToolbar(state.toolbar);
@@ -457,56 +436,7 @@ function Toolbar({ runtime, onOpenSettings, onOpenHistory }: ToolbarProps): JSX.
         className="tool-button"
         title="插件管理"
         aria-label="插件管理"
-        onClick={() => {
-          /*
-           * 插件面板：列出全部插件并给出**可操作的开关**。
-           * 禁用立即生效并记住；启用需要重启（插件贡献要重新声明）。
-           * 最后一枚按钮是导入入口（插件生态的下一步）。
-           */
-          /*
-           * 只展示**外部导入**的插件：文件/格式化/文件树/大纲是内置
-           * 功能，不属于"插件管理"的范畴（用户明确要求）。
-           */
-          const external = state.plugins.filter(
-            (record) => !runtime.builtinPluginIds.has(record.manifest.id),
-          );
-          const lines = external.map((record) => {
-            const status =
-              record.state === 'active'
-                ? '已启用'
-                : record.state === 'disabled'
-                  ? '已禁用'
-                  : record.state === 'failed'
-                    ? '加载失败'
-                    : '未激活';
-            const reason = record.reason ? `——${record.reason}` : '';
-            return `${record.manifest.name ?? record.manifest.id}（${status}）${reason}`;
-          });
-          const actions = external.map((record) => {
-            const active = record.state === 'active';
-            return {
-              label: `${active ? '禁用' : '启用'}：${record.manifest.name ?? record.manifest.id}`,
-              run: () => runtime.setPluginEnabled(record.manifest.id, !active),
-            };
-          });
-          for (const record of external) {
-            const name = record.manifest.name ?? record.manifest.id;
-            actions.push({
-              label: `删除：${name}`,
-              run: () => void runtime.deleteExternalPlugin(record.manifest.id),
-            });
-          }
-          actions.push({
-            label: '导入插件…',
-            run: () => runtime.importExternalPlugin(),
-          });
-          void runtime.windowService.showMessage(
-            lines.length > 0
-              ? ['已导入的插件：', ...lines].join('\n')
-              : '尚未导入任何插件。插件是单个 .js 文件，需导出 manifest 与 activate。',
-            { level: 'info', actions },
-          );
-        }}
+        onClick={onOpenPlugins}
       >
         <Icon name="plugin" />
       </button>
@@ -674,8 +604,11 @@ function StatusBar({ runtime }: { readonly runtime: AropytRuntime }): JSX.Elemen
           void runtime.windowService.showMessage(
             [
               `Aropyt v${__APP_VERSION__}`,
-              'aropyt.com',
-              'AGPL-3.0',
+              '',
+              'GitHub:',
+              'https://github.com/Geekstrange/Aropyt',
+              '',
+              '许可证: AGPL-3.0',
             ].join('\n'),
             { level: 'info' },
           )
