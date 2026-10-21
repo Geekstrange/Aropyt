@@ -59,13 +59,45 @@ export function App(): JSX.Element {
     const host = editorHostRef.current;
     if (!host) return undefined;
 
-    // ?safe 打开安全模式：禁用全部插件，对应 VS Code 的 --disable-extensions。
-    // 插件把编辑器搞挂时，这是唯一还能进去的路。
-    const safeMode = new URLSearchParams(window.location.search).has('safe');
+    /*
+     * 自动安全模式（v0.1.0）。
+     *
+     * 桌面版没法传 ?safe，插件把 UI 搞挂时用户只能卸载软件（实测事故）。
+     * 这里用"启动标记"判断上次启动是否正常走完：
+     *   启动时写入标记 → 2 秒后（插件加载完毕、首帧已渲染）清除
+     * 下次启动时标记还在 = 上次没走完 → 本次以安全模式启动（禁用全部插件），
+     * 用户就能进去把坏插件删掉。
+     */
+    const BOOT_FLAG = 'aropyt.booting';
+    const crashedLastLaunch = localStorage.getItem(BOOT_FLAG) === '1';
+    const urlSafeMode = new URLSearchParams(window.location.search).has('safe');
+    const safeMode = urlSafeMode || crashedLastLaunch;
+    try {
+      localStorage.setItem(BOOT_FLAG, '1');
+    } catch {
+      /* 隐私模式：标记不可用，退化为不影响启动 */
+    }
 
     const instance = createRuntime({ editorHost: host, safeMode });
     setRuntime(instance);
-    return () => instance.dispose();
+
+    if (crashedLastLaunch) {
+      console.warn('[app] 上次启动未正常完成，本次以安全模式启动（插件已禁用）');
+    }
+
+    // 启动成功（插件已加载、界面已渲染）→ 清掉标记
+    const bootTimer = window.setTimeout(() => {
+      try {
+        localStorage.removeItem(BOOT_FLAG);
+      } catch {
+        /* 同上 */
+      }
+    }, 2000);
+
+    return () => {
+      window.clearTimeout(bootTimer);
+      instance.dispose();
+    };
   }, []);
 
   /*
@@ -178,6 +210,11 @@ export function App(): JSX.Element {
 
   return (
     <div className="app">
+      {liveState?.safeMode && (
+        <div className="safe-banner" role="status">
+          安全模式：所有插件已停用（上次启动可能异常）。可在「插件管理」里删除可疑插件后重启。
+        </div>
+      )}
       <header className="app-header">
         <button
           type="button"
@@ -452,6 +489,13 @@ function Toolbar({ runtime, onOpenSettings, onOpenHistory }: ToolbarProps): JSX.
               run: () => runtime.setPluginEnabled(record.manifest.id, !active),
             };
           });
+          for (const record of external) {
+            const name = record.manifest.name ?? record.manifest.id;
+            actions.push({
+              label: `删除：${name}`,
+              run: () => void runtime.deleteExternalPlugin(record.manifest.id),
+            });
+          }
           actions.push({
             label: '导入插件…',
             run: () => runtime.importExternalPlugin(),

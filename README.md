@@ -183,6 +183,68 @@ npm run verify           # full verification (compile + behavioral gates)
 
 ---
 
+## Plugin development
+
+A plugin is **a single `.js` file** (ES module) that exports a `manifest` and an `activate` function.
+
+```js
+export const manifest = {
+  id: 'com.example.wordcount',
+  name: 'Word count',
+  version: '0.1.0',
+  engines: { aropyt: '>=0.1.0' },
+  contributes: { commands: [{ id: 'wordcount.run', title: 'Count words' }] },
+};
+
+export function activate(ctx) {
+  ctx.commands.register('wordcount.run', () => {
+    ctx.ui.showMessage(`Words: ${ctx.editor.getText().split(/\s+/).filter(Boolean).length}`);
+  });
+}
+```
+
+Import via **Settings → Plugins → Import plugin…**, then restart.
+
+### Manifest
+
+| Field | Required | Description |
+|---|---|---|
+| `id` | yes | Reverse-DNS identifier, unique across all plugins |
+| `name` | yes | Display name in the plugin manager |
+| `version` | no | Semver string |
+| `engines.aropyt` | no | Minimum host version (semver range) |
+| `contributes` | no | Declarative contributions (below) |
+
+### Contribution points
+
+| Point | Shape | Notes |
+|---|---|---|
+| `commands` | `{ id, title, icon?, category? }[]` | `title` shows in tooltips and hover hints |
+| `keybindings` | `{ command, key, when? }[]` | CodeMirror key syntax, e.g. `Mod-Shift-k` |
+| `views` | `{ id, title, location, order? }[]` | `location`: `sidebar` / `main` / `right` |
+| `menus` | `{ [location]: { command, group?, order? }[] }` | Adds entries to existing menus |
+| `configuration` | `{ [key]: { type, default, description } }` | Rendered in Settings |
+
+### Lifecycle
+
+1. **Declared** — only `manifest` is read; no plugin code runs.
+2. **Activated** — `activate(ctx)` runs on demand (first command use or when its view opens).
+3. **Deactivated** — `deactivate()` on shutdown or when disabled.
+
+Contributions register **before** `activate`, so a plugin whose `activate` throws still shows its commands (disabled, with the error in the manager).
+
+### Rules and limits
+
+- **Same process as the app.** No sandbox — a plugin can touch the DOM. Treat third-party plugins like browser extensions.
+- **No editor internals.** `ctx` is the only entry point; `EditorView` / `EditorState` are not exposed. The one exception: a native CodeMirror 6 extension via `ctx.editor.addExtension`.
+- **Failure isolation.** Every plugin's contribution registration and `activate()` are wrapped in `try/catch`. A broken plugin is marked *failed* and **does not affect other plugins or the built-in UI**.
+- **Import-time validation.** `contributes` is checked structurally before the file is stored; invalid shapes are rejected with a reason instead of crashing the next launch.
+- **API version gate.** Plugins declaring an older `engines.aropyt` are disabled with an explicit reason.
+
+### Debugging
+
+Watch the console for `[plugin-host] <id>` prefixed errors. The plugin manager shows each plugin's state — *declared / active / disabled / failed* — with the failure reason.
+
 ## Contributing
 
 Issues and pull requests are welcome. Before opening a PR:

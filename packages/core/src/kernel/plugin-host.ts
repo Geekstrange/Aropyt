@@ -170,10 +170,37 @@ export class PluginHost {
       return;
     }
 
-    const unmet = this.#checkCapabilities(plugins);
+    /*
+     * 逐插件隔离（v0.1.0）。
+     *
+     * 外部插件的 manifest 来自运行时（可能被手改、可能是坏的 JS 产物），
+     * 不能按 TS 类型信任。之前的实现里任何一处抛错都会中断整个循环，
+     * 后面的插件（包括内置 explorer / outline / file / formatting）
+     * 全部不加载 —— 表现就是"工具栏清空、侧栏打不开、文件菜单只剩保存"，
+     * 而且重启后必然复发，只能卸载软件（实测）。
+     *
+     * 现在的规则：**一个插件坏，只影响它自己**。
+     */
+    let unmet: Map<string, readonly string[]> = new Map();
+    try {
+      unmet = this.#checkCapabilities(plugins);
+    } catch (error) {
+      console.error('[plugin-host] 能力检查失败，降级为全部通过', error);
+    }
+
     const accepted: LoadablePlugin[] = [];
 
     for (const plugin of plugins) {
+      const manifest = plugin?.manifest;
+      if (
+        !manifest ||
+        typeof manifest.id !== 'string' ||
+        manifest.id.length === 0 ||
+        typeof manifest.name !== 'string'
+      ) {
+        console.error('[plugin-host] 跳过非法插件清单', manifest);
+        continue;
+      }
       const missing = unmet.get(plugin.manifest.id);
       if (missing && missing.length > 0) {
         this.#records.set(plugin.manifest.id, {
@@ -216,21 +243,54 @@ export class PluginHost {
     if (!record || record.state !== 'declared') return false;
 
     if (!record.module.activate) {
-      record.state = 'active';
+      /*
+       * 没有 activate 导出**不是**"激活成功"。
+       *
+       * 之前这里直接置 active —— 面板显示"已启用"，但插件没有机会注册
+       * 任何命令处理器，点命令永远报"未注册"（实测多轮的假象）。
+       */
+      record.state = 'failed';
+      record.reason = '插件没有导出 activate 函数';
       this.#notify(record);
-      return true;
+      return false;
     }
 
     const store = new DisposableStore();
     const context = this.#createContext(pluginId, store);
 
-    record.state = 'active';
-    this.#contexts.set(pluginId, { context, store });
+    /*
+     * 先不置 active：activate 失败必须留下痕迹。
+     *
+     * 之前先设 state='active' 再 await，而异常被 guardAsync 吞掉 ——
+     * 结果插件"看起来是启用的"，但它的命令处理器一个都没注册，
+     * 点命令只报"未注册或未激活"，面板上也没有任何原因（实测）。
+     */
+    try {
+      await record.module.activate(context);
+      record.state = 'active';
+      this.#contexts.set(pluginId, { context, store });
 
-    await guardAsync({ scope: 'plugin.activate', pluginId }, () => record.module.activate!(context), undefined);
+      /*
+       * 激活后校验：清单里声明的命令是否真的注册上了。
+       * "激活成功但处理器缺失"是最难查的一类故障（表现与"未激活"相同），
+       * 在这里直接暴露成 failed + 具体命令名。
+       */
+      const missing = (record.manifest.contributes?.commands ?? [])
+        .map((command) => command.id)
+        .filter((id) => !this.services.commands.has(id));
+      if (missing.length > 0) {
+        record.state = 'failed';
+        record.reason = `激活后未注册这些命令：${missing.join(', ')}`;
+      }
+    } catch (error) {
+      store.dispose();
+      record.state = 'failed';
+      record.reason = `激活失败：${error instanceof Error ? error.message : String(error)}`;
+      console.error(`[plugin-host] 插件 ${pluginId} 激活失败`, error);
+    }
 
     this.#notify(record);
-    return true;
+    return record.state === 'active';
   }
 
   async deactivate(pluginId: string): Promise<void> {
@@ -316,8 +376,15 @@ export class PluginHost {
     for (const record of this.#records.values()) {
       if (record.state !== 'declared') continue;
       const owns = record.manifest.contributes?.commands?.some((command) => command.id === commandId);
-      const activatesOnCommand = record.manifest.activationEvents.includes(`onCommand:${commandId}`);
-      if (owns && activatesOnCommand) return this.activate(record.manifest.id);
+      /*
+       * **声明了命令 = 隐含 onCommand 激活**（与 VS Code 一致）。
+       *
+       * 之前还要求插件显式写 `activationEvents: ['onCommand:<id>']`，
+       * 结果是"命令出现在工具栏、点了却报未激活" —— 用户没理由知道
+       * 要为每个命令重复声明一次。onCommand 声明仍然有效，只是不再是
+       * 前置条件。
+       */
+      if (owns) return this.activate(record.manifest.id);
     }
     return false;
   }
@@ -348,6 +415,13 @@ export class PluginHost {
     }
 
     for (const { manifest } of plugins) {
+      /*
+       * **逐插件隔离**：贡献声明（命令/视图/菜单/配置）任何一处抛错，
+       * 只把这个插件标成加载失败，继续处理后面的插件。
+       * 没有这层保护时，一个外部插件的非法声明会让内置插件的贡献
+       * 全部丢失（v0.0.9 实测的"工具栏清空"事故）。
+       */
+      try {
       const pluginId = manifest.id;
       const contributes: Contributions = manifest.contributes ?? {};
 
@@ -373,6 +447,20 @@ export class PluginHost {
         configDisposables.push(
           this.services.configuration.register(contributes.configuration, pluginId),
         );
+      }
+      } catch (error) {
+        /*
+         * 这个插件的贡献声明有问题 —— 只标记它自己，继续处理下一个。
+         * 内置插件排在外部插件之前，所以即使外部插件全坏，工具栏与
+         * 侧栏仍然完整（v0.1.0 的隔离目标）。
+         */
+        const record = this.#records.get(manifest.id);
+        if (record) {
+          record.state = 'disabled';
+          record.reason = `贡献声明失败：${error instanceof Error ? error.message : String(error)}`;
+          this.#notify(record);
+        }
+        console.error(`[plugin-host] 插件 ${manifest.id} 的贡献声明失败`, error);
       }
     }
 

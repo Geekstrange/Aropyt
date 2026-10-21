@@ -1589,5 +1589,16 @@ button {
   line-height: 0.1em;
 }
 
-
-
+/*
+ * 安全模式提示条（v0.1.0）：插件全部停用时，用户必须第一眼看到
+ * "为什么界面变简单了"以及怎么恢复。
+ */
+.safe-banner {
+  flex: 0 0 auto;
+  padding: 6px 14px;
+  font-size: 12px;
+  text-align: center;
+  color: var(--md-h3);
+  background: color-mix(in srgb, var(--md-h3) 12%, var(--md-surface-0));
+  border-bottom: 1px solid color-mix(in srgb, var(--md-h3) 30%, transparent);
+}

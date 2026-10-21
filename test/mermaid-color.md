@@ -88,27 +88,24 @@ sequenceDiagram
 
 ## 彩色状态图
 
-<!-- stateDiagram-v2 不支持 classDef/class 着色指令（那是 flowchart 的语法），
-     着色版状态图用 flowchart 表达 -->
 ```mermaid
-flowchart TD
-    A([开始]) --> B{加载?}
-    B -- 开始 --> C[空闲]
-    C --> D[加载中]
-    D -- 完成 --> E[成功]
-    D -- 出错 --> F[失败]
-    F -- 重试 --> C
-    E --> G([结束])
+stateDiagram-v2
+    [*] --> Idle
+    Idle --> Loading: 开始
+    Loading --> Success: 完成
+    Loading --> Failure: 出错
+    Success --> [*]
+    Failure --> Idle: 重试
 
     classDef idle fill:#e3f2fd,stroke:#1565c0
     classDef loading fill:#fff9c4,stroke:#f9a825
     classDef ok fill:#c8e6c9,stroke:#2e7d32
     classDef err fill:#ffcdd2,stroke:#c62828
 
-    class C idle
-    class D loading
-    class E ok
-    class F err
+    class Idle idle
+    class Loading loading
+    class Success ok
+    class Failure err
 ```
 
 ## 彩色饼图

@@ -97,6 +97,11 @@ export class CommandRegistry implements CommandsApi {
     };
   }
 
+  /** 该命令是否有处理器（供宿主校验"激活后是否真的注册上了"）。 */
+  has(id: string): boolean {
+    return this.#handlers.has(id);
+  }
+
   async execute<T = unknown>(id: string, ...args: unknown[]): Promise<T> {
     let handler = this.#handlers.get(id);
 
@@ -105,7 +110,27 @@ export class CommandRegistry implements CommandsApi {
       handler = this.#handlers.get(id);
     }
 
-    if (!handler) throw new Error(`命令未注册或所属插件未激活：${id}`);
+    if (!handler) {
+      /*
+       * 附带声明归属（v0.1.0 诊断增强）：
+       * - "否" → declare 从没发生（清单没加载/贡献被清）
+       * - "是,owner=xxx" → 声明在、处理器缺 → 插件激活了但 register 没跑到，
+       *   或 handler 注册到了别的 registry 实例
+       * 这两个分支的下一步排查完全不同，不能只报一句笼统的"未激活"。
+       */
+      const declared = this.#declared.get(id);
+      /*
+       * 再附上注册表里实际的处理器清单（前 8 个）——
+       * "handlers 里有什么"直接区分：register 根本没跑到（只有内置）
+       * vs 注册后被清（有过又没了）vs 注册进了别的实例。
+       */
+      const registered = [...this.#handlers.keys()].slice(0, 8).join(', ');
+      throw new Error(
+        `命令未注册或所属插件未激活：${id}` +
+          `（声明:${declared ? `是,owner=${declared.pluginId ?? 'null'}` : '否'}）` +
+          `（已注册处理器:${registered || '空'}）`,
+      );
+    }
     return (await handler(...args)) as T;
   }
 

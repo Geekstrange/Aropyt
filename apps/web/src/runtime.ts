@@ -208,6 +208,7 @@ export interface AropytRuntime {
   setPluginEnabled(pluginId: string, enabled: boolean): void;
   /** 选择本地 .js 插件文件导入（存 IndexedDB，重启后加载生效）。 */
   importExternalPlugin(): void;
+  deleteExternalPlugin(pluginId: string): Promise<void>;
   /** 内置插件的 id 集合 —— 插件管理面板只展示外部导入的插件。 */
   readonly builtinPluginIds: ReadonlySet<string>;
   /** 源码模式（原始标记可见）。webdev 与排障时需要。 */
@@ -620,6 +621,46 @@ export function createRuntime(options: RuntimeOptions): AropytRuntime {
    */
   host.load(options.plugins ?? builtinPlugins);
 
+  /*
+   * 插件加载与激活（v0.1.0 修正）。
+   *
+   * 之前这段被写在 `regrantWorkspace()`（"恢复上次工作区"动作）里 ——
+   * 正常启动是自动恢复工作区，根本不经过那个函数，于是**外部插件从来没
+   * 加载过**：导入成功、按钮有时出现（上一次会话残留的声明）、点命令报
+   * "未注册或未激活"（实测）。
+   *
+   * 插件加载与工作区是正交的两件事，必须在启动流程里独立执行。
+   */
+  void (async () => {
+    /*
+     * 推迟到同步体完成之后（setTimeout 一拍）—— createRuntime 内的
+     * 函数与 const 全部就绪，杜绝任何 TDZ 类问题。
+     */
+    await new Promise((resolve) => setTimeout(resolve, 0));
+    try {
+      await loadExternalPlugins();
+    } catch (error) {
+      /*
+       * 以前这里是裸 await —— 插件加载链上任何一步抛错都会变成
+       * unhandled rejection：应用正常启动、插件列表空白、没有任何提示。
+       */
+      console.error('[plugins] 外部插件加载失败', error);
+      void windowService.showMessage(
+        `插件加载失败：${error instanceof Error ? error.message : String(error)}`,
+        { level: 'warning' },
+      );
+    }
+    /*
+     * 冷启动带文件（双击 .md / 命令行传参）：必须**在插件激活之后** ——
+     * 打开文件要经过编辑器与标签系统，它们由内置插件在
+     * onStartupFinished 里贡献。
+     */
+    await host.activateFor('onStartupFinished');
+    const launchFile = await invokeNative<string | null>('take_launch_file').catch(() => null);
+    if (launchFile) await openExternalPath(launchFile);
+    notify();
+  })();
+
   // 主题变化要触发一次状态通知，否则工具栏按钮的图标不会更新
   // （data-theme 已经改了，界面配色会跟着变，但按钮显示的还是旧状态）。
   theme.onDidChange(() => notify());
@@ -687,6 +728,7 @@ export function createRuntime(options: RuntimeOptions): AropytRuntime {
     },
     setPluginEnabled,
     importExternalPlugin,
+    deleteExternalPlugin,
     builtinPluginIds: new Set(builtinPlugins.map((plugin) => plugin.manifest.id)),
     saveActiveFile,
     markSaved() {
@@ -1238,22 +1280,35 @@ export function createRuntime(options: RuntimeOptions): AropytRuntime {
    * 执行：Blob URL 动态 import —— 插件代码在渲染进程里以完整权限运行，
    * 与 VS Code 插件同级别信任模型（不是沙箱）。CSP 已放开 `blob:`。
    */
-  const EXTERNAL_PLUGINS_KEY = 'aropyt.externalPlugins';
+  /*
+ * 外部插件存储键（模块作用域）。
+ *
+ * 原来是 createRuntime 函数体内的 const —— 启动 IIFE 在函数同步体早期
+ * 就被调用，而 const 初始化在函数体后段：闭包一访问就是 TDZ
+ * ReferenceError；再叠加启动早期 showMessage 不可用，错误彻底隐身，
+ * 症状是"插件列表空白、没有任何提示"（实测两轮）。
+ */
+const EXTERNAL_PLUGINS_KEY = 'aropyt.externalPlugins';
 
-  interface StoredExternalPlugin {
+interface StoredExternalPlugin {
     manifest: PluginManifest;
     code: string;
   }
 
   async function readExternalPlugins(): Promise<StoredExternalPlugin[]> {
-    const rows = await idbGet<StoredExternalPlugin[]>(STORE.kv, EXTERNAL_PLUGINS_KEY).catch(
-      () => undefined,
-    );
-    return rows ?? [];
+    try {
+      return (await idbGet<StoredExternalPlugin[]>(STORE.kv, EXTERNAL_PLUGINS_KEY)) ?? [];
+    } catch (error) {
+      /* 读不到要能看见 —— 之前的 catch(() => undefined) 把错误变成了"没有插件" */
+      console.error('[plugins] 读取外部插件存储失败', error);
+      return [];
+    }
   }
 
   async function loadExternalPlugins(): Promise<void> {
     const rows = await readExternalPlugins();
+    const externals: LoadablePlugin[] = [];
+
     for (const row of rows) {
       try {
         const url = URL.createObjectURL(new Blob([row.code], { type: 'text/javascript' }));
@@ -1263,19 +1318,134 @@ export function createRuntime(options: RuntimeOptions): AropytRuntime {
             deactivate?: () => void | Promise<void>;
           };
           if (typeof mod.activate !== 'function') continue;
-          host.load([
-            {
-              manifest: row.manifest,
-              module: { activate: mod.activate as never, deactivate: mod.deactivate },
-            } as never,
-          ]);
+          /*
+           * ⚠️ 必须是**平铺字段**（manifest / activate / deactivate）——
+           * LoadablePlugin 的接口就是这样定义的。之前写成
+           * `{ manifest, module: { activate } }`，而 host.load() 读的是
+           * `plugin.activate` → 永远是 undefined → 走"假激活"分支：
+           * 面板显示已启用，但一条命令都没注册（实测多轮的根因）。
+           */
+          externals.push({
+            manifest: row.manifest,
+            activate: mod.activate as never,
+            deactivate: mod.deactivate,
+          });
         } finally {
           URL.revokeObjectURL(url);
         }
-      } catch {
-        /* 单个外部插件失败不影响其它插件与启动 */
+      } catch (error) {
+        /*
+         * 单个外部插件加载失败只影响它自己 —— 但**不能跳过记录**：
+         * 用户需要在插件面板里看到"这个插件坏了"以及原因，
+         * 否则只能靠猜。
+         */
+        console.error('[plugins] 外部插件加载失败', row.manifest?.id, error);
       }
     }
+
+    if (externals.length > 0) {
+      /*
+       * ⚠️ 必须与内置插件**合并后一次性 load**。
+       *
+       * `host.load()` 每次都会 `#rebuildContributions(accepted)`，用传入的
+       * 这组插件**重建**整个贡献集。之前是"每个外部插件单独 load 一次"，
+       * 结果最后一个外部插件的贡献把内置插件（explorer / outline / file /
+       * formatting）的贡献全部覆盖掉 —— 工具栏清空、侧栏打不开、
+       * 文件操作只剩保存，重启必复发（v0.0.9 实测事故的直接原因）。
+       */
+      host.load([...(options.plugins ?? builtinPlugins), ...externals]);
+    }
+  }
+
+
+/**
+ * 校验插件清单的贡献声明（导入前）。
+ *
+ * 只做结构检查 —— 不执行插件代码、不 import 模块。目的是把"注定会让
+ * 宿主启动失败"的清单挡在存储之外：结构合法之后，即使插件的
+ * activate 抛错，也只会影响它自己（plugin-host 已逐插件隔离）。
+ */
+function validateContributions(manifest: PluginManifest): void {
+  const contributes = manifest.contributes as Record<string, unknown> | undefined;
+  if (contributes === undefined) return;
+  if (contributes === null || typeof contributes !== 'object') {
+    throw new Error('manifest.contributes 必须是对象');
+  }
+
+  /*
+   * 结构分两类，别混（第一版把它们全当数组，导致正规插件被拒）：
+   *   数组：commands / keybindings / views
+   *   对象：menus（值必须是数组）/ configuration（值必须是对象）
+   */
+  for (const key of ['commands', 'keybindings', 'views']) {
+    const value = contributes[key];
+    if (value !== undefined && !Array.isArray(value)) {
+      throw new Error(`contributes.${key} 必须是数组`);
+    }
+  }
+
+  const menus = contributes.menus as Record<string, unknown> | undefined;
+  if (menus !== undefined) {
+    if (menus === null || typeof menus !== 'object' || Array.isArray(menus)) {
+      throw new Error('contributes.menus 必须是对象（键是菜单位置，值是数组）');
+    }
+    for (const [location, items] of Object.entries(menus)) {
+      if (!Array.isArray(items)) {
+        throw new Error(`contributes.menus.${location} 必须是数组`);
+      }
+    }
+  }
+
+  const configuration = contributes.configuration as Record<string, unknown> | undefined;
+  if (configuration !== undefined) {
+    if (
+      configuration === null ||
+      typeof configuration !== 'object' ||
+      Array.isArray(configuration)
+    ) {
+      throw new Error('contributes.configuration 必须是对象（键是配置项名）');
+    }
+  }
+
+  for (const command of (contributes.commands as unknown[] | undefined) ?? []) {
+    const item = command as { id?: unknown; title?: unknown };
+    if (typeof item?.id !== 'string' || typeof item?.title !== 'string') {
+      throw new Error('commands 每一项都需要 id 与 title（字符串）');
+    }
+  }
+
+  const VIEW_LOCATIONS = ['sidebar', 'main', 'right'];
+  for (const view of (contributes.views as unknown[] | undefined) ?? []) {
+    const item = view as { id?: unknown; title?: unknown; location?: unknown };
+    if (typeof item?.id !== 'string' || typeof item?.title !== 'string') {
+      throw new Error('views 每一项都需要 id 与 title（字符串）');
+    }
+    if (typeof item?.location !== 'string' || !VIEW_LOCATIONS.includes(item.location)) {
+      throw new Error(`views 的 location 必须是 ${VIEW_LOCATIONS.join(' / ')} 之一`);
+    }
+  }
+}
+
+
+  /**
+   * 删除外部插件（v0.1.0）。
+   *
+   * 安全模式存在的意义就是"坏了能自救" —— 所以删除必须能从 UI 完成，
+   * 不能依赖改文件或重装。删除后立即记入禁用名单（本次运行不再激活），
+   * 重启时它已不在存储里，贡献彻底消失。
+   */
+  async function deleteExternalPlugin(pluginId: string): Promise<void> {
+    const rows = await readExternalPlugins();
+    const next = rows.filter((row) => row.manifest?.id !== pluginId);
+    await idbSet(STORE.kv, EXTERNAL_PLUGINS_KEY, next);
+
+    const disabled = new Set(currentSettings.plugins.disabled);
+    disabled.add(pluginId);
+    updateSettings({ plugins: { disabled: [...disabled] } });
+
+    void windowService.showMessage(`已删除插件「${pluginId}」，重启后彻底移除。`, {
+      level: 'info',
+    });
   }
 
   function importExternalPlugin(): void {
@@ -1300,6 +1470,14 @@ export function createRuntime(options: RuntimeOptions): AropytRuntime {
           if (typeof mod.activate !== 'function') {
             throw new Error('插件缺少 activate 导出');
           }
+          /*
+           * 贡献声明预校验（v0.1.0）。
+           *
+           * 坏插件在入库前就要拦住 —— 写进存储后再崩，用户只能清数据
+           * （这是 v0.0.9 那个"导入插件后工具栏全空"事故的教训）。
+           * 这里只校验结构，不执行任何插件代码。
+           */
+          validateContributions(manifest);
           const rows = await readExternalPlugins();
           const next = [
             ...rows.filter((row) => row.manifest.id !== manifest.id),
@@ -1851,14 +2029,6 @@ export function createRuntime(options: RuntimeOptions): AropytRuntime {
         );
       }
     }
-    // 外部插件（用户导入）先加载，再统一按 activationEvents 激活
-    await loadExternalPlugins();
-    /*
-     * 冷启动带文件（双击 .md / 命令行传参）：原生侧在 setup 时读了 argv，
-     * 这里取走并打开。**必须在插件激活之后** —— 打开文件要经过编辑器与
-     * 标签系统，它们由内置插件在 onStartupFinished 里贡献。
-     */
-    await host.activateFor('onStartupFinished');
     const launchFile = await invokeNative<string | null>('take_launch_file').catch(() => null);
     if (launchFile) await openExternalPath(launchFile);
     notify();
