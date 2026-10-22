@@ -316,6 +316,22 @@ export class PluginHost {
     record.reason = reason;
     this.services.commands.undeclareOwnedBy(pluginId);
     void this.#deactivateAllResources(pluginId);
+
+    /*
+     * 必须重建贡献集 —— 否则工具栏按钮、菜单项、视图槽位全部残留
+     * （undeclareOwnedBy 只清命令表，不清 #contributions）。
+     * 实测症状：插件已"禁用"，但工具栏上它的按钮还在，点了报未注册。
+     */
+    this.#rebuildContributions(
+      [...this.#records.values()]
+        .filter((item) => item.state !== 'disabled')
+        .map((item) => ({
+          manifest: item.manifest,
+          activate: item.module.activate,
+          deactivate: item.module.deactivate,
+        })) as never,
+    );
+
     this.#notify(record);
   }
 

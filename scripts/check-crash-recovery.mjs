@@ -160,7 +160,7 @@ try {
            * 实际是探针读歪了（实测就是这么误判的）。
            */
           window.__SAVE_DIALOGS__.push(args && args.suggested ? args.suggested : null);
-          return Promise.resolve(window.__SAVE_TARGET__ || 'E:/demo/未命名.md');
+          return Promise.resolve(window.__SAVE_TARGET__ || 'E:/demo/Untitled.md');
         }
         if (command === 'set_workspace') return Promise.resolve(null);
         if (command === 'workspace_list') {

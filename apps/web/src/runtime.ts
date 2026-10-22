@@ -621,45 +621,6 @@ export function createRuntime(options: RuntimeOptions): AropytRuntime {
    */
   host.load(options.plugins ?? builtinPlugins);
 
-  /*
-   * 插件加载与激活（v0.1.0 修正）。
-   *
-   * 之前这段被写在 `regrantWorkspace()`（"恢复上次工作区"动作）里 ——
-   * 正常启动是自动恢复工作区，根本不经过那个函数，于是**外部插件从来没
-   * 加载过**：导入成功、按钮有时出现（上一次会话残留的声明）、点命令报
-   * "未注册或未激活"（实测）。
-   *
-   * 插件加载与工作区是正交的两件事，必须在启动流程里独立执行。
-   */
-  void (async () => {
-    /*
-     * 推迟到同步体完成之后（setTimeout 一拍）—— createRuntime 内的
-     * 函数与 const 全部就绪，杜绝任何 TDZ 类问题。
-     */
-    await new Promise((resolve) => setTimeout(resolve, 0));
-    try {
-      await loadExternalPlugins();
-    } catch (error) {
-      /*
-       * 以前这里是裸 await —— 插件加载链上任何一步抛错都会变成
-       * unhandled rejection：应用正常启动、插件列表空白、没有任何提示。
-       */
-      console.error('[plugins] 外部插件加载失败', error);
-      void windowService.showMessage(
-        `插件加载失败：${error instanceof Error ? error.message : String(error)}`,
-        { level: 'warning' },
-      );
-    }
-    /*
-     * 冷启动带文件（双击 .md / 命令行传参）：必须**在插件激活之后** ——
-     * 打开文件要经过编辑器与标签系统，它们由内置插件在
-     * onStartupFinished 里贡献。
-     */
-    await host.activateFor('onStartupFinished');
-    const launchFile = await invokeNative<string | null>('take_launch_file').catch(() => null);
-    if (launchFile) await openExternalPath(launchFile);
-    notify();
-  })();
 
   // 主题变化要触发一次状态通知，否则工具栏按钮的图标不会更新
   // （data-theme 已经改了，界面配色会跟着变，但按钮显示的还是旧状态）。
@@ -1214,7 +1175,7 @@ export function createRuntime(options: RuntimeOptions): AropytRuntime {
    *
    * 路径用 `__untitled__-N` 递增序号（tabs 按 path 索引，重复会互相顶替）；
    * 与草稿键 DRAFT_KEY 同前缀，未命名文档的保存/草稿机制天然兼容。
-   * 显示名在 TabBar 里特判（未命名.md / 未命名 2.md / …）。
+   * 显示名在 TabBar 里特判（Untitled.md / Untitled 2.md / …）。
    */
   function createUntitledTab(): void {
     syncActiveTabBuffer();
@@ -1798,7 +1759,7 @@ function validateContributions(manifest: PluginManifest): void {
   /**
    * 给"另存为"对话框猜一个默认文件名。
    *
-   * 从文档第一个标题取名字比一律叫"未命名.md"友好得多 ——
+   * 从文档第一个标题取名字比一律叫"Untitled.md"友好得多 ——
    * 用户通常就是照着标题命名的，改两个字比从空白框开始想快。
    *
    * 必须把 Windows 文件名里非法的字符剔除（`\ / : * ? " < > |`），
@@ -1812,7 +1773,7 @@ function validateContributions(manifest: PluginManifest): void {
       .replace(/\s+/g, ' ')
       .trim()
       .slice(0, 40);
-    return base ? `${base}.md` : '未命名.md';
+    return base ? `${base}.md` : 'Untitled.md';
   }
 
   async function saveActiveFile(): Promise<void> {
@@ -2001,7 +1962,15 @@ function validateContributions(manifest: PluginManifest): void {
 
   void (async () => {
     void requestPersistentStorage();
+    /*
+     * ⚠️ 配置必须先加载完，再加载插件。
+     *
+     * `plugins.disabled`（用户在插件面板里禁用的名单）就在配置里 ——
+     * 之前插件加载跑在 configuration.load() 之前，读到的是默认空名单，
+     * 于是"禁用插件、重启后照样启用"（实测）。
+     */
     await configuration.load();
+
 
     /*
      * 必须把上次工作区的位置传进去。
@@ -2054,6 +2023,25 @@ function validateContributions(manifest: PluginManifest): void {
         );
       }
     }
+    /*
+     * 插件加载与激活 —— **必须排在 loadSettings + applySettings 之后**。
+     *
+     * 用户在插件面板禁用插件写的是 settings.jsonc 的 plugins.disabled；
+     * `currentSettings` 只有经过 applySettings 才带上真实值。之前这段
+     * 排在 configuration.load() 之后（但仍在 loadSettings 之前），
+     * 读到的 disabled 恒为空 → 禁用永远不生效（实测两轮）。
+     */
+    try {
+      await loadExternalPlugins();
+    } catch (error) {
+      console.error('[plugins] 外部插件加载失败', error);
+      void windowService.showMessage(
+        `插件加载失败：${error instanceof Error ? error.message : String(error)}`,
+        { level: 'warning' },
+      );
+    }
+    await host.activateFor('onStartupFinished');
+
     const launchFile = await invokeNative<string | null>('take_launch_file').catch(() => null);
     if (launchFile) await openExternalPath(launchFile);
     notify();

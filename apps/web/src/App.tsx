@@ -512,7 +512,7 @@ function ToolbarGroup({ commands, details, onRun, withSeparator }: ToolbarGroupP
             aria-label={detail?.title ?? commandId}
             onClick={() => onRun(commandId)}
           >
-            <Icon name={detail?.icon ?? 'code'} />
+            <Icon name={detail?.icon ?? 'defaultPlugin'} />
           </button>
         );
       })}
@@ -522,7 +522,12 @@ function ToolbarGroup({ commands, details, onRun, withSeparator }: ToolbarGroupP
 
 function StatusBar({ runtime }: { readonly runtime: AropytRuntime }): JSX.Element {
   const state = useRuntimeState(runtime);
-  const disabledPlugins = state.plugins.filter((record) => record.state === 'disabled');
+  /*
+   * 只统计**加载失败**的插件。用户主动禁用的（state === 'disabled'）
+   * 不是故障 —— 之前两者混在一起，禁用插件后左下角反而出现
+   * "1 个功能模块未能加载"，像是出错了（实测）。
+   */
+  const failedPlugins = state.plugins.filter((record) => record.state === 'failed');
   return (
     <>
       {/*
@@ -573,23 +578,23 @@ function StatusBar({ runtime }: { readonly runtime: AropytRuntime }): JSX.Elemen
        * 真正需要暴露的是**异常**：插件被禁用了（多半是加载失败），
        * 那个必须留在状态栏，而且要能点开看到原因。
        */}
-      {disabledPlugins.length > 0 && (
+      {failedPlugins.length > 0 && (
         <button
           type="button"
           className="status-item status-item--warn status-item--button"
-          title={disabledPlugins
+          title={failedPlugins
             .map((record) => `${record.manifest.name}：${record.reason}`)
             .join('\n')}
           onClick={() =>
             void runtime.windowService.showMessage(
-              disabledPlugins
+              failedPlugins
                 .map((record) => `${record.manifest.name}：${record.reason}`)
                 .join('\n'),
               { level: 'warning' },
             )
           }
         >
-          {disabledPlugins.length} 个功能模块未能加载
+          {failedPlugins.length} 个插件加载失败
         </button>
       )}
       <span className="status-bar__spacer" />
@@ -688,10 +693,10 @@ function TabBar({ runtime }: { readonly runtime: AropytRuntime }): JSX.Element |
       {state.tabs.map((tab) => {
         const active = tab.path === state.activePath;
         const dirty = active && state.dirty;
-        // 未命名标签：__untitled__-1 → 未命名.md，-2 → 未命名 2.md（同 VSCode 习惯）
+        // 未命名标签：__untitled__-1 → Untitled.md，-2 → Untitled 2.md（同 VSCode 习惯）
         const untitledMatch = /^__untitled__-(\d+)$/.exec(tab.path);
         const name = untitledMatch
-          ? (untitledMatch[1] === '1' ? '未命名.md' : `未命名 ${untitledMatch[1]}.md`)
+          ? (untitledMatch[1] === '1' ? 'Untitled.md' : `Untitled ${untitledMatch[1]}.md`)
           : baseName(tab.path);
         return (
           <div
