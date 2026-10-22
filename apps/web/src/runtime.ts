@@ -498,6 +498,13 @@ export function createRuntime(options: RuntimeOptions): AropytRuntime {
 
   const editor = createEditor({
     vimMode: state.vimMode,
+    /*
+     * 插件键位通过这里执行命令。编辑器不认识 CommandRegistry，
+     * 由宿主注入回调（内核与命令系统解耦）。
+     */
+    runCommand: (commandId: string) => {
+      void commands.execute(commandId).catch(() => undefined);
+    },
     parent: options.editorHost,
     platform: capabilities.platform,
     capabilities: capabilities.snapshot,
@@ -2041,6 +2048,13 @@ function validateContributions(manifest: PluginManifest): void {
       );
     }
     await host.activateFor('onStartupFinished');
+
+    /*
+     * 插件键位：贡献集就绪后注入编辑器（Compartment 重配）。
+     * 之前 contributes.keybindings 只被收集、没有任何消费方 ——
+     * 声明了不生效（实测清单第 2 项）。
+     */
+    editor.setPluginKeybindings(host.contributions.keybindings);
 
     const launchFile = await invokeNative<string | null>('take_launch_file').catch(() => null);
     if (launchFile) await openExternalPath(launchFile);

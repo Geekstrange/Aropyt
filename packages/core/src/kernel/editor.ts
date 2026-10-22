@@ -105,6 +105,12 @@ export interface EditorOptions {
   /** 初始是否为 vim 模式（normal/insert/visual 操作方式）。持久化由宿主负责。 */
   readonly vimMode?: boolean;
   /**
+   * 执行一条命令（插件键位绑定时用）。
+   *
+   * 编辑器不认识 CommandRegistry —— 注入回调，保持内核与命令系统解耦。
+   */
+  readonly runCommand?: (commandId: string) => void;
+  /**
    * 是否启用 Typora 式原地渲染。
    *
    * 默认 true —— 这已经是产品的默认形态，不是可选增强。
@@ -151,6 +157,37 @@ export class EditorAdapter implements EditorApi {
   readonly #vimSlot = new Compartment();
   /** 默认键位槽：vim 开启时收起（见构造函数里的说明）。 */
   readonly #keymapSlot = new Compartment();
+  /** 插件声明的键位（键 → 命令），由宿主在插件加载后注入。 */
+  #pluginKeybindings: readonly { readonly key: string; readonly command: string }[] = [];
+
+  /**
+   * 设置插件键位。
+   *
+   * CM6 的 keymap 是静态扩展，插件是在启动后才加载的 —— 所以这里
+   * 通过 Compartment 重配，而不是创建视图时就固定。
+   * **插件键位排在 defaultKeymap 之前**（CM6 同一批里前者优先）。
+   */
+  setPluginKeybindings(bindings: readonly { readonly key: string; readonly command: string }[]): void {
+    this.#pluginKeybindings = bindings;
+    this.#applyKeymap();
+  }
+
+  #applyKeymap(): void {
+    if (!this.#view) return;
+    const runCommand = this.options.runCommand;
+    const pluginBindings = this.#pluginKeybindings.map((binding) => ({
+      key: binding.key,
+      run: () => {
+        runCommand?.(binding.command);
+        return true;
+      },
+    }));
+    this.#view.dispatch({
+      effects: this.#keymapSlot.reconfigure(
+        keymap.of([...pluginBindings, ...historyKeymap, indentWithTab]),
+      ),
+    });
+  }
   #vimOn = false;
   /** 动态 import 的 vim 模块（懒加载，这里只留 getCM 供状态查询）。 */
   #vimApi: { getCM: (view: EditorView) => unknown } | null = null;
@@ -200,7 +237,19 @@ export class EditorAdapter implements EditorApi {
                 EditorView.editorAttributes.of({ class: 'aropyt-vim' }),
               ]),
             ),
-            this.#keymapSlot.reconfigure(keymap.of([...historyKeymap, indentWithTab])),
+            this.#keymapSlot.reconfigure(
+              keymap.of([
+                ...this.#pluginKeybindings.map((binding) => ({
+                  key: binding.key,
+                  run: () => {
+                    this.options.runCommand?.(binding.command);
+                    return true;
+                  },
+                })),
+                ...historyKeymap,
+                indentWithTab,
+              ]),
+            ),
           ],
         });
       });

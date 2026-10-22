@@ -25,6 +25,7 @@ import {
 import { createRuntime, type AropytRuntime, type RuntimeState } from './runtime.js';
 import { Icon } from './components/Icons.js';
 import { PluginsPanel } from './components/plugins-panel';
+import { CommandPalette } from './components/CommandPalette';
 import { ViewColumn } from './components/ViewHost.js';
 import { SettingsDialog } from './components/SettingsDialog.js';
 import { HistoryDialog } from './components/HistoryDialog.js';
@@ -43,6 +44,7 @@ export function App(): JSX.Element {
    */
   const [settingsOpen, setSettingsOpen] = useState(false);
   const [pluginsOpen, setPluginsOpen] = useState(false);
+  const [paletteOpen, setPaletteOpen] = useState(false);
   const [historyOpen, setHistoryOpen] = useState(false);
 
   /*
@@ -53,6 +55,23 @@ export function App(): JSX.Element {
    * 加载，那一刻拿到的是默认值（open: true），之后永不更新，表现为
    * "配置写 false、界面照样展开"。
    */
+  /*
+   * Ctrl/Cmd+Shift+P 打开命令面板。
+   *
+   * 用 window 的**捕获阶段**监听：编辑器（CM6）在冒泡阶段处理键盘，
+   * 捕获阶段先拿到，才不会被它吞掉。
+   */
+  useEffect(() => {
+    const onKeyDown = (event: KeyboardEvent): void => {
+      if ((event.ctrlKey || event.metaKey) && event.shiftKey && event.key.toLowerCase() === 'p') {
+        event.preventDefault();
+        setPaletteOpen(true);
+      }
+    };
+    window.addEventListener('keydown', onKeyDown, true);
+    return () => window.removeEventListener('keydown', onKeyDown, true);
+  }, []);
+
   const liveState = useMaybeRuntimeState(runtime);
   const sidebarOpen = liveState?.sidebarOpen ?? isWideScreen();
 
@@ -220,6 +239,10 @@ export function App(): JSX.Element {
           path={runtime.getState().activePath ?? ''}
           onClose={() => setHistoryOpen(false)}
         />
+      )}
+
+      {paletteOpen && runtime && (
+        <CommandPalette runtime={runtime} onClose={() => setPaletteOpen(false)} />
       )}
 
       {pluginsOpen && runtime && (
