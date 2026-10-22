@@ -1824,3 +1824,12 @@ button {
 .settings-input:focus {
   border-color: var(--md-accent);
 }
+
+.status-bar__stats {
+  flex: 0 0 auto;
+  padding: 0 10px;
+  font-size: 11px;
+  color: var(--md-muted);
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+}

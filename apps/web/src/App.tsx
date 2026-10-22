@@ -62,15 +62,42 @@ export function App(): JSX.Element {
    * 捕获阶段先拿到，才不会被它吞掉。
    */
   useEffect(() => {
+    /*
+     * 面板类快捷键统一在**捕获阶段**处理：
+     *   ① CM6 / vim 在冒泡阶段处理按键，捕获阶段才抢得到；
+     *   ② 全部是 **toggle** —— 再按一次关闭（与 Ctrl+Shift+B 一致）。
+     * 逗号用 event.code === 'Comma'：Shift+, 在美式布局上 event.key 是 "<"，
+     * 用它判断永远匹配不上（实测 Ctrl+Shift+, 无效的原因）。
+     */
     const onKeyDown = (event: KeyboardEvent): void => {
-      if ((event.ctrlKey || event.metaKey) && event.shiftKey && event.key.toLowerCase() === 'p') {
+      const mod = event.ctrlKey || event.metaKey;
+      if (!mod || !event.shiftKey || event.altKey || !runtime) return;
+      const code = event.code;
+      const toggle = (setter: (update: (value: boolean) => boolean) => void): void => {
         event.preventDefault();
-        setPaletteOpen(true);
+        event.stopPropagation();
+        setter((value) => !value);
+      };
+
+      if (code === 'KeyP') return toggle(setPaletteOpen);
+      if (code === 'KeyX') return toggle(setPluginsOpen);
+      if (code === 'KeyG') return toggle(setHistoryOpen);
+      if (code === 'Comma') return toggle(setSettingsOpen);
+      if (code === 'KeyM') {
+        event.preventDefault();
+        event.stopPropagation();
+        runtime.toggleVimMode();
+        return;
+      }
+      if (code === 'KeyE') {
+        event.preventDefault();
+        event.stopPropagation();
+        runtime.editor.focus();
       }
     };
     window.addEventListener('keydown', onKeyDown, true);
     return () => window.removeEventListener('keydown', onKeyDown, true);
-  }, []);
+  }, [runtime]);
 
   const liveState = useMaybeRuntimeState(runtime);
   const sidebarOpen = liveState?.sidebarOpen ?? isWideScreen();
@@ -629,6 +656,23 @@ function StatusBar({ runtime }: { readonly runtime: AropytRuntime }): JSX.Elemen
           {failedPlugins.length} 个插件加载失败
         </button>
       )}
+      {/*
+       * 文档统计（v0.1.1）：行 / 词 / 字。
+       *
+       * 中文按"字"计（\u4e00-\u9fff 区间），英文按"词"计（连续字母数字），
+       * 与 Word 的中文字数口径接近 —— 混排文档里两个数字都有意义。
+       */}
+      {(() => {
+        const text = runtime.editor.getText();
+        const lines = text.length === 0 ? 1 : text.split('\n').length;
+        const words = (text.match(/[A-Za-z0-9_'-]+/g) ?? []).length;
+        const chars = (text.match(/[\u4e00-\u9fff]/g) ?? []).length;
+        return (
+          <span className="status-bar__stats" title="行 / 词 / 字">
+            {lines} 行 · {words} 词 · {chars} 字
+          </span>
+        );
+      })()}
       <span className="status-bar__spacer" />
       {/*
        * 关于入口（0.0.1 发布所需）：版本 + GitHub + 许可证。
