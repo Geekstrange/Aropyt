@@ -1,6 +1,6 @@
 {
   "name": "@aropyt/web",
-  "version": "0.0.8",
+  "version": "0.1.0",
   "private": true,
   "description": "Aropyt 前端 —— 同时是 Tauri 桌面壳与 Android 壳的前端来源，也是开发模式的宿主。",
   "license": "AGPL-3.0-or-later",

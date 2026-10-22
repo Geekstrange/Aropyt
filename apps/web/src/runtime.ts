@@ -209,6 +209,9 @@ export interface AropytRuntime {
   /** 选择本地 .js 插件文件导入（存 IndexedDB，重启后加载生效）。 */
   importExternalPlugin(): void;
   deleteExternalPlugin(pluginId: string): Promise<void>;
+  pluginConfigSchemas(): readonly { readonly key: string; readonly schema: { readonly type?: string; readonly default?: unknown; readonly description?: string }; readonly ownerLabel: string }[];
+  getPluginConfig<T>(key: string, fallback: T): T;
+  setPluginConfig(key: string, value: unknown): void;
   /** 内置插件的 id 集合 —— 插件管理面板只展示外部导入的插件。 */
   readonly builtinPluginIds: ReadonlySet<string>;
   /** 源码模式（原始标记可见）。webdev 与排障时需要。 */
@@ -697,6 +700,13 @@ export function createRuntime(options: RuntimeOptions): AropytRuntime {
     setPluginEnabled,
     importExternalPlugin,
     deleteExternalPlugin,
+    pluginConfigSchemas: () =>
+      configuration.listSchemas().filter((item) => item.ownerLabel !== '未命名插件'),
+    getPluginConfig: <T>(key: string, fallback: T) => configuration.get<T>(key, fallback),
+    setPluginConfig: (key: string, value: unknown) => {
+      void configuration.update(key, value).catch(() => undefined);
+      notify();
+    },
     builtinPluginIds: new Set(builtinPlugins.map((plugin) => plugin.manifest.id)),
     saveActiveFile,
     markSaved() {
@@ -722,6 +732,14 @@ export function createRuntime(options: RuntimeOptions): AropytRuntime {
        */
       window.removeEventListener('pagehide', markCleanExit);
       markCleanExit();
+      /*
+       * 让插件收到 deactivate —— 之前只停宿主资源，插件的 deactivate()
+       * 从未被调用（文档承诺了"退出或禁用时调用"）。
+       * 同步路径上用 void：卸载时不能等异步，但要尽力发出。
+       */
+      for (const record of host.records) {
+        if (record.state === 'active') void host.deactivate(record.manifest.id);
+      }
       latencyProbe.dispose();
       monitor.dispose();
       persistDraft.cancel();

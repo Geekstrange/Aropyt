@@ -1808,3 +1808,19 @@ button {
   font-size: 12px;
   color: var(--md-muted);
 }
+
+/* 设置页里的文本 / 数字输入（插件配置项用） */
+.settings-input {
+  width: 180px;
+  padding: 4px 8px;
+  border: 1px solid var(--md-border);
+  border-radius: 0;
+  background: var(--md-surface-0);
+  color: var(--md-text);
+  font-size: 12px;
+  outline: none;
+}
+
+.settings-input:focus {
+  border-color: var(--md-accent);
+}

@@ -67,6 +67,59 @@ export function SettingsDialog({
         <div className="settings-dialog__body">
 
         <section className="settings-section">
+          <h3>{"插件配置"}</h3>
+          {runtime.pluginConfigSchemas().length === 0 ? (
+            <div className="settings-row">
+              <span className="settings-row__label">{"尚未有插件声明配置项"}</span>
+            </div>
+          ) : (
+            runtime.pluginConfigSchemas().map((item) => {
+              const current = runtime.getPluginConfig<unknown>(item.key, item.schema.default);
+              const isBool = item.schema.type === 'boolean';
+              return (
+                <div className="settings-row" key={item.key}>
+                  <span className="settings-row__label">
+                    {item.schema.description ?? item.key}
+                  </span>
+                  {isBool ? (
+                    <div className="settings-segmented">
+                      {[
+                        { value: true, label: '开' },
+                        { value: false, label: '关' },
+                      ].map((option) => (
+                        <button
+                          key={String(option.value)}
+                          type="button"
+                          className={option.value === current ? 'is-active' : ''}
+                          aria-pressed={option.value === current}
+                          onClick={() => runtime.setPluginConfig(item.key, option.value)}
+                        >
+                          {option.label}
+                        </button>
+                      ))}
+                    </div>
+                  ) : (
+                    <input
+                      className="settings-input"
+                      type={item.schema.type === 'number' ? 'number' : 'text'}
+                      // eslint-disable-next-line @typescript-eslint/no-base-to-string
+                      defaultValue={current === undefined ? '' : String(current)}
+                      onBlur={(event) => {
+                        const raw = event.target.value;
+                        runtime.setPluginConfig(
+                          item.key,
+                          item.schema.type === 'number' ? Number(raw) : raw,
+                        );
+                      }}
+                    />
+                  )}
+                </div>
+              );
+            })
+          )}
+        </section>
+
+        <section className="settings-section">
           <h3>{"外观"}</h3>
           <div className="settings-row">
             <span className="settings-row__label">{"主题"}</span>

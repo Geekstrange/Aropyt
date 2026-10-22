@@ -118,7 +118,16 @@ export function App(): JSX.Element {
       if (key === 'b' && shift) {
         event.preventDefault();
         event.stopPropagation();
-        void runtime?.updateSettings({ sidebar: { open: !sidebarOpen } });
+        /*
+         * 必须读**当前**值，不能用渲染时闭包里的 sidebarOpen。
+         *
+         * 侧栏真源是 settings（订阅式投影），这个 handler 只注册一次：
+         * 闭包里的 sidebarOpen 停在本组件首次渲染时的值，于是每次都
+         * 往同一个方向取反 —— 表现为"只能关、不能开"（实测）。
+         */
+        void runtime?.updateSettings({
+          sidebar: { open: !runtime.getState().sidebarOpen },
+        });
         return;
       }
       if (key === 'n' && shift) {
@@ -632,11 +641,8 @@ function StatusBar({ runtime }: { readonly runtime: AropytRuntime }): JSX.Elemen
           void runtime.windowService.showMessage(
             [
               `Aropyt v${__APP_VERSION__}`,
-              '',
-              'GitHub:',
-              'https://github.com/Geekstrange/Aropyt',
-              '',
-              '许可证: AGPL-3.0',
+              'aropyt.com',
+              'AGPL-3.0',
             ].join('\n'),
             { level: 'info' },
           )

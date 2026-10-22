@@ -116,6 +116,11 @@ export class ConfigurationStore implements ConfigurationApi {
     }
   }
 
+  /** 全部已注册的配置项（供设置页渲染插件配置区）。 */
+  listSchemas(): readonly { readonly key: string; readonly schema: ConfigurationPropertySchema; readonly ownerLabel: string }[] {
+    return [...this.#schemas.entries()].map(([key, item]) => ({ key, schema: item.schema, ownerLabel: item.ownerLabel }));
+  }
+
   register(contribution: ConfigurationContribution, ownerLabel = '未命名插件'): Disposable {
     const keys: string[] = [];
     /*
