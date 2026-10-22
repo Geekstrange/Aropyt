@@ -168,7 +168,19 @@ export class EditorAdapter implements EditorApi {
    * **插件键位排在 defaultKeymap 之前**（CM6 同一批里前者优先）。
    */
   setPluginKeybindings(bindings: readonly { readonly key: string; readonly command: string }[]): void {
-    this.#pluginKeybindings = bindings;
+    /*
+     * key 归一化。
+     *
+     * 插件按 VSCode 习惯写 `Mod-Shift-D`，而 CM6 的 key 语法要求
+     * **末段字母小写**（`Mod-Shift-d`）—— 原样传进去永远匹配不上，
+     * 表现为"声明了键位、按了没反应"（实测）。
+     */
+    this.#pluginKeybindings = bindings.map((binding) => ({
+      ...binding,
+      key: binding.key.replace(/^(.*-)?([A-Za-z])$/, (_match, prefix: string | undefined, letter: string) =>
+        `${prefix ?? ''}${letter.toLowerCase()}`,
+      ),
+    }));
     this.#applyKeymap();
   }
 

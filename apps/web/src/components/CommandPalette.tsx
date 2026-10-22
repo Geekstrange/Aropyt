@@ -20,7 +20,15 @@ export function CommandPalette({ runtime, onClose }: CommandPaletteProps) {
   const [index, setIndex] = useState(0);
   const inputRef = useRef<HTMLInputElement>(null);
 
-  const commands = useMemo(() => runtime.commands.details(), [runtime]);
+  /*
+   * 只列**面向用户**的命令：title 与 id 相同的那些是内部命令
+   * （如 aropyt.explorer.open —— 它需要文件路径参数，由文件树调用），
+   * 放进面板里既看不懂、点了也会失败。
+   */
+  const commands = useMemo(
+    () => runtime.commands.details().filter((command) => command.title !== command.id),
+    [runtime],
+  );
 
   const filtered = useMemo(() => {
     const q = query.trim().toLowerCase();
