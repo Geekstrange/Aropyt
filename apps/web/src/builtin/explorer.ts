@@ -169,7 +169,48 @@ function mount(container: HTMLElement, context: PluginContext, viewContext: View
         if (collapsed.has(entry.path)) collapsed.delete(entry.path);
         else collapsed.add(entry.path);
         persistCollapsed();
-        void refresh();
+        /*
+   * 键盘导航：vim 用户的"开侧栏 → j/k 移动 → Enter 打开"闭环。
+   *
+   * 面板需要 tabindex=-1 才能接收焦点；没有焦点就没有 keydown。
+   * 移动基于**当前可见行**（折叠的目录里行不存在，天然跳过）。
+   * 高亮用 .tree-item--focused，与"活动文件"高亮（aria-current）是两回事 ——
+   * 前者是键盘光标，后者是文档状态。
+   */
+  body.setAttribute('tabindex', '-1');
+  let focusedRow: HTMLElement | null = null;
+
+  const visibleRows = (): HTMLElement[] =>
+    Array.from(body.querySelectorAll<HTMLElement>('.tree-item'));
+
+  const setFocus = (row: HTMLElement | null): void => {
+    focusedRow?.classList.remove('tree-item--focused');
+    focusedRow = row;
+    row?.classList.add('tree-item--focused');
+    row?.scrollIntoView({ block: 'nearest' });
+  };
+
+  body.addEventListener('keydown', (event: KeyboardEvent) => {
+    const rows = visibleRows();
+    if (rows.length === 0) return;
+    const index = focusedRow ? rows.indexOf(focusedRow) : -1;
+    if (event.key === 'j' || event.key === 'ArrowDown') {
+      event.preventDefault();
+      setFocus(rows[Math.min(index + 1, rows.length - 1)] ?? rows[0]);
+      return;
+    }
+    if (event.key === 'k' || event.key === 'ArrowUp') {
+      event.preventDefault();
+      setFocus(rows[Math.max(index - 1, 0)] ?? rows[0]);
+      return;
+    }
+    if (event.key === 'Enter' && focusedRow) {
+      event.preventDefault();
+      focusedRow.click();
+    }
+  });
+
+  void refresh();
         return;
       }
       void viewContext.executeCommand('aropyt.explorer.open', entry.path, { preview: true });

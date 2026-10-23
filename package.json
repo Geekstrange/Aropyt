@@ -40,5 +40,8 @@
   },
   "devDependencies": {
     "@tauri-apps/cli": "^2.12.3"
+  },
+  "allowScripts": {
+    "esbuild@0.25.12": true
   }
 }

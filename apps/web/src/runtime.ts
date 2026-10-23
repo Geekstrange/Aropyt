@@ -545,6 +545,11 @@ export function createRuntime(options: RuntimeOptions): AropytRuntime {
         console.error(error);
       });
     },
+    // vim 的 :q / :wq —— 关闭当前标签（closeTab 自带未保存确认）
+    onCloseRequest: () => {
+      const active = state.activePath;
+      if (active) closeTab(active);
+    },
     // 渲染态要把 `![](相对路径)` 画成真图，而相对路径在 WebView 里取不到，
     // 只能由宿主把字节读出来转成 data URL。内核不知道工作区在哪。
     resolveAsset: (url) => resolveAsset(url),

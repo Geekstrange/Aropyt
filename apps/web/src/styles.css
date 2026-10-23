@@ -1923,3 +1923,8 @@ button {
 .debug-logs__row--error .debug-logs__text {
   color: var(--md-danger);
 }
+
+.tree-item--focused {
+  outline: 1px solid var(--md-accent);
+  outline-offset: -1px;
+}

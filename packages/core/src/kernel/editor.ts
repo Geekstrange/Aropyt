@@ -131,6 +131,8 @@ export interface EditorOptions {
   readonly onCursorChange?: (info: CursorInfo) => void;
   /** Ctrl/Cmd+S。由应用层决定它意味着什么。 */
   readonly onSaveRequest?: () => void;
+  /** 关闭当前文档（vim 的 :q / :wq 用）。 */
+  readonly onCloseRequest?: () => void;
 }
 
 type ActiveFilePayload = { readonly path: string | null; readonly language: string | null };
@@ -237,8 +239,12 @@ export class EditorAdapter implements EditorApi {
     this.#appliedSource = this.#sourceMode;
     // vim 模式的初始装载是异步的（动态 import），就绪后补挂扩展
     if (this.#vimOn) {
-      void import('@replit/codemirror-vim').then(({ vim, getCM }) => {
+      void import('@replit/codemirror-vim').then(({ vim, getCM, Vim }) => {
         this.#vimApi = { getCM: getCM as (view: EditorView) => unknown };
+        // ex 命令：:w / :q / :wq（defineEx 幂等，重复注册只是覆盖）
+        Vim.defineEx('write', 'w', () => options.onSaveRequest?.());
+        Vim.defineEx('quit', 'q', () => options.onCloseRequest?.());
+        Vim.defineEx('wq', 'wq', () => { options.onSaveRequest?.(); options.onCloseRequest?.(); });
         if (!this.#vimOn) return;
         this.#view.dispatch({
           effects: [
@@ -536,7 +542,11 @@ export class EditorAdapter implements EditorApi {
       });
       return;
     }
-    void import('@replit/codemirror-vim').then(({ vim, getCM }) => {
+    void import('@replit/codemirror-vim').then(({ vim, getCM, Vim }) => {
+      // ex 命令：:w / :q / :wq
+      Vim.defineEx('write', 'w', () => this.options.onSaveRequest?.());
+      Vim.defineEx('quit', 'q', () => this.options.onCloseRequest?.());
+      Vim.defineEx('wq', 'wq', () => { this.options.onSaveRequest?.(); this.options.onCloseRequest?.(); });
       if (!this.#vimOn) return;
       /*
        * 这里也必须保存 getCM —— 只在构造时保存的话，"先关 vim 再开"的
