@@ -56,6 +56,16 @@ a { color: var(--accent); text-decoration: none; }
 a:hover { color: var(--accent-strong); text-decoration: underline; }
 code, .mono { font-family: "SF Mono", Consolas, "Cascadia Code", monospace; }
 
+/* 选中文本：前景换成品牌色（浅色主题用更深的绿，保证可读性） */
+::selection {
+  background: rgba(91, 180, 78, 0.2);
+  color: var(--accent-strong);
+}
+:root[data-theme='light'] ::selection {
+  background: rgba(91, 180, 78, 0.24);
+  color: #2f7a26;
+}
+
 /* ── nav ── */
 nav {
   position: sticky; top: 0; z-index: 10;
