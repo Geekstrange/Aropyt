@@ -41,6 +41,7 @@ import {
   createInputLatencyProbe,
   debounce,
   idbDelete,
+  idbEntries,
   idbGet,
   idbSet,
   requestPersistentStorage,
@@ -2073,6 +2074,43 @@ function validateContributions(manifest: PluginManifest): void {
      * 声明了不生效（实测清单第 2 项）。
      */
     editor.setPluginKeybindings(host.contributions.keybindings);
+
+    /*
+     * 崩溃恢复提示（v0.1.1）。
+     *
+     * 进程被强杀（任务管理器结束任务）时 pagehide 不会派发，
+     * consumeCleanExitFlag() 读到 false。此前只有"碰巧打开那个文件"
+     * 才会在 openFile 里弹出恢复提示 —— 重启后用户停在空编辑器，
+     * 看起来像"恢复功能没了"（实测反馈）。
+     *
+     * 现在启动时就主动检查：有未保存草稿 → 提示 + 一键打开最近那份。
+     */
+    if (!lastExitWasClean) {
+      const entries = await idbEntries<DraftRecord>(STORE.drafts).catch(() => []);
+      const drafts = entries
+        .filter(([, record]) => record && typeof record.text === 'string' && record.text.length > 0)
+        .sort((a, b) => b[1].at - a[1].at);
+      if (drafts.length > 0) {
+        const [rawPath, record] = drafts[0];
+        const path = String(rawPath);
+        const name = path.split(/[\\/]/).pop() ?? path;
+        const when = new Date(record.at).toLocaleString();
+        void windowService.showMessage(
+          `上次未正常退出。${drafts.length} 份未保存的编辑内容待恢复，最近的是「${name}」（${when}）。`,
+          {
+            level: 'warning',
+            actions: [
+              {
+                label: '打开最近的',
+                run: () => {
+                  void openExternalPath(path);
+                },
+              },
+            ],
+          },
+        );
+      }
+    }
 
     const launchFile = await invokeNative<string | null>('take_launch_file').catch(() => null);
     if (launchFile) await openExternalPath(launchFile);

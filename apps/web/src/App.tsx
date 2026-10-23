@@ -26,6 +26,7 @@ import { createRuntime, type AropytRuntime, type RuntimeState } from './runtime.
 import { Icon } from './components/Icons.js';
 import { PluginsPanel } from './components/plugins-panel';
 import { CommandPalette } from './components/CommandPalette';
+import { DebugPanel } from './components/DebugPanel';
 import { ViewColumn } from './components/ViewHost.js';
 import { SettingsDialog } from './components/SettingsDialog.js';
 import { HistoryDialog } from './components/HistoryDialog.js';
@@ -45,6 +46,7 @@ export function App(): JSX.Element {
   const [settingsOpen, setSettingsOpen] = useState(false);
   const [pluginsOpen, setPluginsOpen] = useState(false);
   const [paletteOpen, setPaletteOpen] = useState(false);
+  const [debugOpen, setDebugOpen] = useState(false);
   const [historyOpen, setHistoryOpen] = useState(false);
 
   /*
@@ -70,6 +72,13 @@ export function App(): JSX.Element {
      * 用它判断永远匹配不上（实测 Ctrl+Shift+, 无效的原因）。
      */
     const onKeyDown = (event: KeyboardEvent): void => {
+      // F12：调试面板（不需要修饰键，也不进命令面板 —— 它的存在感要低）
+      if (event.code === 'F12' && !event.ctrlKey && !event.metaKey && !event.shiftKey && !event.altKey) {
+        event.preventDefault();
+        event.stopPropagation();
+        setDebugOpen((value) => !value);
+        return;
+      }
       const mod = event.ctrlKey || event.metaKey;
       if (!mod || !event.shiftKey || event.altKey || !runtime) return;
       const code = event.code;
@@ -231,7 +240,7 @@ export function App(): JSX.Element {
   }, [runtime]);
 
   return (
-    <div className="app">
+    <div className={debugOpen ? 'app app--debug' : 'app'}>
       {liveState?.safeMode && (
         <div className="safe-banner" role="status">
           安全模式：所有插件已停用（上次启动可能异常）。可在「插件」面板里删除可疑插件后重启。
@@ -277,6 +286,7 @@ export function App(): JSX.Element {
         />
       )}
 
+
       {paletteOpen && runtime && (
         <CommandPalette runtime={runtime} onClose={() => setPaletteOpen(false)} />
       )}
@@ -295,6 +305,13 @@ export function App(): JSX.Element {
           settingsPath={runtime.settingsPath}
           onClose={() => setSettingsOpen(false)}
         />
+      )}
+
+      {/*
+       * 调试面板：停靠在内容区下方（不是悬浮弹窗）—— 一边操作一边看。
+       */}
+      {debugOpen && runtime && (
+        <DebugPanel runtime={runtime} version={__APP_VERSION__} onClose={() => setDebugOpen(false)} />
       )}
 
       <footer className="status-bar">

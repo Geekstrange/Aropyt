@@ -12,11 +12,19 @@
  */
 
 import { createRoot } from 'react-dom/client';
+import { installDebugLog } from './debug/debug-log';
 
 import { App } from './App.js';
 import './styles.css';
 
 const container = document.getElementById('root');
 if (!container) throw new Error('缺少 #root 容器');
+
+/*
+ * 日志拦截在启动时就安装 —— 否则 F12 打开之前发生的日志（启动、
+ * 插件加载、首个文件的打开）全部丢失，面板看起来是空的（实测）。
+ * 拦截只是往 500 条环形缓冲里塞，开销可忽略。
+ */
+installDebugLog();
 
 createRoot(container).render(<App />);

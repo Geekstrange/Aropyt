@@ -190,6 +190,16 @@ button {
   height: 100%;
 }
 
+/*
+ * 调试面板打开时多一行。
+ * .app 是 3 行 grid（header / 主体 / 状态栏）—— 直接插第 4 个子元素会被
+ * 放进**隐式行**（高度 0），表现为"只露出半个 header"（实测）。
+ * 所以用修饰类把行模板显式改成 4 行。
+ */
+.app.app--debug {
+  grid-template-rows: var(--md-header-height) 1fr 210px var(--md-status-height);
+}
+
 .app-header {
   display: flex;
   align-items: center;
@@ -1832,4 +1842,84 @@ button {
   color: var(--md-muted);
   font-variant-numeric: tabular-nums;
   white-space: nowrap;
+}
+
+/* ── 调试面板（F12）：底部停靠，不遮挡编辑区 ─────────────── */
+.debug-dock {
+  display: flex;
+  min-height: 0;
+  flex-direction: column;
+  border-top: 1px solid var(--md-border);
+  background: var(--md-surface-1);
+}
+
+.debug-dock__bar {
+  display: flex;
+  flex: 0 0 auto;
+  align-items: center;
+  gap: 10px;
+  padding: 6px 12px;
+  border-bottom: 1px solid var(--md-border);
+  font-size: 11px;
+}
+
+.debug-dock__title {
+  font-size: 12px;
+  color: var(--md-text);
+}
+
+.debug-dock__metric {
+  color: var(--md-muted);
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+}
+
+.debug-dock__spacer {
+  flex: 1 1 auto;
+}
+
+.debug-dock__logs {
+  flex: 1 1 auto;
+  min-height: 0;
+  overflow: auto;
+  padding: 6px 12px;
+  font-family: var(--md-font-mono, ui-monospace, monospace);
+  font-size: 11px;
+  line-height: 1.5;
+}
+
+.debug-logs__empty {
+  margin: 8px 0;
+  color: var(--md-muted);
+}
+
+.debug-logs__row {
+  display: flex;
+  gap: 8px;
+  padding: 1px 0;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+}
+
+.debug-logs__time {
+  flex: 0 0 auto;
+  color: var(--md-faint);
+}
+
+.debug-logs__source {
+  flex: 0 0 auto;
+  color: var(--md-muted);
+}
+
+.debug-logs__text {
+  flex: 1 1 auto;
+  color: var(--md-text);
+}
+
+.debug-logs__row--warn .debug-logs__text {
+  color: var(--md-warning, #d19a66);
+}
+
+.debug-logs__row--error .debug-logs__text {
+  color: var(--md-danger);
 }
