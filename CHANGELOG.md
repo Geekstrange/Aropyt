@@ -43,6 +43,11 @@ Edit History Diff, plus a batch of fixes accumulated since v0.1.1.
 - Status bar: stats to the right, version moved to Settings › About
 - Debug panel: log search, full error stacks, settings snapshot in report,
   `[timeline]` markers
+- **macOS DMG reported as "damaged"** (#1): `Contents/_CodeSignature/CodeResources`
+  was missing from the bundle, so Gatekeeper treated it as corruption instead of
+  an unsigned app. Fixed by enabling ad-hoc signing (`bundle.macOS.signingIdentity
+  = "-"`) so `tauri build` emits a complete signature, and by adding a CI gate that
+  fails the build when `codesign --verify --deep --strict` rejects the bundle
 
 ### Known limitations
 
