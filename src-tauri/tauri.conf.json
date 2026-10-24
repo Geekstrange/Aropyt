@@ -42,6 +42,9 @@
       "icons/icon.ico"
     ],
     "category": "Productivity",
+    "macOS": {
+      "signingIdentity": "-"
+    },
     "shortDescription": "跨平台 Markdown 编辑器",
     "longDescription": "Aropyt 是一款文件即真相的 Markdown 编辑器，支持 Windows、macOS、Linux 与 Android。",
     "fileAssociations": [

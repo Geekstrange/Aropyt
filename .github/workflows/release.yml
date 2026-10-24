@@ -109,6 +109,25 @@ jobs:
           releaseId: ${{ needs.prepare-release.outputs.release_id }}
           args: ${{ matrix.args }}
 
+      # ── macOS 完整性门禁（issue #1）──────────────────────────
+      # 签名声明带资源目录而 _CodeSignature/CodeResources 缺失时，
+      # Gatekeeper 报"已损坏"而不是"未识别的开发者"（实测）。
+      # 这里对打包产物做深校验，坏包直接 fail，不让它流到 Release。
+      - name: Verify macOS bundle integrity
+        if: startsWith(matrix.platform, 'macos')
+        run: |
+          set -e
+          APP=$(find src-tauri/target -name "*.app" -path "*release*" | head -1)
+          echo "Verifying: $APP"
+          test -n "$APP"
+          if [ ! -d "$APP/Contents/_CodeSignature" ]; then
+            echo "::error::$APP is missing Contents/_CodeSignature — Gatekeeper will report it as damaged"
+            exit 1
+          fi
+          codesign --verify --deep --strict "$APP"
+          codesign -dv "$APP" 2>&1 | head -20
+          echo "Bundle integrity OK"
+
 
   # ── Android APK（release 签名）──────────────────────────────
   # gen/android 不提交：CI 里 tauri android init 生成，

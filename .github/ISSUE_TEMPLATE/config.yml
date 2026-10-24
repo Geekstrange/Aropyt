@@ -1,0 +1,8 @@
+blank_issues_enabled: true
+contact_links:
+  - name: Documentation
+    url: https://aropyt.com
+    about: Check the website and docs before filing an issue.
+  - name: Discussions
+    url: https://github.com/aropyt/aropyt/discussions
+    about: For questions and ideas that are not yet concrete bug reports or feature requests.

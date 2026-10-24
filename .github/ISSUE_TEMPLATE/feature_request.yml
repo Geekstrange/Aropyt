@@ -1,0 +1,54 @@
+name: Feature request
+description: Suggest an idea or improvement
+title: "[Feature]: "
+labels: ["enhancement"]
+body:
+  - type: textarea
+    id: problem
+    attributes:
+      label: Problem or need
+      description: What problem does this solve? What is the current pain?
+      placeholder: |
+        Example: When reviewing a document's edit history, I can only compare a
+        version against the current text. Comparing two old versions would help
+        understand what changed between two saves.
+    validations:
+      required: true
+
+  - type: textarea
+    id: proposal
+    attributes:
+      label: Proposed solution
+      description: How would you like it to work? Include shortcuts, UI placement, or expected behavior if relevant.
+    validations:
+      required: true
+
+  - type: textarea
+    id: alternatives
+    attributes:
+      label: Alternatives considered
+      description: Any workarounds or other approaches you have tried or considered.
+
+  - type: dropdown
+    id: scope
+    attributes:
+      label: Where does it fit
+      options:
+        - Editor / writing experience
+        - Files, tabs & workspace
+        - Edit history & recovery
+        - Plugins & extensibility
+        - UI / theme / layout
+        - Performance
+        - Debugging & diagnostics
+        - Other
+
+  - type: checkboxes
+    id: checklist
+    attributes:
+      label: Checklist
+      options:
+        - label: I have searched existing issues for duplicates
+          required: true
+        - label: This request is about Aropyt itself (not a third-party plugin)
+          required: true
