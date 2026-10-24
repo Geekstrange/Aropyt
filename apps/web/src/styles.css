@@ -2104,3 +2104,195 @@ button {
   -webkit-appearance: none;
   appearance: none;
 }
+
+/* ── 编辑历史 Diff（对齐 v0.1.2-Diff功能前瞻.html 视觉）─────────
+ * 自包含变量：不依赖应用的 --md-*，避免主题差异导致强调色失效。
+ */
+.diff-scope {
+  --diff-bg: #131315;
+  --diff-card: #1a1a1c;
+  --diff-card-2: #232326;
+  --diff-fg: #e6e6e3;
+  --diff-muted: #8b8a85;
+  --diff-border: rgba(255, 255, 255, 0.1);
+  --diff-accent: #5bb44e;
+  --diff-accent-strong: #6fc95f;
+  --diff-add-bg: rgba(91, 180, 78, 0.13);
+  --diff-del-bg: rgba(224, 92, 88, 0.13);
+  --diff-add-sign: #6fc95f;
+  --diff-del-sign: #e06c6c;
+  --diff-gutter: rgba(255, 255, 255, 0.022);
+  --diff-empty: rgba(255, 255, 255, 0.03);
+  --diff-empty-stripe: rgba(255, 255, 255, 0.05);
+  --diff-mono: "SF Mono", ui-monospace, Consolas, "Cascadia Code", "Liberation Mono", monospace;
+}
+:root[data-theme='light'] .diff-scope {
+  --diff-bg: #ffffff;
+  --diff-card: #f7f7f5;
+  --diff-card-2: #eeedea;
+  --diff-fg: #26262b;
+  --diff-muted: #6b6a66;
+  --diff-border: rgba(0, 0, 0, 0.1);
+  --diff-accent: #5bb44e;
+  --diff-add-bg: #e9f7e6;
+  --diff-del-bg: #fdeceb;
+  --diff-add-sign: #2f7a26;
+  --diff-del-sign: #b83b35;
+  --diff-gutter: rgba(0, 0, 0, 0.025);
+  --diff-empty: rgba(0, 0, 0, 0.03);
+  --diff-empty-stripe: rgba(0, 0, 0, 0.055);
+}
+
+.diff {
+  border: 1px solid var(--diff-border);
+  background: var(--diff-card);
+  overflow: hidden;
+  color: var(--diff-fg);
+}
+.diff-head {
+  display: flex;
+  align-items: center;
+  gap: 14px;
+  padding: 9px 14px;
+  background: var(--diff-card-2);
+  border-bottom: 1px solid var(--diff-border);
+  font-size: 13px;
+}
+.diff-file { color: var(--diff-fg); }
+.diff-file::before {
+  content: '';
+  display: inline-block;
+  width: 6px;
+  height: 6px;
+  margin-right: 8px;
+  vertical-align: 1px;
+  background: var(--diff-accent);
+}
+.diff-stats { margin-left: auto; display: flex; gap: 10px; font-size: 12.5px; }
+.diff-stats .add { color: var(--diff-add-sign); }
+.diff-stats .del { color: var(--diff-del-sign); }
+.diff-toggle { display: flex; border: 1px solid var(--diff-border); }
+.diff-toggle button {
+  font: inherit;
+  font-size: 12px;
+  padding: 4px 11px;
+  background: transparent;
+  color: var(--diff-muted);
+  border: 0;
+  cursor: pointer;
+}
+.diff-toggle button + button { border-left: 1px solid var(--diff-border); }
+.diff-toggle button:hover { color: var(--diff-fg); }
+.diff-toggle button.active { background: var(--diff-accent); color: #0d2a0c; }
+
+.diff-body {
+  overflow-x: auto;
+  background: var(--diff-card);
+}
+.drow {
+  display: grid;
+  grid-template-columns: 44px 44px 22px minmax(max-content, 1fr);
+  min-height: 24px;
+  font-family: var(--diff-mono);
+  font-size: 13px;
+  line-height: 24px;
+  border-left: 2px solid transparent;
+}
+.drow .ln {
+  min-height: 24px;
+  text-align: right;
+  padding-right: 10px;
+  color: var(--diff-muted);
+  opacity: 0.55;
+  user-select: none;
+  background: var(--diff-gutter);
+  font-variant-numeric: tabular-nums;
+}
+.drow .sign {
+  min-height: 24px;
+  text-align: center;
+  user-select: none;
+  color: var(--diff-muted);
+  opacity: 0.7;
+}
+.drow .tx {
+  min-height: 24px;
+  padding: 0 14px;
+  white-space: pre;
+  color: var(--diff-fg);
+}
+.drow.add {
+  background: var(--diff-add-bg);
+  border-left-color: var(--diff-add-sign);
+}
+.drow.add .ln, .drow.add .sign { color: var(--diff-add-sign); opacity: 1; }
+.drow.del {
+  background: var(--diff-del-bg);
+  border-left-color: var(--diff-del-sign);
+}
+.drow.del .ln, .drow.del .sign { color: var(--diff-del-sign); opacity: 1; }
+.drow.equal .tx { color: var(--diff-fg); opacity: 0.9; }
+
+.drow.split {
+  /* 两栏等宽（1fr 1fr），中线固定。
+   * 内容溢出由 .side 的 overflow:hidden 截断 + .tx 内部横向滚动 ——
+   * 之前用 max-content 撑宽两栏，长行会越过中线。 */
+  grid-template-columns: 1fr 1fr;
+  border-left: 0;
+  min-width: 640px;
+}
+.drow.split .side {
+  display: grid;
+  grid-template-columns: 40px 18px minmax(0, 1fr);
+  min-height: 24px;
+  overflow: hidden;   /* 内容不允许越过中线 */
+}
+.drow.split .side .tx {
+  overflow-x: auto;   /* 单栏内横向滚动看长行 */
+  min-width: 0;
+}
+.drow.split .side + .side { border-left: 1px solid var(--diff-border); }
+.drow.split .side .ln { padding-right: 8px; }
+.drow.split .side.add { background: var(--diff-add-bg); }
+.drow.split .side.add .ln, .drow.split .side.add .sign { color: var(--diff-add-sign); opacity: 1; }
+.drow.split .side.del { background: var(--diff-del-bg); }
+.drow.split .side.del .ln, .drow.split .side.del .sign { color: var(--diff-del-sign); opacity: 1; }
+.drow.split .side.empty {
+  background-color: var(--diff-empty);
+  background-image: repeating-linear-gradient(
+    45deg,
+    transparent 0 5px,
+    var(--diff-empty-stripe) 5px 10px
+  );
+}
+.diff-body::-webkit-scrollbar { height: 10px; }
+.diff-body::-webkit-scrollbar-track { background: transparent; }
+.diff-body::-webkit-scrollbar-thumb {
+  background: var(--diff-border);
+  border: 3px solid var(--diff-card);
+}
+.diff-body::-webkit-scrollbar-thumb:hover { background: var(--diff-muted); }
+
+.history-item__actions { display: flex; gap: 6px; }
+
+/* 对比态需要更大的画布 —— 560px 宽塞不下两栏 */
+.settings-dialog--wide {
+  width: min(1100px, calc(100vw - 48px));
+  /* 用 flex 让 diff-body 吃掉剩余高度，而不是固定 60vh ——
+   * 固定值 + 模态 header + diff-head 会把底部行挤出可视区。 */
+  display: flex;
+  flex-direction: column;
+}
+.settings-dialog--wide .diff {
+  flex: 1 1 auto;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+}
+.settings-dialog--wide .diff-body {
+  flex: 1 1 auto;
+  min-height: 0;
+  max-height: none;
+  overflow-x: auto;
+  overflow-y: auto;
+}

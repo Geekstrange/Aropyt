@@ -193,6 +193,8 @@ export interface AropytRuntime {
   listHistory(path: string): Promise<import('@aropyt/core').HistorySummary[]>;
   /** 把某个历史版本恢复进编辑器（当前内容会先存为新版本，不丢）。 */
   restoreHistory(id: string): Promise<void>;
+  /** 读某个历史版本的全文（Diff 用）。 */
+  readHistory(id: string): Promise<string | null>;
   /** 把当前内容存成一个**命名版本**（里程碑）。 */
   snapshotHistory(label: string): Promise<void>;
   /** 导出草稿与编辑历史为 JSON（用户选保存位置）。 */
@@ -705,6 +707,7 @@ export function createRuntime(options: RuntimeOptions): AropytRuntime {
     openExternalPath,
     listHistory,
     restoreHistory,
+    readHistory: async (id: string) => (await getVersion(id).catch(() => null))?.text ?? null,
     snapshotHistory,
     exportBackup,
     importBackup,

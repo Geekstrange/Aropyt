@@ -11,6 +11,7 @@
 import { useCallback, useEffect, useState, type JSX } from 'react';
 import type { HistorySummary } from '@aropyt/core';
 import type { AropytRuntime } from '../runtime.js';
+import { DiffView } from './DiffView.js';
 
 interface HistoryDialogProps {
   readonly runtime: AropytRuntime;
@@ -28,6 +29,8 @@ export function HistoryDialog({ runtime, path, onClose }: HistoryDialogProps): J
   const [versions, setVersions] = useState<HistorySummary[]>([]);
   const [label, setLabel] = useState('');
   const [busy, setBusy] = useState(false);
+  /** 当前正在对比的版本（null = 显示列表）。 */
+  const [diff, setDiff] = useState<{ readonly id: string; readonly before: string } | null>(null);
 
   const refresh = useCallback(async () => {
     const list = await runtime.listHistory(path);
@@ -37,6 +40,16 @@ export function HistoryDialog({ runtime, path, onClose }: HistoryDialogProps): J
   useEffect(() => {
     void refresh();
   }, [refresh]);
+
+  /** 与当前文档对比：before = 历史版本全文，after = 编辑器当前内容。 */
+  const handleCompare = async (id: string): Promise<void> => {
+    const before = await runtime.readHistory(id).catch(() => null);
+    if (before === null) {
+      void runtime.windowService.showMessage('该版本已不存在（可能已被更早的版本淘汰）', { level: 'warning' });
+      return;
+    }
+    setDiff({ id, before });
+  };
 
   const handleRestore = async (id: string): Promise<void> => {
     setBusy(true);
@@ -62,7 +75,7 @@ export function HistoryDialog({ runtime, path, onClose }: HistoryDialogProps): J
   return (
     <div className="settings-backdrop" role="presentation" onClick={onClose}>
       <div
-        className="settings-dialog history-dialog"
+        className={diff ? 'settings-dialog history-dialog settings-dialog--wide' : 'settings-dialog history-dialog'}
         role="dialog"
         aria-modal="true"
         aria-label="编辑历史"
@@ -99,7 +112,16 @@ export function HistoryDialog({ runtime, path, onClose }: HistoryDialogProps): J
           </p>
         </section>
 
-        <section className="settings-section">
+        {diff ? (
+          <DiffView
+            fileName={`${path} · 历史 → 当前`}
+            before={diff.before}
+            after={runtime.editor.getText()}
+            onClose={() => setDiff(null)}
+          />
+        ) : null}
+
+        <section className="settings-section" hidden={diff !== null}>
           <h3>版本（{versions.length}）</h3>
           {versions.length === 0 ? (
             <p className="settings-hint">还没有历史版本 —— 保存一次文件就会产生第一个版本。</p>
@@ -113,14 +135,24 @@ export function HistoryDialog({ runtime, path, onClose }: HistoryDialogProps): J
                     {index === 0 ? <span className="history-item__badge">最新</span> : null}
                     <span className="history-item__meta">{Math.round(version.size / 1024) || 1} KB</span>
                   </div>
-                  <button
-                    type="button"
-                    className="settings-button"
-                    disabled={busy}
-                    onClick={() => void handleRestore(version.id)}
-                  >
-                    恢复
-                  </button>
+                  <span className="history-item__actions">
+                    <button
+                      type="button"
+                      className="settings-button"
+                      disabled={busy}
+                      onClick={() => void handleCompare(version.id)}
+                    >
+                      对比
+                    </button>
+                    <button
+                      type="button"
+                      className="settings-button"
+                      disabled={busy}
+                      onClick={() => void handleRestore(version.id)}
+                    >
+                      恢复
+                    </button>
+                  </span>
                 </li>
               ))}
             </ul>

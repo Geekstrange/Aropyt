@@ -15,6 +15,42 @@
   Deutsch / Français / Italiano / Русский）—— **已跳票**，
   待核心体验稳定后再排期
 
+## [0.1.2] - 2026-10-24
+
+> Consistent with `docs/releases/v0.1.2.md`.
+
+Edit History Diff, plus a batch of fixes accumulated since v0.1.1.
+
+### Added
+
+- **Edit History Diff** (`Ctrl+Shift+G` → Compare)
+  - **Unified** view: old line no. / new line no. / sign / content
+  - **Split** view: two equal-width columns, fixed divider; long lines
+    scroll horizontally within their own column instead of crossing the midline
+  - Hatched fill for empty side rows in Split view
+  - Header: file name, `+N / −N` stats, Unified / Split toggle
+  - Line-level LCS engine (`apps/web/src/lib/diff.ts`)
+
+### Fixed
+
+- `Ctrl+F` did nothing: `search()` extension present, `Mod-f` binding missing
+- WebView native find hijacked `Ctrl+F`; intercepted and forwarded as app event
+  (CM6 keymap skips `defaultPrevented` events)
+- vim `:wq`: command unregistered / `:wq` resolves as `write` + `q` /
+  save-then-close race (saving is async); `onSaveRequest` now returns a `Promise`
+- File-tree focus never reached the tree (stopPropagation, missing `tabindex`,
+  wrong query selector); `j/k/Enter` navigation works after focus
+- Status bar: stats to the right, version moved to Settings › About
+- Debug panel: log search, full error stacks, settings snapshot in report,
+  `[timeline]` markers
+
+### Known limitations
+
+- Diff compares a history version against the current document only
+  (two-history-version comparison not yet supported)
+- `:q` closes the current tab, not the whole application
+- Heap memory depends on `performance.memory`
+
 ## [0.1.1] - 2026-10-23
 
 > 与 `docs/releases/v0.1.1.md` 保持一致。
