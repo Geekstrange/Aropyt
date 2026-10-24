@@ -21,6 +21,8 @@
     "fs:allow-rename",
     "fs:allow-remove",
     "core:path:default",
+    "opener:allow-default-urls",
+    "opener:allow-open-url",
     {
       "identifier": "fs:scope",
       "allow": [

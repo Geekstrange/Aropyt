@@ -476,6 +476,11 @@ export function createRuntime(options: RuntimeOptions): AropytRuntime {
    * 放在创建 runtime 的最开头：`openFile` 可能在任意时刻被调用，
    * 而它要用这个标记决定提示措辞。用 localStorage 就是为了能同步读到。
    */
+  // 关键动作打 [timeline]：issue 复现路径的第一手线索
+  function timeline(action: string, detail: string): void {
+    console.info(`[timeline] ${action}`, detail);
+  }
+
   const lastExitWasClean = consumeCleanExitFlag();
 
   /*
@@ -539,12 +544,15 @@ export function createRuntime(options: RuntimeOptions): AropytRuntime {
       persistDraft(state.activePath ?? DRAFT_KEY, text);
       notify();
     },
-    onSaveRequest: () => {
-      void commands.execute('aropyt.file.save').catch((error: unknown) => {
-        void windowService.showMessage('保存失败', { level: 'error' });
-        console.error(error);
-      });
-    },
+    // 返回 Promise —— vim 的 :wq 要等保存落盘后再关闭
+    onSaveRequest: () =>
+      commands
+        .execute('aropyt.file.save')
+        .then(() => undefined)
+        .catch((error: unknown) => {
+          void windowService.showMessage('保存失败', { level: 'error' });
+          console.error(error);
+        }),
     // vim 的 :q / :wq —— 关闭当前标签（closeTab 自带未保存确认）
     onCloseRequest: () => {
       const active = state.activePath;
@@ -884,6 +892,7 @@ export function createRuntime(options: RuntimeOptions): AropytRuntime {
     path: string,
     options?: { readonly preview?: boolean },
   ): Promise<void> {
+    timeline('open', String(path ?? ''));
     const workspace = state.workspace;
     if (!workspace) {
       await windowService.showMessage('请先打开一个文件夹作为工作区。', { level: 'warning' });
@@ -1116,6 +1125,7 @@ export function createRuntime(options: RuntimeOptions): AropytRuntime {
    * 挑邻居而不是跳到第一个：靠得近的通常就是他接下来想看的那个。
    */
   async function closeTab(path: string): Promise<void> {
+    timeline('close', String(path ?? ''));
     /*
      * 先把激活标签的缓冲区（文本 + dirty）写回 tab —— tab.dirty 平时
      * 不会随编辑实时更新（那会打坏崩溃恢复链路，实测过），只在切走/
@@ -1209,6 +1219,7 @@ export function createRuntime(options: RuntimeOptions): AropytRuntime {
    * 显示名在 TabBar 里特判（Untitled.md / Untitled 2.md / …）。
    */
   function createUntitledTab(): void {
+    timeline('new-tab', '');
     syncActiveTabBuffer();
     let maxN = 0;
     for (const item of state.tabs) {

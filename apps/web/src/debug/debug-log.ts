@@ -29,7 +29,7 @@ function push(level: LogLevel, source: string, args: unknown[]): void {
   const text = args
     .map((value) => {
       if (typeof value === 'string') return value;
-      if (value instanceof Error) return `${value.name}: ${value.message}`;
+      if (value instanceof Error) return `${value.name}: ${value.message}\n${value.stack ?? ''}`;
       try {
         return JSON.stringify(value);
       } catch {
@@ -107,6 +107,10 @@ export interface DebugSnapshot {
   readonly fps: number;
   readonly heapMb: number | null;
   readonly longTasks: readonly { readonly at: number; readonly duration: number }[];
+  /** 当前生效的设置快照 —— 复现 bug 的必要上下文。 */
+  readonly settings?: Record<string, unknown>;
+  /** 文档状态（路径/行数/未保存）。 */
+  readonly doc?: { readonly path: string | null; readonly dirty: boolean };
 }
 
 /** 生成可直接贴进 issue 的 Markdown 报告。 */
@@ -121,6 +125,16 @@ export function formatReport(snapshot: DebugSnapshot): string {
   lines.push(`- 堆内存：${snapshot.heapMb === null ? '不可用' : `${snapshot.heapMb.toFixed(1)} MB`}`);
   lines.push(`- 长任务：${snapshot.longTasks.length} 个`);
   lines.push(`- UA：\`${snapshot.userAgent}\``);
+  if (snapshot.doc) {
+    lines.push(`- 文档：${snapshot.doc.path ?? '（未命名）'}${snapshot.doc.dirty ? ' ● 未保存' : ''}`);
+  }
+  if (snapshot.settings) {
+    lines.push('');
+    lines.push('#### 设置快照');
+    lines.push('```json');
+    lines.push(JSON.stringify(snapshot.settings, null, 2));
+    lines.push('```');
+  }
   lines.push('');
   lines.push('#### 长任务（>50ms，最近 10 个）');
   if (snapshot.longTasks.length === 0) {

@@ -91,7 +91,10 @@ function mount(container: HTMLElement, context: PluginContext, viewContext: View
   };
 
   const body = document.createElement('div');
-  body.className = 'view-body';
+  // 专属类：ViewHost 的容器也叫 .view-body，querySelector 会先命中容器而不是这里
+  body.className = 'explorer-tree';
+  // tabindex=-1 让它可编程聚焦（keydown 也挂在它上面）—— 没有它 focus() 无效
+  body.setAttribute('tabindex', '-1');
   container.append(body);
 
   const empty = (text: string) => {
@@ -184,6 +187,7 @@ function mount(container: HTMLElement, context: PluginContext, viewContext: View
     Array.from(body.querySelectorAll<HTMLElement>('.tree-item'));
 
   const setFocus = (row: HTMLElement | null): void => {
+    console.log('[tree] setFocus', row?.textContent?.slice(0, 30) ?? 'null');
     focusedRow?.classList.remove('tree-item--focused');
     focusedRow = row;
     row?.classList.add('tree-item--focused');
@@ -192,6 +196,7 @@ function mount(container: HTMLElement, context: PluginContext, viewContext: View
 
   body.addEventListener('keydown', (event: KeyboardEvent) => {
     const rows = visibleRows();
+    console.log('[tree] raw', event.key, 'code=', event.code, 'rows=', rows.length);
     if (rows.length === 0) return;
     const index = focusedRow ? rows.indexOf(focusedRow) : -1;
     if (event.key === 'j' || event.key === 'ArrowDown') {

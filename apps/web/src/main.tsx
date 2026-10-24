@@ -27,4 +27,23 @@ if (!container) throw new Error('缺少 #root 容器');
  */
 installDebugLog();
 
+/*
+ * WebView2 的浏览器查找栏在浏览器 UI 层消费 Ctrl+F，比 DOM 更早 ——
+ * 不拦就永远轮不到编辑器的 Mod-f。
+ *
+ * 拦法：capture + preventDefault 挡住浏览器，**再转发一个应用内事件**。
+ * 不能只 preventDefault —— CM6 的 keymap 会跳过 defaultPrevented 的事件，
+ * 自己的查找也打不开；所以由 App 收到事件后显式调用 editor.openSearch()。
+ */
+window.addEventListener(
+  'keydown',
+  (event) => {
+    if ((event.ctrlKey || event.metaKey) && !event.altKey && event.key.toLowerCase() === 'f') {
+      event.preventDefault();
+      window.dispatchEvent(new CustomEvent('aropyt:search'));
+    }
+  },
+  true,
+);
+
 createRoot(container).render(<App />);

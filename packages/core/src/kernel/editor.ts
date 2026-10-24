@@ -70,7 +70,7 @@ import { bracketMatching, foldGutter, foldKeymap, indentOnInput } from '@codemir
 import { markdown, markdownLanguage } from '@codemirror/lang-markdown';
 import { languages } from '@codemirror/language-data';
 import { autocompletion, closeBrackets, closeBracketsKeymap, completionKeymap } from '@codemirror/autocomplete';
-import { highlightSelectionMatches, search, searchKeymap } from '@codemirror/search';
+import { highlightSelectionMatches, openSearchPanel, search, searchKeymap } from '@codemirror/search';
 
 import type {
   CapabilitySnapshot,
@@ -130,7 +130,7 @@ export interface EditorOptions {
   readonly onModeChange?: (sourceMode: boolean) => void;
   readonly onCursorChange?: (info: CursorInfo) => void;
   /** Ctrl/Cmd+S。由应用层决定它意味着什么。 */
-  readonly onSaveRequest?: () => void;
+  readonly onSaveRequest?: () => void | Promise<void>;
   /** 关闭当前文档（vim 的 :q / :wq 用）。 */
   readonly onCloseRequest?: () => void;
 }
@@ -198,7 +198,7 @@ export class EditorAdapter implements EditorApi {
     }));
     this.#view.dispatch({
       effects: this.#keymapSlot.reconfigure(
-        keymap.of([...pluginBindings, ...historyKeymap, indentWithTab]),
+        keymap.of([...pluginBindings, ...historyKeymap, { key: 'Mod-f', preventDefault: true, run: openSearchPanel }, indentWithTab]),
       ),
     });
   }
@@ -242,9 +242,30 @@ export class EditorAdapter implements EditorApi {
       void import('@replit/codemirror-vim').then(({ vim, getCM, Vim }) => {
         this.#vimApi = { getCM: getCM as (view: EditorView) => unknown };
         // ex 命令：:w / :q / :wq（defineEx 幂等，重复注册只是覆盖）
-        Vim.defineEx('write', 'w', () => options.onSaveRequest?.());
+        /*
+         * ex 命令。:wq 不靠独立注册 —— codemirror-vim 的 : 命令按输入
+         * 匹配 prefix，:wq 会话先落到 :w 上（q 变成 write 的参数）。
+         * 所以在 write 里读 argString：":wq" 就是 write + 参数 q。
+         */
+        Vim.defineEx('write', 'w', (_cm, params) => {
+          /*
+           * 必须先等保存完成再关闭 —— 保存是异步命令，
+           * 立刻 close 时 dirty 还是 true，会弹出"未保存"确认。
+           */
+          void (async () => {
+            await options.onSaveRequest?.();
+            if ((params as { argString?: string }).argString?.trim() === 'q') {
+              options.onCloseRequest?.();
+            }
+          })();
+        });
         Vim.defineEx('quit', 'q', () => options.onCloseRequest?.());
-        Vim.defineEx('wq', 'wq', () => { options.onSaveRequest?.(); options.onCloseRequest?.(); });
+        Vim.defineEx('wq', 'wq', () => {
+          void (async () => {
+            await options.onSaveRequest?.();
+            options.onCloseRequest?.();
+          })();
+        });
         if (!this.#vimOn) return;
         this.#view.dispatch({
           effects: [
@@ -544,9 +565,21 @@ export class EditorAdapter implements EditorApi {
     }
     void import('@replit/codemirror-vim').then(({ vim, getCM, Vim }) => {
       // ex 命令：:w / :q / :wq
-      Vim.defineEx('write', 'w', () => this.options.onSaveRequest?.());
+      Vim.defineEx('write', 'w', (_cm, params) => {
+        void (async () => {
+          await this.options.onSaveRequest?.();
+          if ((params as { argString?: string }).argString?.trim() === 'q') {
+            this.options.onCloseRequest?.();
+          }
+        })();
+      });
       Vim.defineEx('quit', 'q', () => this.options.onCloseRequest?.());
-      Vim.defineEx('wq', 'wq', () => { this.options.onSaveRequest?.(); this.options.onCloseRequest?.(); });
+      Vim.defineEx('wq', 'wq', () => {
+        void (async () => {
+          await this.options.onSaveRequest?.();
+          this.options.onCloseRequest?.();
+        })();
+      });
       if (!this.#vimOn) return;
       /*
        * 这里也必须保存 getCM —— 只在构造时保存的话，"先关 vim 再开"的
@@ -596,6 +629,11 @@ export class EditorAdapter implements EditorApi {
    * 未开 vim 时返回 null —— 状态栏据此显示 -- NORMAL -- 这类指示，
    * 这是"用起来像 vim"最直接的一环（老用户靠它确认当前模式）。
    */
+  /** 打开编辑区查找/替换面板（WebView 原生查找被拦截后转调到这里）。 */
+  openSearch(): void {
+    openSearchPanel(this.#view);
+  }
+
   getVimSubMode(): string | null {
     if (!this.#vimOn || !this.#vimApi) return null;
     try {

@@ -72,6 +72,38 @@ export function App(): JSX.Element {
      * 用它判断永远匹配不上（实测 Ctrl+Shift+, 无效的原因）。
      */
     const onKeyDown = (event: KeyboardEvent): void => {
+      // 诊断：所有带修饰键或功能键的按键都记录（不只 Ctrl+Shift+B）
+      if (event.ctrlKey || event.metaKey || event.altKey || event.key.length > 1) {
+        console.log('[kd]', event.code, 'key=', event.key, 'shift=', event.shiftKey, 'alt=', event.altKey, 'ctrl=', event.ctrlKey);
+      }
+      /*
+       * Ctrl+Shift+B：侧栏开合 + 焦点。
+       * **必须在 capture handler 最前** —— 后面各分支都会 stopPropagation，
+       * 冒泡 handler（下面的 onKeyDown）永远收不到。
+       */
+      if (event.code === 'KeyB' && (event.ctrlKey || event.metaKey) && event.shiftKey && !event.altKey && runtime) {
+        event.preventDefault();
+        event.stopPropagation();
+        const next = !runtime.getState().sidebarOpen;
+        console.log('[focus] KeyB →', next ? 'open' : 'close');
+        void runtime.updateSettings({ sidebar: { open: next } });
+        if (next) {
+          requestAnimationFrame(() =>
+            requestAnimationFrame(() => {
+              const panel = document.querySelector<HTMLElement>('.view-column--left .explorer-tree');
+              if (!panel) {
+                console.warn('[focus] panel NOT FOUND');
+                return;
+              }
+              const style = getComputedStyle(panel);
+              console.log('[focus] display=', style.display, 'visibility=', style.visibility, 'tabindex=', panel.getAttribute('tabindex'));
+              panel.focus();
+              console.log('[focus] activeElement=', document.activeElement?.className || 'NONE', 'same=', document.activeElement === panel);
+            }),
+          );
+        }
+        return;
+      }
       // F12：调试面板（不需要修饰键，也不进命令面板 —— 它的存在感要低）
       if (event.code === 'F12' && !event.ctrlKey && !event.metaKey && !event.shiftKey && !event.altKey) {
         event.preventDefault();
@@ -105,7 +137,15 @@ export function App(): JSX.Element {
       }
     };
     window.addEventListener('keydown', onKeyDown, true);
-    return () => window.removeEventListener('keydown', onKeyDown, true);
+    // 应用内查找：WebView 的 Ctrl+F 被拦截后转发到这里
+    const onSearch = (): void => {
+      (runtime?.editor as unknown as { openSearch?: () => void } | undefined)?.openSearch?.();
+    };
+    window.addEventListener('aropyt:search', onSearch);
+    return () => {
+      window.removeEventListener('keydown', onKeyDown, true);
+      window.removeEventListener('aropyt:search', onSearch);
+    };
   }, [runtime]);
 
   const liveState = useMaybeRuntimeState(runtime);
@@ -151,21 +191,6 @@ export function App(): JSX.Element {
       const shift = event.shiftKey;
       const key = event.key.toLowerCase();
 
-      if (key === 'b' && shift) {
-        event.preventDefault();
-        event.stopPropagation();
-        /*
-         * 必须读**当前**值，不能用渲染时闭包里的 sidebarOpen。
-         *
-         * 侧栏真源是 settings（订阅式投影），这个 handler 只注册一次：
-         * 闭包里的 sidebarOpen 停在本组件首次渲染时的值，于是每次都
-         * 往同一个方向取反 —— 表现为"只能关、不能开"（实测）。
-         */
-        void runtime?.updateSettings({
-          sidebar: { open: !runtime.getState().sidebarOpen },
-        });
-        return;
-      }
       if (key === 'n' && shift) {
         event.preventDefault();
         event.stopPropagation();
@@ -673,12 +698,7 @@ function StatusBar({ runtime }: { readonly runtime: AropytRuntime }): JSX.Elemen
           {failedPlugins.length} 个插件加载失败
         </button>
       )}
-      {/*
-       * 文档统计（v0.1.1）：行 / 词 / 字。
-       *
-       * 中文按"字"计（\u4e00-\u9fff 区间），英文按"词"计（连续字母数字），
-       * 与 Word 的中文字数口径接近 —— 混排文档里两个数字都有意义。
-       */}
+            <span className="status-bar__spacer" />
       {(() => {
         const text = runtime.editor.getText();
         const lines = text.length === 0 ? 1 : text.split('\n').length;
@@ -690,64 +710,6 @@ function StatusBar({ runtime }: { readonly runtime: AropytRuntime }): JSX.Elemen
           </span>
         );
       })()}
-      <span className="status-bar__spacer" />
-      {/*
-       * 关于入口（0.0.1 发布所需）：版本 + GitHub + 许可证。
-       */}
-      <button
-        type="button"
-        className="status-item status-item--button"
-        title="关于 Aropyt"
-        onClick={() =>
-          void runtime.windowService.showMessage(
-            [
-              `Aropyt v${__APP_VERSION__}`,
-              'aropyt.com',
-              'AGPL-3.0',
-            ].join('\n'),
-            { level: 'info' },
-          )
-        }
-      >
-        Aropyt v{__APP_VERSION__}
-      </button>
-      {/*
-       * 「预算超支 N 次」改成说明型提示 + 具体条目。
-       *
-       * 原来只有一句"预算超支 1 次"，用户完全不知道被谁超的、
-       * 超了多少、算不算问题。现在：
-       *   - 文字说明它是什么（主线程被同步任务阻塞超过 50ms）
-       *   - title 里列出最近几次的来源与实际耗时
-       * 点击则把明细弹成提示，便于截图/复制。
-       *
-       * 注意：启动阶段的那一次 longtask 已在 FrameBudgetMonitor 里
-       * 用宽限期排除 —— 那属于冷启动成本，不是"编辑变卡"。
-       */}
-      {state.budgetViolations > 0 && (
-        <button
-          type="button"
-          className="status-item status-item--warn status-item--button"
-          title={
-            state.budgetDetails
-              .map((v) => `${v.label} — ${v.actualMs}ms（预算 ${v.budgetMs}ms）`)
-              .join('\n') || '主线程被同步任务阻塞超过 50ms'
-          }
-          onClick={() =>
-            void runtime.windowService.showMessage(
-              `主线程被同步任务阻塞超过 ${state.budgetDetails[0]?.budgetMs ?? 50}ms，这期间按键会延迟响应。\n\n` +
-                state.budgetDetails
-                  .map((v) => `· ${v.label}：${v.actualMs}ms`)
-                  .join('\n'),
-              { level: 'warning' },
-            )
-          }
-        >
-          主线程阻塞 {state.budgetViolations} 次
-        </button>
-      )}
-      <span className="status-item" title="最近一次按键到下一次绘制的间隔">
-        输入延迟 {state.lastInputLatencyMs > 0 ? `${state.lastInputLatencyMs.toFixed(1)} ms` : '—'}
-      </span>
     </>
   );
 }

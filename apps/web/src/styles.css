@@ -1283,6 +1283,22 @@ button {
   font-size: 13px;
 }
 
+/* 可点击的设置项值：沿用 label 的字号，只加链接色与悬停下划线 */
+.settings-row__link {
+  color: var(--md-link);
+  text-decoration: none;
+  cursor: pointer;
+}
+
+.settings-row__link:hover {
+  text-decoration: underline;
+}
+
+.settings-row__link:focus-visible {
+  outline: 2px solid var(--md-accent);
+  outline-offset: 1px;
+}
+
 .settings-segmented {
   display: inline-flex;
   border: 1px solid var(--md-border);
@@ -1845,12 +1861,53 @@ button {
 }
 
 /* ── 调试面板（F12）：底部停靠，不遮挡编辑区 ─────────────── */
+.debug-dock__bar {
+  display: flex;
+  flex: 0 0 auto;
+  align-items: center;
+  gap: 10px;
+  padding: 6px 12px;
+  border-bottom: 1px solid var(--md-border);
+  font-size: 11px;
+}
+
 .debug-dock {
   display: flex;
-  min-height: 0;
   flex-direction: column;
-  border-top: 1px solid var(--md-border);
-  background: var(--md-surface-1);
+  min-height: 0;
+  overflow: hidden;
+}
+
+/*
+ * 左 / 右两侧等宽（flex: 1 1 0），中间的标签组因此严格居中于整条
+ * 工具栏。
+ *
+ * 原来用的是两个 .debug-dock__spacer 平分剩余空间 —— 但左侧指标
+ * （FPS/延迟/堆/长任务/版本）比右侧的关闭按钮宽得多，平分的
+ * "剩余空间"起点不同，把标签组推到了右半边（用户实测）。
+ */
+.debug-dock__left {
+  display: flex;
+  flex: 1 1 0;
+  align-items: center;
+  gap: 10px;
+  min-width: 0;
+  overflow: hidden;
+}
+
+.debug-dock__tabs {
+  display: flex;
+  flex: 0 0 auto;
+  align-items: center;
+  gap: 2px;
+}
+
+.debug-dock__right {
+  display: flex;
+  flex: 1 1 0;
+  align-items: center;
+  justify-content: flex-end;
+  min-width: 0;
 }
 
 .debug-dock__bar {
@@ -1927,4 +1984,123 @@ button {
 .tree-item--focused {
   outline: 1px solid var(--md-accent);
   outline-offset: -1px;
+}
+
+.debug-dock__tab {
+  border: none;
+  background: none;
+  padding: 2px 8px;
+  font-size: 11px;
+  color: var(--md-muted);
+  cursor: pointer;
+}
+
+.debug-dock__tab.is-active {
+  color: var(--md-accent);
+  text-decoration: underline;
+}
+
+.debug-dock__panel {
+  display: flex;
+  flex: 1 1 auto;
+  flex-direction: column;
+  min-height: 0;
+  overflow: auto;
+  padding: 8px 12px;
+  gap: 8px;
+}
+
+.debug-grid {
+  display: grid;
+  grid-template-columns: repeat(2, 1fr);
+  gap: 8px;
+}
+
+.debug-cell {
+  border: 1px solid var(--md-border);
+  padding: 8px 10px;
+  font-size: 11px;
+}
+
+.debug-cell h4 {
+  margin: 0 0 6px;
+  font-size: 11px;
+  color: var(--md-muted);
+}
+
+.debug-cell dl,
+.debug-cell ul {
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.debug-cell dl div {
+  display: flex;
+  gap: 8px;
+}
+
+.debug-cell dt {
+  flex: 0 0 4.5em;
+  color: var(--md-muted);
+}
+
+.debug-cell dd {
+  margin: 0;
+  color: var(--md-text);
+  overflow-wrap: anywhere;
+}
+
+.debug-perf h4 {
+  margin: 8px 0 4px;
+  font-size: 11px;
+  color: var(--md-muted);
+}
+
+/* 日志工具栏：搜索框与操作按钮全部靠右（spacer 在最前） */
+.debug-toolbar {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+/*
+ * 日志搜索框 —— 逐条照抄 theme.ts 里 `.cm-panel.cm-search input`：
+ *   font: inherit（面板 13px / --font-sans）、background --md-surface-1、
+ *   border 1px --md-border、border-radius 0、padding 3px 8px、
+ *   outline/box-shadow none、聚焦 border-color --md-link。
+ * 不能用 .cm-textfield 类名：CM6 规则带 .cm-editor 作用域前缀，
+ * 调试面板不在那个子树里。
+ */
+.debug-toolbar input.debug-search__input {
+  width: 200px;
+  margin: 0;
+  padding: 5px 8px;          /* 与 .settings-button 的垂直 padding 一致 */
+  border: 1px solid var(--md-border);
+  border-radius: 0;
+  background: var(--md-surface-1);
+  color: var(--md-text);
+  font-family: var(--font-sans);
+  font-size: 12px;           /* 与按钮同字号 */
+  line-height: 1.6;          /* 与按钮同继承行高 */
+  outline: none;
+  box-shadow: none;
+  transition: border-color 0.12s ease;
+  -webkit-appearance: none;
+  appearance: none;
+  box-sizing: border-box;
+}
+
+.debug-toolbar input.debug-search__input::placeholder {
+  color: var(--md-faint);
+}
+
+.debug-toolbar input.debug-search__input:focus {
+  border-color: var(--md-link);
+}
+
+/* 抹掉 type=search 在 WebKit 下的原生清除叉 */
+.debug-toolbar input.debug-search__input::-webkit-search-cancel-button {
+  -webkit-appearance: none;
+  appearance: none;
 }
