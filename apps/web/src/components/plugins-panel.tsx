@@ -1,4 +1,5 @@
 import { useState } from 'react';
+import { useT } from '../i18n/useT';
 import type { PluginRecord } from '@aropyt/core';
 import type { AropytRuntime } from '../runtime';
 import { Icon } from './Icons.js';
@@ -10,10 +11,10 @@ import { Icon } from './Icons.js';
  * 图标、失败原因、每项的操作按钮。
  */
 const STATE_LABEL: Record<PluginRecord['state'], string> = {
-  declared: '未激活',
-  active: '已启用',
-  disabled: '已禁用',
-  failed: '加载失败',
+  declared: 'plugins.inactive',
+  active: 'plugins.active',
+  disabled: 'plugins.disabled',
+  failed: 'plugins.failed',
 };
 
 interface PluginsPanelProps {
@@ -48,6 +49,7 @@ function PluginIcon({ icon }: { icon?: string }) {
 }
 
 export function PluginsPanel({ runtime, records, onClose }: PluginsPanelProps) {
+  const t = useT();
   const [busy, setBusy] = useState<string | null>(null);
   const externals = records.filter((record) => !runtime.builtinPluginIds.has(record.manifest.id));
 
@@ -75,13 +77,13 @@ export function PluginsPanel({ runtime, records, onClose }: PluginsPanelProps) {
       className="settings-backdrop"
       role="dialog"
       aria-modal="true"
-      aria-label="插件管理"
+      aria-label={t('toolbar.plugins')}
       onClick={onClose}
     >
       <div className="settings-dialog" onClick={(event) => event.stopPropagation()}>
         <header className="settings-dialog__header">
-          <h2>插件</h2>
-          <button type="button" className="settings-dialog__close" onClick={onClose} aria-label="关闭">
+          <h2>{t('plugins.titleShort')}</h2>
+          <button type="button" className="settings-dialog__close" onClick={onClose} aria-label={t('common.close')}>
             ×
           </button>
         </header>
@@ -89,7 +91,7 @@ export function PluginsPanel({ runtime, records, onClose }: PluginsPanelProps) {
         <div className="settings-dialog__body">
           {externals.length === 0 ? (
             <p className="plugins-empty">
-              还没有导入任何插件。插件是单个 <code>.js</code> 文件，需导出 manifest 与 activate。
+              {t('plugins.empty')}
             </p>
           ) : (
             <ul className="plugin-list">
@@ -119,16 +121,14 @@ export function PluginsPanel({ runtime, records, onClose }: PluginsPanelProps) {
                         disabled={busy === id}
                         onClick={() => void handleToggle(record)}
                       >
-                        {enabled ? '禁用' : '启用'}
+                        {enabled ? t('plugins.disable') : t('plugins.enable')}
                       </button>
                       <button
                         type="button"
                         className="plugin-action plugin-action--danger"
                         disabled={busy === id}
                         onClick={() => void handleDelete(record)}
-                      >
-                        删除
-                      </button>
+                      >{t('plugins.delete')}</button>
                     </div>
                   </li>
                 );
@@ -139,9 +139,9 @@ export function PluginsPanel({ runtime, records, onClose }: PluginsPanelProps) {
 
         <footer className="plugins-footer">
           <button type="button" className="settings-button" onClick={() => runtime.importExternalPlugin()}>
-            导入插件…
+            {t('plugins.importFile')}
           </button>
-          <span className="plugins-panel__hint">启用/禁用与删除在重启后生效</span>
+          <span className="plugins-panel__hint">{t('plugins.restartHint')}</span>
         </footer>
       </div>
     </div>

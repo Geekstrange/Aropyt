@@ -15,6 +15,8 @@ export type ThemePreference = 'light' | 'dark' | 'auto';
 
 export interface AppSettings {
   theme: ThemePreference;
+  /** 界面语言。'auto' 跟随系统。 */
+  locale: 'auto' | 'zh' | 'en' | 'de' | 'fr' | 'ja' | 'ko' | 'it' | 'ru';
   editor: { fontSize: number };
   vim: { enabled: boolean };
   sidebar: { open: boolean };
@@ -25,6 +27,7 @@ export interface AppSettings {
 
 export const DEFAULT_SETTINGS: AppSettings = {
   theme: 'auto',
+  locale: 'auto',
   editor: { fontSize: 15 },
   vim: { enabled: false },
   sidebar: { open: true },
@@ -136,6 +139,8 @@ export function normalizeSettings(raw: unknown): {
     if (obj.theme !== undefined) {
     if (obj.theme === 'light' || obj.theme === 'dark' || obj.theme === 'auto') settings.theme = obj.theme;
     else invalidValues.push('theme');
+  if (settings.locale !== 'auto' && !['zh','en','de','fr','ja','ko','it','ru'].includes(settings.locale))
+    invalidValues.push('locale');
   }
   const editor = obj.editor as Record<string, unknown> | undefined;
   if (editor?.fontSize !== undefined) {

@@ -24,6 +24,9 @@ import {
 
 import { createRuntime, type AropytRuntime, type RuntimeState } from './runtime.js';
 import { Icon } from './components/Icons.js';
+import { setLocale, t } from './i18n';
+import { commandTitle } from './i18n';
+import { useT } from './i18n/useT';
 import { PluginsPanel } from './components/plugins-panel';
 import { CommandPalette } from './components/CommandPalette';
 import { DebugPanel } from './components/DebugPanel';
@@ -32,6 +35,7 @@ import { SettingsDialog } from './components/SettingsDialog.js';
 import { HistoryDialog } from './components/HistoryDialog.js';
 
 export function App(): JSX.Element {
+  const t = useT();
   const editorHostRef = useRef<HTMLDivElement>(null);
   const [runtime, setRuntime] = useState<AropytRuntime | null>(null);
   // 侧栏与面板各自独立开关，对应 VS Code 的 Toggle Primary/Secondary Side Bar。
@@ -151,6 +155,16 @@ export function App(): JSX.Element {
   const liveState = useMaybeRuntimeState(runtime);
   const sidebarOpen = liveState?.sidebarOpen ?? isWideScreen();
 
+  /*
+   * 界面语言：配置（settings.jsonc 的 locale）是唯一真源。
+   * 'auto' 跟随系统；配置变化时立即切换 —— setLocale 内部会更新
+   * <html lang> 并通知所有 useT() 订阅者重渲染。
+   */
+  const localePref = liveState?.locale;
+  useEffect(() => {
+    if (localePref) setLocale(localePref);
+  }, [localePref]);
+
   useEffect(() => {
     const host = editorHostRef.current;
     if (!host) return undefined;
@@ -239,17 +253,17 @@ export function App(): JSX.Element {
           if (!anyDirty) return;
           event.preventDefault();
           const choice = await runtime.windowService.showMessage(
-            '有未保存的修改，确定要退出吗？',
+            t('app.exit.confirm'),
             {
               level: 'warning',
               actions: [
-                { label: '保存并退出', run: () => {} },
-                { label: '不保存退出', run: () => {} },
+                { label: t('app.exit.saveAndQuit'), run: () => {} },
+                { label: t('app.exit.quit'), run: () => {} },
               ],
             },
           );
           if (choice === undefined) return; // 取消
-          if (choice === '保存并退出') await runtime.saveActiveFile();
+          if (choice === t('app.exit.saveAndQuit')) await runtime.saveActiveFile();
           await win.destroy();
         });
         if (disposed) off();
@@ -267,16 +281,14 @@ export function App(): JSX.Element {
   return (
     <div className={debugOpen ? 'app app--debug' : 'app'}>
       {liveState?.safeMode && (
-        <div className="safe-banner" role="status">
-          安全模式：所有插件已停用（上次启动可能异常）。可在「插件」面板里删除可疑插件后重启。
-        </div>
+        <div className="safe-banner" role="status">{t('app.safeModeBanner')}</div>
       )}
       <header className="app-header">
         <button
           type="button"
           className="icon-button"
-          title="侧栏"
-          aria-label="侧栏"
+          title={t('toolbar.sidebar')}
+          aria-label={t('toolbar.sidebar')}
           aria-pressed={sidebarOpen}
           onClick={() => void runtime?.updateSettings({ sidebar: { open: !sidebarOpen } })}
         >
@@ -340,7 +352,7 @@ export function App(): JSX.Element {
       )}
 
       <footer className="status-bar">
-        {runtime ? <StatusBar runtime={runtime} /> : <span className="status-item">正在启动…</span>}
+        {runtime ? <StatusBar runtime={runtime} /> : <span className="status-item">{t('app.starting')}</span>}
       </footer>
 
       {runtime && <Toasts runtime={runtime} />}
@@ -435,12 +447,13 @@ function runCommand(runtime: AropytRuntime, commandId: string): void {
 }
 
 function Header({ runtime }: { readonly runtime: AropytRuntime }): JSX.Element {
+  const t = useT();
   const state = useRuntimeState(runtime);
 
   return (
     <>
       <span className="app-workspace">
-        {state.workspace ? state.workspace.name : '未打开工作区'}
+        {state.workspace ? state.workspace.name : t('app.workspace.none')}
         {/*
          * 当前文件名不再显示 —— 标签栏就在旁边，激活标签上写着它，
          * 这里再重复一遍是同一句话。
@@ -467,7 +480,7 @@ function Header({ runtime }: { readonly runtime: AropytRuntime }): JSX.Element {
             void runtime.windowService.showMessage(state.limitations.join('\n'), { level: 'info' })
           }
         >
-          平台能力说明
+          {t('app.capabilities')}
         </button>
       )}
     </>
@@ -486,12 +499,13 @@ interface ToolbarProps {
 }
 
 function Toolbar({ runtime, onOpenSettings, onOpenHistory, onOpenPlugins }: ToolbarProps): JSX.Element {
+  const t = useT();
   const state = useRuntimeState(runtime);
   const details = new Map(runtime.commands.details().map((item) => [item.id, item]));
   const groups = groupToolbar(state.toolbar);
 
   return (
-    <div className="toolbar" role="toolbar" aria-label="工具栏">
+    <div className="toolbar" role="toolbar" aria-label={t('aria.toolbar')}>
       {groups.map((group, index) => (
         <ToolbarGroup
           key={group.key}
@@ -508,8 +522,8 @@ function Toolbar({ runtime, onOpenSettings, onOpenHistory, onOpenPlugins }: Tool
       <button
         type="button"
         className="tool-button"
-        title="编辑历史"
-        aria-label="编辑历史"
+        title={t('toolbar.history')}
+        aria-label={t('toolbar.history')}
         onClick={onOpenHistory}
         disabled={!state.activePath || Boolean(state.activePath?.startsWith('__untitled__'))}
       >
@@ -520,8 +534,8 @@ function Toolbar({ runtime, onOpenSettings, onOpenHistory, onOpenPlugins }: Tool
       <button
         type="button"
         className="tool-button"
-        title="设置"
-        aria-label="设置"
+        title={t('toolbar.settings')}
+        aria-label={t('toolbar.settings')}
         onClick={onOpenSettings}
       >
         <Icon name="setting" />
@@ -535,8 +549,8 @@ function Toolbar({ runtime, onOpenSettings, onOpenHistory, onOpenPlugins }: Tool
       <button
         type="button"
         className="tool-button"
-        title="插件管理"
-        aria-label="插件管理"
+        title={t('toolbar.plugins')}
+        aria-label={t('toolbar.plugins')}
         onClick={onOpenPlugins}
       >
         <Icon name="plugin" />
@@ -563,8 +577,8 @@ function Toolbar({ runtime, onOpenSettings, onOpenHistory, onOpenPlugins }: Tool
         <button
           type="button"
           className={`tool-button${state.sourceMode ? ' tool-button--on' : ''}`}
-          title={state.sourceMode ? '退出源码模式 (Ctrl+/)' : '源码模式 (Ctrl+/)'}
-          aria-label={state.sourceMode ? '退出源码模式' : '进入源码模式'}
+          title={state.sourceMode ? `${t('toolbar.source.exit')} (Ctrl+/)` : `${t('toolbar.source.enter')} (Ctrl+/)`}
+          aria-label={state.sourceMode ? t('toolbar.source.exit') : t('toolbar.source.enter')}
           aria-pressed={state.sourceMode}
           onClick={() => runtime.toggleSourceMode()}
         >
@@ -609,8 +623,8 @@ function ToolbarGroup({ commands, details, onRun, withSeparator }: ToolbarGroupP
             key={commandId}
             type="button"
             className="tool-button"
-            title={detail?.title ?? commandId}
-            aria-label={detail?.title ?? commandId}
+            title={commandTitle(detail?.title ?? commandId)}
+            aria-label={commandTitle(detail?.title ?? commandId)}
             onClick={() => onRun(commandId)}
           >
             <Icon name={detail?.icon ?? 'defaultPlugin'} />
@@ -622,6 +636,7 @@ function ToolbarGroup({ commands, details, onRun, withSeparator }: ToolbarGroupP
 }
 
 function StatusBar({ runtime }: { readonly runtime: AropytRuntime }): JSX.Element {
+  const t = useT();
   const state = useRuntimeState(runtime);
   /*
    * 只统计**加载失败**的插件。用户主动禁用的（state === 'disabled'）
@@ -639,7 +654,7 @@ function StatusBar({ runtime }: { readonly runtime: AropytRuntime }): JSX.Elemen
         type="button"
         className="status-bar__vim"
         aria-pressed={state.vimMode}
-        title={state.vimMode ? 'vim 模式已开启（点击关闭）' : 'vim 模式未开启（点击开启）'}
+        title={state.vimMode ? t('status.vim.on') : t('status.vim.off')}
         onClick={() => runtime.toggleVimMode()}
       >
         {state.vimMode ? (
@@ -705,8 +720,8 @@ function StatusBar({ runtime }: { readonly runtime: AropytRuntime }): JSX.Elemen
         const words = (text.match(/[A-Za-z0-9_'-]+/g) ?? []).length;
         const chars = (text.match(/[\u4e00-\u9fff]/g) ?? []).length;
         return (
-          <span className="status-bar__stats" title="行 / 词 / 字">
-            {lines} 行 · {words} 词 · {chars} 字
+          <span className="status-bar__stats" title={t('status.statsTitle')}>
+            {lines} {t('status.lines')} · {words} {t('status.words')} · {chars} {t('status.chars')}
           </span>
         );
       })()}
@@ -741,7 +756,7 @@ function TabBar({ runtime }: { readonly runtime: AropytRuntime }): JSX.Element |
   if (!runtime) return null;
 
   return (
-    <div className="tab-bar" role="tablist" aria-label="打开的文件">
+    <div className="tab-bar" role="tablist" aria-label={t('tabs.openFiles')}>
       {state.tabs.map((tab) => {
         const active = tab.path === state.activePath;
         const dirty = active && state.dirty;
@@ -760,7 +775,7 @@ function TabBar({ runtime }: { readonly runtime: AropytRuntime }): JSX.Element |
               (active ? ' tab--active' : '') +
               (tab.preview ? ' tab--preview' : '')
             }
-            title={tab.preview ? `${tab.path}（预览，编辑后固定）` : tab.path}
+            title={tab.preview ? t('tabs.preview', { path: tab.path }) : tab.path}
             onClick={() => runtime.activateTab(tab.path)}
           >
             <span
@@ -780,14 +795,14 @@ function TabBar({ runtime }: { readonly runtime: AropytRuntime }): JSX.Element |
               {name}
             </span>
             {dirty && (
-              <span className="tab__dirty" aria-label="未保存">
+              <span className="tab__dirty" aria-label={t('tabs.unsaved')}>
                 ●
               </span>
             )}
             <button
               type="button"
               className="tab__close"
-              aria-label={`关闭 ${name}`}
+              aria-label={t('tabs.close', { name })}
               onClick={(event) => {
                 // 不冒泡：否则关标签会顺手把它激活一下，看起来像"点两次"
                 event.stopPropagation();
@@ -814,8 +829,8 @@ function TabBar({ runtime }: { readonly runtime: AropytRuntime }): JSX.Element |
       <button
         type="button"
         className="tab-add"
-        aria-label="新建标签页"
-        title="新建标签页"
+        aria-label={t('tabs.new')}
+        title={t('tabs.new')}
         onClick={() => runtime.createUntitledTab()}
       >
         +

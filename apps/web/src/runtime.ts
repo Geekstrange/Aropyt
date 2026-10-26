@@ -13,6 +13,7 @@
  */
 
 import { Compartment } from '@codemirror/state';
+import { t } from './i18n';
 
 import {
   describeLimitations,
@@ -139,6 +140,8 @@ export interface RuntimeState {
   /** 预览面板是否打开。 */
   /** 用户偏好（light / dark / auto）。 */
   readonly themePreference: ThemePreference;
+  /** 界面语言偏好（'auto' 跟随系统）。 */
+  readonly locale: 'auto' | 'zh' | 'en' | 'de' | 'fr' | 'ja' | 'ko' | 'it' | 'ru';
   /** 实际生效的主题。auto 已被解析成具体值。 */
   readonly theme: ResolvedTheme;
   readonly lastInputLatencyMs: number;
@@ -347,6 +350,13 @@ export function createRuntime(options: RuntimeOptions): AropytRuntime {
     sourceMode: editor.sourceMode,
     preferredSourceMode: editor.preferredSourceMode,
     themePreference: theme.preference,
+    /*
+     * 必须读 currentSettings —— 不能读 configuration。
+     * updateSettings 写的是 currentSettings（applySettings 里赋值），
+     * 与 configuration 是两套存储；从 configuration 读会永远拿到默认值，
+     * 表现为「选哪个语言都只有默认图标高亮」。
+     */
+    locale: currentSettings.locale,
     theme: theme.resolved,
     toolbar: (host.contributions.menus['toolbar'] ?? []).map((item) => ({
       command: item.command,
@@ -552,7 +562,7 @@ export function createRuntime(options: RuntimeOptions): AropytRuntime {
         .execute('aropyt.file.save')
         .then(() => undefined)
         .catch((error: unknown) => {
-          void windowService.showMessage('保存失败', { level: 'error' });
+          void windowService.showMessage(t('rt.saveFailed'), { level: 'error' });
           console.error(error);
         }),
     // vim 的 :q / :wq —— 关闭当前标签（closeTab 自带未保存确认）
@@ -718,7 +728,7 @@ export function createRuntime(options: RuntimeOptions): AropytRuntime {
     importExternalPlugin,
     deleteExternalPlugin,
     pluginConfigSchemas: () =>
-      configuration.listSchemas().filter((item) => item.ownerLabel !== '未命名插件'),
+      configuration.listSchemas().filter((item) => item.ownerLabel !== t('rt.untitledPlugin')),
     getPluginConfig: <T>(key: string, fallback: T) => configuration.get<T>(key, fallback),
     setPluginConfig: (key: string, value: unknown) => {
       void configuration.update(key, value).catch(() => undefined);
@@ -781,7 +791,7 @@ export function createRuntime(options: RuntimeOptions): AropytRuntime {
     const provider = preferredProvider();
     if (!provider) {
       await windowService.showMessage(
-        '当前环境既没有原生文件系统，也不支持打开本地文件夹，且没有可用的沙箱存储。',
+        t('rt.envNoFs'),
         { level: 'error' },
       );
       return null;
@@ -844,7 +854,7 @@ export function createRuntime(options: RuntimeOptions): AropytRuntime {
 
     const workspace = await openNativeFolderAsWorkspace(parent);
     if (!workspace) {
-      await windowService.showMessage('打开文件所在目录失败。', { level: 'error' });
+      await windowService.showMessage(t('rt.openDirFailed'), { level: 'error' });
       return false;
     }
 
@@ -877,7 +887,7 @@ export function createRuntime(options: RuntimeOptions): AropytRuntime {
    */
   async function importImage(targetDir: string): Promise<ImportedFile | null> {
     if (!state.workspace) {
-      await windowService.showMessage('请先打开一个文件夹作为工作区。', { level: 'warning' });
+      await windowService.showMessage(t('rt.noWorkspace'), { level: 'warning' });
       return null;
     }
 
@@ -898,7 +908,7 @@ export function createRuntime(options: RuntimeOptions): AropytRuntime {
     timeline('open', String(path ?? ''));
     const workspace = state.workspace;
     if (!workspace) {
-      await windowService.showMessage('请先打开一个文件夹作为工作区。', { level: 'warning' });
+      await windowService.showMessage(t('rt.noWorkspace'), { level: 'warning' });
       return;
     }
 
@@ -946,7 +956,7 @@ export function createRuntime(options: RuntimeOptions): AropytRuntime {
     try {
       content = await workspace.read(path);
     } catch (error) {
-      await windowService.showMessage(`无法读取 ${path}`, { level: 'error' });
+      await windowService.showMessage(t('rt.readFailed', { path }), { level: 'error' });
       console.error(error);
       return;
     }
@@ -992,13 +1002,13 @@ export function createRuntime(options: RuntimeOptions): AropytRuntime {
         notify();
         void windowService.showMessage(
           lastExitWasClean
-            ? `这份文件上次关闭时（${when}）有未保存的修改，已恢复当时的编辑。`
-            : `已从崩溃恢复日志中还原未保存的内容（${when}）。`,
+            ? t('rt.recoveredEdit', { when })
+            : t('rt.restoredCrash', { when }),
           {
             level: 'warning',
             actions: [
               {
-                label: '丢弃，改用磁盘上的版本',
+                label: t('rt.discardDisk'),
                 run: () => {
                   /*
                    * 丢弃 = 回到磁盘内容 + 删掉草稿。
@@ -1022,11 +1032,11 @@ export function createRuntime(options: RuntimeOptions): AropytRuntime {
                       await idbDelete(STORE.drafts, path).catch(() => undefined);
                       state.dirty = false;
                       notify();
-                      await windowService.showMessage('已改用磁盘上的版本。', { level: 'info' });
+                      await windowService.showMessage(t('rt.useDisk'), { level: 'info' });
                     })
                     .catch((error: unknown) => {
                       console.error(error);
-                      void windowService.showMessage('读取磁盘内容失败。', { level: 'error' });
+                      void windowService.showMessage(t('rt.readDiskFailed'), { level: 'error' });
                     });
                 },
               },
@@ -1146,10 +1156,10 @@ export function createRuntime(options: RuntimeOptions): AropytRuntime {
      */
     const closing = state.tabs[index];
     if (closing.dirty) {
-      const name = path.startsWith('__untitled__') ? '未命名文档' : (path.split(/[\\/]/).pop() ?? path);
+      const name = path.startsWith('__untitled__') ? t('rt.untitledDoc') : (path.split(/[\\/]/).pop() ?? path);
       const actions = [
         {
-          label: '不保存并关闭',
+          label: t('rt.closeWithoutSave'),
           run: () => {
             /* 直接关；未命名文档的草稿已自动保存，不会真丢 */
           },
@@ -1157,14 +1167,14 @@ export function createRuntime(options: RuntimeOptions): AropytRuntime {
       ];
       const isCurrent = state.activePath === path;
       if (isCurrent && !path.startsWith('__untitled__')) {
-        actions.push({ label: '保存并关闭', run: () => {} });
+        actions.push({ label: t('rt.saveAndClose'), run: () => {} });
       }
-      const choice = await windowService.showMessage(`「${name}」有未保存的修改。`, {
+      const choice = await windowService.showMessage(t('rt.unsavedChanges', { name }), {
         level: 'warning',
         actions,
       });
       if (choice === undefined) return;
-      if (choice === '保存并关闭') await saveActiveFile();
+      if (choice === t('rt.saveAndClose')) await saveActiveFile();
     }
 
     const closingActive = state.activePath === path;
@@ -1266,7 +1276,7 @@ export function createRuntime(options: RuntimeOptions): AropytRuntime {
       current.delete(pluginId);
       saveDisabledPlugins([...current]);
       void windowService.showMessage(
-        `已记录启用「${pluginId}」。插件贡献需要重新声明，**重启应用后生效**。`,
+        t('rt.pluginEnabled', { id: pluginId }),
         { level: 'info' },
       );
       return;
@@ -1275,7 +1285,7 @@ export function createRuntime(options: RuntimeOptions): AropytRuntime {
     saveDisabledPlugins([...current]);
     // 立即生效：撤销该插件的命令/视图，并把状态标成 disabled
     host.disable(pluginId, '用户手动禁用');
-    void windowService.showMessage(`已禁用「${pluginId}」。`, { level: 'info' });
+    void windowService.showMessage(t('rt.pluginDisabled', { id: pluginId }), { level: 'info' });
   }
 
   /*
@@ -1474,7 +1484,7 @@ function validateContributions(manifest: PluginManifest): void {
     disabled.add(pluginId);
     updateSettings({ plugins: { disabled: [...disabled] } });
 
-    void windowService.showMessage(`已删除插件「${pluginId}」，重启后彻底移除。`, {
+    void windowService.showMessage(t('rt.pluginDeleted', { id: pluginId }), {
       level: 'info',
     });
   }
@@ -1516,7 +1526,7 @@ function validateContributions(manifest: PluginManifest): void {
           ];
           await idbSet(STORE.kv, EXTERNAL_PLUGINS_KEY, next);
           void windowService.showMessage(
-            `已导入插件「${manifest.name}」。重启应用后生效。`,
+            t('rt.pluginImported', { name: manifest.name }),
             { level: 'info' },
           );
         } catch (error) {
@@ -1609,7 +1619,7 @@ function validateContributions(manifest: PluginManifest): void {
     void saveSettings(settingsIo, next).catch((error: unknown) => {
       const detail =
         error instanceof Error ? error.message : typeof error === 'string' ? error : JSON.stringify(error);
-      void windowService.showMessage(`配置保存失败：${detail}`, { level: 'error' });
+      void windowService.showMessage(t('rt.configSaveFailed', { detail }), { level: 'error' });
     });
   }
   /** 配置文件初始化失败的原因（桌面壳下失败必须如实报出来，不能伪装成"浏览器模式"）。 */
@@ -1620,7 +1630,7 @@ function validateContributions(manifest: PluginManifest): void {
       void windowService.showMessage(
         hasTauri()
           ? `配置文件不可用：${settingsInitError ?? '未知原因'}`
-          : '浏览器模式下没有配置文件（桌面版才有磁盘配置）。',
+          : t('rt.configBrowserNoFile'),
         { level: hasTauri() ? 'error' : 'info' },
       );
       return;
@@ -1633,7 +1643,7 @@ function validateContributions(manifest: PluginManifest): void {
        */
       const detail =
         error instanceof Error ? error.message : typeof error === 'string' ? error : JSON.stringify(error);
-      void windowService.showMessage(`打开配置文件失败：${detail}（路径：${settingsPathValue}）`, {
+      void windowService.showMessage(t('rt.configOpenFailed', { detail, path: settingsPathValue ?? '' }), {
         level: 'error',
       });
     });
@@ -1664,14 +1674,14 @@ function validateContributions(manifest: PluginManifest): void {
   async function restoreHistory(id: string): Promise<void> {
     const version = await getVersion(id).catch(() => null);
     if (!version) {
-      void windowService.showMessage('该版本已不存在（可能已被更早的版本淘汰）', { level: 'warning' });
+      void windowService.showMessage(t('rt.historyGone'), { level: 'warning' });
       return;
     }
     /*
      * 恢复前先给**当前内容**留一个版本 —— 否则"恢复到旧版"这个动作本身
      * 就把最新的编辑抹掉了，这是编辑历史最不可接受的失败方式。
      */
-    await recordCurrentVersion(`恢复前快照 ${new Date().toLocaleTimeString()}`);
+    await recordCurrentVersion(t('rt.snapshotBeforeRestore', { time: new Date().toLocaleTimeString() }));
     loadingDocument = true;
     try {
       editor.replaceDocument(version.text);
@@ -1683,7 +1693,7 @@ function validateContributions(manifest: PluginManifest): void {
   }
 
   async function snapshotHistory(label: string): Promise<void> {
-    await recordCurrentVersion(label.trim() || '手动版本');
+    await recordCurrentVersion(label.trim() || t('rt.manualVersion'));
     notify();
   }
 
@@ -1705,11 +1715,11 @@ function validateContributions(manifest: PluginManifest): void {
       });
       if (!picked) return;
       await invokeNative('backup_write', { path: picked, text: JSON.stringify(data, null, 2) });
-      void windowService.showMessage(`数据已导出到 ${picked}`, { level: 'info' });
+      void windowService.showMessage(t('rt.exported', { path: picked }), { level: 'info' });
     } catch (error: unknown) {
       const detail =
         error instanceof Error ? error.message : typeof error === 'string' ? error : JSON.stringify(error);
-      void windowService.showMessage(`导出失败：${detail}`, { level: 'error' });
+      void windowService.showMessage(t('rt.exportFailed', { detail }), { level: 'error' });
     }
   }
 
@@ -1719,7 +1729,7 @@ function validateContributions(manifest: PluginManifest): void {
     } catch (error: unknown) {
       const detail =
         error instanceof Error ? error.message : typeof error === 'string' ? error : JSON.stringify(error);
-      void windowService.showMessage(`导入失败：${detail}`, { level: 'error' });
+      void windowService.showMessage(t('rt.importFailed', { detail }), { level: 'error' });
     }
   }
 
@@ -1741,22 +1751,22 @@ function validateContributions(manifest: PluginManifest): void {
     try {
       data = JSON.parse(text) as import('@aropyt/core').BackupFile;
     } catch {
-      throw new Error('备份文件不是有效的 JSON');
+      throw new Error(t('rt.badBackup'));
     }
-    const counts = `草稿 ${Object.keys(data.drafts ?? {}).length} 份 · 历史 ${(data.history ?? []).length} 个版本`;
+    const counts = t('rt.backupSummary', { drafts: Object.keys(data.drafts ?? {}).length, history: (data.history ?? []).length });
     const ok = await invokeNative<boolean>('plugin:dialog|ask', {
       options: {
-        title: '导入数据',
-        message: `将导入 ${counts}，并**覆盖**当前所有草稿与编辑历史。确定继续？`,
+        title: t('rt.importTitle'),
+        message: t('rt.importConfirm', { counts }),
         kind: 'warning',
-        okButtonLabel: '导入',
-        cancelButtonLabel: '取消',
+        okButtonLabel: t('rt.importAction'),
+        cancelButtonLabel: t('rt.cancel'),
       },
     }).catch(() => false);
     if (!ok) return;
     const result = await applyBackup(data);
     void windowService.showMessage(
-      `导入完成：${result.drafts} 份草稿、${result.history} 个历史版本。重启应用后生效。`,
+      t('rt.importDone', { drafts: result.drafts, history: result.history }),
       { level: 'info' },
     );
   }
@@ -1784,7 +1794,7 @@ function validateContributions(manifest: PluginManifest): void {
     } catch (error: unknown) {
       const detail =
         error instanceof Error ? error.message : typeof error === 'string' ? error : JSON.stringify(error);
-      void windowService.showMessage(`打开文件失败：${detail}`, { level: 'error' });
+      void windowService.showMessage(t('rt.openFailed', { detail }), { level: 'error' });
     }
   }
 
@@ -1849,7 +1859,7 @@ function validateContributions(manifest: PluginManifest): void {
       } catch (error: unknown) {
         const detail =
           error instanceof Error ? error.message : typeof error === 'string' ? error : JSON.stringify(error);
-        await windowService.showMessage(`保存失败：${detail}`, { level: 'error' });
+        await windowService.showMessage(t('rt.saveFailedDetail', { detail }), { level: 'error' });
       }
       notify();
       return;
@@ -1891,13 +1901,13 @@ function validateContributions(manifest: PluginManifest): void {
       const segments = picked.split(/[\\/]/).filter(Boolean);
       const fileName = segments.pop();
       if (!fileName) {
-        await windowService.showMessage('这个保存位置不可用，请换一个。', { level: 'error' });
+        await windowService.showMessage(t('rt.badLocation'), { level: 'error' });
         return;
       }
 
       const opened = await openNativeFolderAsWorkspace(segments.join('\\'));
       if (!opened) {
-        await windowService.showMessage('无法写入这个位置。', { level: 'error' });
+        await windowService.showMessage(t('rt.noWrite'), { level: 'error' });
         return;
       }
 
@@ -1929,7 +1939,7 @@ function validateContributions(manifest: PluginManifest): void {
     }
 
     if (!workspace) {
-      await windowService.showMessage('请先打开一个文件夹作为工作区。', { level: 'warning' });
+      await windowService.showMessage(t('rt.noWorkspace'), { level: 'warning' });
       return;
     }
 
@@ -1938,7 +1948,7 @@ function validateContributions(manifest: PluginManifest): void {
       // 这是 Web 侧唯一能拿到的原子性保证，且是浏览器给的，不是我实现的。
       await workspace.write(path, editor.getText());
     } catch (error) {
-      await windowService.showMessage(`保存失败：${path}`, { level: 'error' });
+      await windowService.showMessage(t('rt.saveFailedPath', { path }), { level: 'error' });
       console.error(error);
       return;
     }
@@ -1974,7 +1984,7 @@ function validateContributions(manifest: PluginManifest): void {
      * 用户无法区分"保存成功"与"保存根本没发生" —— 而这个项目里
      * 后者恰恰是最常见的静默故障。宁可多一条 5 秒自动消失的提示。
      */
-    await windowService.showMessage(`已保存 ${path}`, { level: 'info' });
+    await windowService.showMessage(t('rt.saved', { path }), { level: 'info' });
   }
 
   async function regrantWorkspace(): Promise<boolean> {
@@ -1992,7 +2002,7 @@ function validateContributions(manifest: PluginManifest): void {
       restored.status === 'restored' ? restored.workspace : await regrantLastWorkspace();
 
     if (!workspace) {
-      await windowService.showMessage('没有可恢复的文件夹，或用户拒绝了授权。', { level: 'warning' });
+      await windowService.showMessage(t('rt.noRestorable'), { level: 'warning' });
       return false;
     }
     state.workspace = workspace;
@@ -2063,7 +2073,7 @@ function validateContributions(manifest: PluginManifest): void {
       applySettings(loaded.settings);
       if (loaded.problems.unknownKeys.length > 0 || loaded.problems.invalidValues.length > 0) {
         void windowService.showMessage(
-          `settings.jsonc 有 ${loaded.problems.unknownKeys.length + loaded.problems.invalidValues.length} 处问题，已按默认值处理`,
+          t('rt.configProblemsHandled', { n: loaded.problems.unknownKeys.length + loaded.problems.invalidValues.length }),
           { level: 'warning' },
         );
       }
@@ -2081,7 +2091,7 @@ function validateContributions(manifest: PluginManifest): void {
     } catch (error) {
       console.error('[plugins] 外部插件加载失败', error);
       void windowService.showMessage(
-        `插件加载失败：${error instanceof Error ? error.message : String(error)}`,
+        t('rt.pluginLoadFailed', { msg: error instanceof Error ? error.message : String(error) }),
         { level: 'warning' },
       );
     }
@@ -2115,12 +2125,12 @@ function validateContributions(manifest: PluginManifest): void {
         const name = path.split(/[\\/]/).pop() ?? path;
         const when = new Date(record.at).toLocaleString();
         void windowService.showMessage(
-          `上次未正常退出。${drafts.length} 份未保存的编辑内容待恢复，最近的是「${name}」（${when}）。`,
+          t('rt.crashed', { n: drafts.length, name, when }),
           {
             level: 'warning',
             actions: [
               {
-                label: '打开最近的',
+                label: t('rt.openRecent'),
                 run: () => {
                   void openExternalPath(path);
                 },

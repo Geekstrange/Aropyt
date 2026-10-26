@@ -1,4 +1,6 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
+import { categoryTitle, commandTitle } from '../i18n';
+import { useT } from '../i18n/useT';
 import type { AropytRuntime } from '../runtime';
 
 /**
@@ -16,6 +18,7 @@ interface CommandPaletteProps {
 }
 
 export function CommandPalette({ runtime, onClose }: CommandPaletteProps) {
+  const t = useT();
   const [query, setQuery] = useState('');
   const [index, setIndex] = useState(0);
   const inputRef = useRef<HTMLInputElement>(null);
@@ -26,7 +29,7 @@ export function CommandPalette({ runtime, onClose }: CommandPaletteProps) {
    * 放进面板里既看不懂、点了也会失败。
    */
   const commands = useMemo(
-    () => runtime.commands.details().filter((command) => command.title !== command.id),
+    () => runtime.commands.details().filter((command) => commandTitle(command.title) !== command.id),
     [runtime],
   );
 
@@ -34,7 +37,7 @@ export function CommandPalette({ runtime, onClose }: CommandPaletteProps) {
     const q = query.trim().toLowerCase();
     if (!q) return commands;
     return commands.filter((command) => {
-      const haystack = `${command.title} ${command.category ?? ''} ${command.id}`.toLowerCase();
+      const haystack = `${commandTitle(command.title)} ${command.category ? categoryTitle(command.category) : ''} ${command.id}`.toLowerCase();
       return haystack.includes(q);
     });
   }, [commands, query]);
@@ -59,7 +62,7 @@ export function CommandPalette({ runtime, onClose }: CommandPaletteProps) {
         className="settings-dialog palette"
         role="dialog"
         aria-modal="true"
-        aria-label="命令面板"
+        aria-label={t('cmd.title')}
         onClick={(event) => event.stopPropagation()}
       >
         <input
@@ -67,8 +70,8 @@ export function CommandPalette({ runtime, onClose }: CommandPaletteProps) {
           className="palette__input"
           type="text"
           value={query}
-          placeholder="输入命令名称…"
-          aria-label="搜索命令"
+          placeholder={t('cmd.placeholder')}
+          aria-label={t('cmd.searchLabel')}
           onChange={(event) => setQuery(event.target.value)}
           onKeyDown={(event) => {
             if (event.key === 'Escape') {
@@ -95,7 +98,7 @@ export function CommandPalette({ runtime, onClose }: CommandPaletteProps) {
         />
 
         <ul className="palette__list">
-          {filtered.length === 0 && <li className="palette__empty">没有匹配的命令</li>}
+          {filtered.length === 0 && <li className="palette__empty">{t('cmd.empty')}</li>}
           {filtered.map((command, position) => (
             <li key={command.id}>
               <button
@@ -105,8 +108,8 @@ export function CommandPalette({ runtime, onClose }: CommandPaletteProps) {
                 onClick={() => run(command.id)}
               >
                 <span className="palette__title">
-                  {command.category ? `${command.category}: ` : ''}
-                  {command.title}
+                  {command.category ? `${categoryTitle(command.category)}: ` : ''}
+                  {commandTitle(command.title)}
                 </span>
                 {command.keybinding && <span className="palette__key">{command.keybinding}</span>}
               </button>

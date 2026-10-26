@@ -10,6 +10,7 @@
  */
 
 import type { PluginContext, PluginManifest } from '@aropyt/plugin-api';
+import { t } from '../i18n';
 import type { LoadablePlugin } from '@aropyt/core';
 
 const manifest: PluginManifest = {
@@ -130,7 +131,7 @@ function activate(context: PluginContext): void {
             if (items.length === 0) {
               const empty = document.createElement('div');
               empty.className = 'view-empty';
-              empty.textContent = '当前文档还没有标题。';
+              empty.textContent = t('view.noHeadings');
               body.append(empty);
               return;
             }

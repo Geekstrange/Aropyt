@@ -2296,3 +2296,49 @@ button {
   overflow-x: auto;
   overflow-y: auto;
 }
+
+/* 语言选择的国旗图标（设置面板） */
+.settings-segmented--flags button {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  padding: 4px 9px;
+}
+.settings-flag {
+  display: block;
+  width: 22px;
+  height: 15px;
+  object-fit: cover;
+}
+.settings-segmented--flags button .settings-flag {
+  opacity: 0.4;
+  transition: opacity 0.12s ease;
+}
+.settings-segmented--flags button:hover .settings-flag {
+  opacity: 0.7;
+}
+/*
+ * 选中态用「满色 vs 半透明」区分，不加任何描边。
+ * 之前用 outline 会在国旗外侧套一个方框 —— 旗帜本身有明确边界，
+ * 再套框既多余又难看。
+ */
+.settings-segmented--flags button.is-active .settings-flag {
+  opacity: 1;
+}
+
+/*
+ * 国旗按钮只要外圈描边表示选中。
+ * 基类 `.settings-segmented button.is-active` 有一层
+ * `inset 0 0 0 1px` 的内阴影 —— 那是给文字按钮做的内框，
+ * 放在图标上就变成"外面一圈 + 里面一个小蓝框"。
+ */
+.settings-segmented--flags button.is-active {
+  box-shadow: none;
+}
+
+/* 国旗按钮不要焦点环（选中态已由 .settings-flag 的 outline 表达） */
+.settings-segmented--flags button:focus,
+.settings-segmented--flags button:focus-visible {
+  outline: none;
+  box-shadow: none;
+}

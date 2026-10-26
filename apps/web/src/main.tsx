@@ -12,13 +12,14 @@
  */
 
 import { createRoot } from 'react-dom/client';
+import { t } from './i18n';
 import { installDebugLog } from './debug/debug-log';
 
 import { App } from './App.js';
 import './styles.css';
 
 const container = document.getElementById('root');
-if (!container) throw new Error('缺少 #root 容器');
+if (!container) throw new Error(t('app.missingRoot'));
 
 /*
  * 日志拦截在启动时就安装 —— 否则 F12 打开之前发生的日志（启动、

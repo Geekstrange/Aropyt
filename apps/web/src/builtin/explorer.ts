@@ -10,11 +10,12 @@
  */
 
 import type { PluginContext, PluginManifest, ViewContext, ViewProvider } from '@aropyt/plugin-api';
+import { t } from '../i18n';
 import type { LoadablePlugin } from '@aropyt/core';
 
 const manifest: PluginManifest = {
   id: 'aropyt.explorer',
-  name: '文件树',
+  name: t('view.treeTitle'),
   version: '0.1.0',
   engines: { aropyt: '^0.1.0' },
   activationEvents: ['onView:aropyt.explorer'],
@@ -279,14 +280,14 @@ function mount(container: HTMLElement, context: PluginContext, viewContext: View
        * 先指向「打开文件」，理由同 file.ts：
        * 文件夹选择器只列子目录，只装着 .md 的目录在它眼里是空的。
        */
-      empty('尚未打开工作区。点顶部工具栏的「打开文件…」或「打开文件夹…」开始。');
+      empty(t('view.noWorkspace'));
       return;
     }
 
     try {
       const activePath = context.editor.activeFile;
       await renderTree('', 0, activePath);
-      if (body.childElementCount === 0) empty('工作区里还没有 markdown 文件。');
+      if (body.childElementCount === 0) empty(t('view.noMarkdown'));
     } catch (error) {
       console.error(error);
       /*
@@ -298,7 +299,7 @@ function mount(container: HTMLElement, context: PluginContext, viewContext: View
        * 根本没有"授权"这个概念）。现在附带原文，用户截图就能定位。
        */
       const detail = error instanceof Error ? error.message : String(error);
-      empty(`读取工作区失败：${detail}`);
+      empty(t('view.readWorkspaceFailed', { detail }));
     }
   };
 

@@ -1,4 +1,5 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
+import { useT } from '../i18n/useT';
 import type { AropytRuntime } from '../runtime';
 import {
   clearLogs,
@@ -30,6 +31,7 @@ const LEVELS: readonly LogLevel[] = ['log', 'info', 'warn', 'error'];
 type Tab = 'docs' | 'perf' | 'logs';
 
 export function DebugPanel({ runtime, version, onClose }: DebugPanelProps) {
+  const t = useT();
   const [logs, setLogs] = useState(() => getLogs().slice());
   const [level, setLevel] = useState<LogLevel | 'all'>('all');
   const [fps, setFps] = useState(0);
@@ -164,25 +166,25 @@ export function DebugPanel({ runtime, version, onClose }: DebugPanelProps) {
   const lineCount = runtime.editor.getText().length === 0 ? 0 : runtime.editor.getText().split('\n').length;
 
   return (
-    <section className="debug-dock" aria-label="调试面板">
+    <section className="debug-dock" aria-label={t('debug.title')}>
       <div className="debug-dock__bar">
         <div className="debug-dock__left">
-          <strong className="debug-dock__title">调试</strong>
+          <strong className="debug-dock__title">{t('debug.shortTitle')}</strong>
           <span className="debug-dock__metric">FPS {fps}</span>
-          <span className="debug-dock__metric">延迟 {inputDelay}ms</span>
+          <span className="debug-dock__metric">{t('debug.latency', { ms: inputDelay })}</span>
           <span className="debug-dock__metric">
-            {heapMb === null ? '堆 —' : `堆 ${heapMb.toFixed(1)}MB`}
+            {heapMb === null ? t('debug.heapDash') : `${t('debug.heap')} ${heapMb.toFixed(1)}MB`}
           </span>
-          <span className="debug-dock__metric">长任务 {longTasks.length}</span>
+          <span className="debug-dock__metric">{t('debug.longTasks', { n: longTasks.length })}</span>
           <span className="debug-dock__metric">v{version}</span>
         </div>
 
         <div className="debug-dock__tabs">
           {(
             [
-              ['docs', '状态'],
-              ['perf', '性能'],
-              ['logs', '日志'],
+              ['docs', t('debug.tab.state')],
+              ['perf', t('debug.tab.perf')],
+              ['logs', t('debug.tab.logs')],
             ] as const
           ).map(([id, label]) => (
             <button
@@ -198,7 +200,7 @@ export function DebugPanel({ runtime, version, onClose }: DebugPanelProps) {
         </div>
 
         <div className="debug-dock__right">
-          <button type="button" className="settings-dialog__close" aria-label="关闭调试面板" onClick={onClose}>
+          <button type="button" className="settings-dialog__close" aria-label={t('debug.close')} onClick={onClose}>
             ×
           </button>
         </div>
@@ -208,17 +210,17 @@ export function DebugPanel({ runtime, version, onClose }: DebugPanelProps) {
         {tab === 'docs' && (
           <div className="debug-grid">
             <div className="debug-cell">
-              <h4>当前文档</h4>
+              <h4>{t('debug.doc')}</h4>
               <dl>
-                <div><dt>路径</dt><dd>{state.activePath ?? '（未命名）'}</dd></div>
-                <div><dt>行数</dt><dd>{lineCount}</dd></div>
-                <div><dt>字符</dt><dd>{runtime.editor.getText().length}</dd></div>
-                <div><dt>未保存</dt><dd>{state.dirty ? '是' : '否'}</dd></div>
-                <div><dt>恢复来源</dt><dd>{state.recoveredPath ?? '—'}</dd></div>
+                <div><dt>{t('debug.path')}</dt><dd>{state.activePath ?? t('debug.untitled')}</dd></div>
+                <div><dt>{t('debug.lines')}</dt><dd>{lineCount}</dd></div>
+                <div><dt>{t('debug.chars')}</dt><dd>{runtime.editor.getText().length}</dd></div>
+                <div><dt>{t('tabs.unsaved')}</dt><dd>{state.dirty ? t('common.yes') : t('common.no')}</dd></div>
+                <div><dt>{t('debug.recoveredFrom')}</dt><dd>{state.recoveredPath ?? '—'}</dd></div>
               </dl>
             </div>
             <div className="debug-cell">
-              <h4>标签页（{state.tabs.length}）</h4>
+              <h4>{t('debug.tabs',{n:state.tabs.length})}</h4>
               <ul>
                 {state.tabs.map((t) => (
                   <li key={t.path}>
@@ -230,17 +232,17 @@ export function DebugPanel({ runtime, version, onClose }: DebugPanelProps) {
               </ul>
             </div>
             <div className="debug-cell">
-              <h4>编辑器模式</h4>
+              <h4>{t('debug.editorMode')}</h4>
               <dl>
-                <div><dt>vim</dt><dd>{state.vimMode ? `开（${state.vimSubMode ?? 'normal'}）` : '关'}</dd></div>
-                <div><dt>侧栏</dt><dd>{state.sidebarOpen ? '开' : '关'}</dd></div>
+                <div><dt>vim</dt><dd>{state.vimMode ? `${t('common.on')} (${state.vimSubMode ?? 'normal'})` : t('common.off')}</dd></div>
+                <div><dt>{t('toolbar.sidebar')}</dt><dd>{state.sidebarOpen ? t('common.on') : t('common.off')}</dd></div>
               </dl>
             </div>
             <div className="debug-cell">
-              <h4>运行时</h4>
+              <h4>{t('debug.runtime')}</h4>
               <dl>
-                <div><dt>版本</dt><dd>{version}</dd></div>
-                <div><dt>平台</dt><dd>{navigator.platform || 'unknown'}</dd></div>
+                <div><dt>{t('debug.version')}</dt><dd>{version}</dd></div>
+                <div><dt>{t('debug.platform')}</dt><dd>{navigator.platform || 'unknown'}</dd></div>
                 
               </dl>
             </div>
@@ -251,13 +253,13 @@ export function DebugPanel({ runtime, version, onClose }: DebugPanelProps) {
           <div className="debug-perf">
             <div className="debug-metrics">
               <div><dt>FPS: {fps}</dt></div>
-              <div><dt>输入延迟: {inputDelay}ms</dt></div>
-              <div><dt>堆内存: {heapMb === null ? '—' : `${heapMb.toFixed(1)} MB`}</dt></div>
-              <div><dt>线程阻塞: {blockPct}%</dt></div>
+              <div><dt>{t('debug.inputLatency',{ms:inputDelay})}</dt></div>
+              <div><dt>{t('debug.heapMem', { v: heapMb === null ? '—' : `${heapMb.toFixed(1)} MB` })}</dt></div>
+              <div><dt>{t('debug.blocking',{pct:blockPct})}</dt></div>
             </div>
-            <h4>长任务（&gt;50ms，最近 50 个）</h4>
+            <h4>{t('debug.longTaskHint')}</h4>
             {longTasks.length === 0 ? (
-              <p className="debug-logs__empty">无</p>
+              <p className="debug-logs__empty">{t('debug.none')}</p>
             ) : (
               [...longTasks].reverse().map((task, index) => (
                 <div key={`${task.at}-${index}`} className="debug-logs__row">
@@ -276,8 +278,8 @@ export function DebugPanel({ runtime, version, onClose }: DebugPanelProps) {
               <input
                 type="text"
                 className="debug-search__input"
-                aria-label="搜索日志"
-                placeholder="搜索日志…"
+                aria-label={t('debug.searchLogs')}
+                placeholder={t('debug.searchPlaceholder')}
                 value={search}
                 onChange={(e) => setSearch(e.target.value)}
               />
@@ -290,19 +292,17 @@ export function DebugPanel({ runtime, version, onClose }: DebugPanelProps) {
                     aria-pressed={option === level}
                     onClick={() => setLevel(option)}
                   >
-                    {option === 'all' ? '全部' : option}
+                    {option === 'all' ? t('debug.all') : option}
                   </button>
                 ))}
               </div>
               <button type="button" className="settings-button" onClick={copyReport}>
-                {copied ? '已复制' : '复制报告'}
+                {copied ? t('debug.copied') : t('debug.copyReport')}
               </button>
-              <button type="button" className="settings-button" onClick={clearLogs}>
-                清空
-              </button>
+              <button type="button" className="settings-button" onClick={clearLogs}>{t('debug.clear')}</button>
             </div>
             <div className="debug-dock__logs" ref={listRef}>
-              {visible.length === 0 && <p className="debug-logs__empty">暂无日志</p>}
+              {visible.length === 0 && <p className="debug-logs__empty">{t('debug.noLogs')}</p>}
               {visible.map((entry, index) => (
                 <div key={`${entry.at}-${index}`} className={`debug-logs__row debug-logs__row--${entry.level}`}>
                   <span className="debug-logs__time">{new Date(entry.at).toLocaleTimeString()}</span>

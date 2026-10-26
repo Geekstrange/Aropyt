@@ -63,6 +63,8 @@ export type CapabilitySnapshot = Readonly<Record<CapabilityName, boolean>>;
 export interface CommandDescriptor {
   readonly id: string;
   readonly title: string;
+  /** i18n key；有值时渲染层用它取当前语言标题。 */
+  readonly titleKey?: string;
   readonly category?: string;
   readonly keybinding?: string;
   readonly source: 'builtin' | 'plugin';

@@ -20,6 +20,7 @@
  */
 
 import { useCallback, useEffect, useRef, useState, useSyncExternalStore, type JSX } from 'react';
+import { commandTitle, getLocale, subscribe, t } from '../i18n';
 
 import type { Disposable, Event, ViewContext } from '@aropyt/plugin-api';
 import { guardSync } from '@aropyt/core';
@@ -50,6 +51,12 @@ function MountedView({
 }: MountedViewProps): JSX.Element {
   const containerRef = useRef<HTMLDivElement>(null);
   const provider = registration?.provider;
+  /*
+   * 视图是**命令式**渲染的（插件自己 createElement + append），
+   * 语言切换不会让它重画 —— 表现为「界面变英文了，大纲空状态还是中文」
+   * （或反过来）。订阅 locale 并放进 effect 依赖，切换时卸载重建视图。
+   */
+  const locale = useSyncExternalStore(subscribe, getLocale);
 
   useEffect(() => {
     const container = containerRef.current;
@@ -71,8 +78,8 @@ function MountedView({
       const note = document.createElement('div');
       note.className = 'view-empty';
       note.textContent = runtime.getState().safeMode
-        ? '安全模式已禁用全部插件，移除地址栏的 ?safe 后重试。'
-        : '正在激活插件…';
+        ? t('view.safeMode')
+        : t('view.activating');
       container.append(note);
       return () => container.replaceChildren();
     }
@@ -82,7 +89,7 @@ function MountedView({
       // 而不是留一个空视图让人以为插件坏了。
       const note = document.createElement('div');
       note.className = 'view-empty';
-      note.textContent = '此视图仅提供 data()，通用列表渲染计划在 M1 落地。';
+      note.textContent = t('view.dataOnly');
       container.append(note);
       return () => container.replaceChildren();
     }
@@ -110,7 +117,7 @@ function MountedView({
       }, undefined);
       container.replaceChildren();
     };
-  }, [provider, viewId, pluginId, runtime]);
+  }, [provider, viewId, pluginId, runtime, locale]);
 
   return (
     <section className={collapsed ? 'view view--collapsed' : 'view'}>
@@ -130,11 +137,11 @@ function MountedView({
         type="button"
         className="view-header"
         aria-expanded={!collapsed}
-        title={collapsed ? `展开「${title}」` : `折叠「${title}」`}
+        title={collapsed ? t('view.expand', { title: commandTitle(title) }) : t('view.collapse', { title: commandTitle(title) })}
         onClick={onToggleCollapse}
       >
         <span className={collapsed ? 'twisty' : 'twisty twisty--expanded'} aria-hidden="true" />
-        <span className="view-header__title">{title}</span>
+        <span className="view-header__title">{commandTitle(title)}</span>
       </button>
       {/*
        * 折叠时**只隐藏、不卸载**：这块容器是插件用命令式代码填的
@@ -275,8 +282,8 @@ export function ViewColumn({ runtime, location, side, open }: ViewColumnProps): 
       if (requestedRef.current.has(view.id)) continue;
       requestedRef.current.add(view.id);
       void runtime.host.activateFor(`onView:${view.id}`).catch((error: unknown) => {
-        console.error(`激活视图 ${view.id} 所属插件失败`, error);
-        void runtime.windowService.showMessage(`视图「${view.title}」加载失败`, { level: 'error' });
+        console.error(t('view.activateFailed', { id: view.id }), error);
+        void runtime.windowService.showMessage(t('view.loadFailed', { title: view.title }), { level: 'error' });
       });
     }
   }, [runtime, signature]);

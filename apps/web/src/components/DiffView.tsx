@@ -1,4 +1,5 @@
 import { useMemo, useState } from 'react';
+import { useT } from '../i18n/useT';
 import { diffLines, diffStats, toSplitRows, type DiffLine } from '../lib/diff';
 
 /**
@@ -24,20 +25,21 @@ type View = 'unified' | 'split';
 const SIGN: Record<DiffLine['t'], string> = { add: '+', del: '−', equal: ' ' };
 
 export function DiffView({ fileName, before, after, onClose }: DiffViewProps) {
+  const t = useT();
   const [view, setView] = useState<View>('unified');
   const rows = useMemo(() => diffLines(before, after), [before, after]);
   const stats = useMemo(() => diffStats(rows), [rows]);
   const split = useMemo(() => toSplitRows(rows), [rows]);
 
   return (
-    <section className="diff-scope diff" aria-label="版本对比">
+    <section className="diff-scope diff" aria-label={t('diff.title')}>
       <header className="diff-head">
         <span className="diff-file mono">{fileName}</span>
         <span className="diff-stats">
           <span className="stat add mono">+{stats.add}</span>
           <span className="stat del mono">−{stats.del}</span>
         </span>
-        <div className="diff-toggle" role="tablist" aria-label="Diff 视图">
+        <div className="diff-toggle" role="tablist" aria-label={t('diff.label')}>
           <button
             type="button"
             data-view="unified"
@@ -58,7 +60,7 @@ export function DiffView({ fileName, before, after, onClose }: DiffViewProps) {
           </button>
         </div>
         {onClose && (
-          <button type="button" className="settings-dialog__close" aria-label="关闭对比" onClick={onClose}>
+          <button type="button" className="settings-dialog__close" aria-label={t('diff.close')} onClick={onClose}>
             ×
           </button>
         )}
