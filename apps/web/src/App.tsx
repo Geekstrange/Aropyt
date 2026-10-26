@@ -153,7 +153,20 @@ export function App(): JSX.Element {
   }, [runtime]);
 
   const liveState = useMaybeRuntimeState(runtime);
-  const sidebarOpen = liveState?.sidebarOpen ?? isWideScreen();
+  /*
+   * 侧栏开合的两套语义：
+   * - 宽屏（>900px）：侧栏占布局宽度，开合**写进配置**，下次启动保持。
+   * - 窄屏：侧栏是覆盖层，默认收起。此时不能沿用配置里的 open=true
+   *   —— 那会让 400px 宽的窗口里侧栏占掉 70%，编辑器只剩一条缝。
+   *   用户点开只影响本次会话，不污染配置。
+   */
+  const wide = useMediaQuery('(min-width: 901px)');
+  const [narrowSidebarOpen, setNarrowSidebarOpen] = useState(false);
+  const sidebarOpen = wide ? (liveState?.sidebarOpen ?? true) : narrowSidebarOpen;
+  const toggleSidebar = useCallback(() => {
+    if (wide) void runtime?.updateSettings({ sidebar: { open: !sidebarOpen } });
+    else setNarrowSidebarOpen((value) => !value);
+  }, [wide, sidebarOpen, runtime]);
 
   /*
    * 界面语言：配置（settings.jsonc 的 locale）是唯一真源。
@@ -290,7 +303,7 @@ export function App(): JSX.Element {
           title={t('toolbar.sidebar')}
           aria-label={t('toolbar.sidebar')}
           aria-pressed={sidebarOpen}
-          onClick={() => void runtime?.updateSettings({ sidebar: { open: !sidebarOpen } })}
+          onClick={toggleSidebar}
         >
           <Icon name={sidebarOpen ? 'sidebarActive' : 'sidebar'} />
         </button>
@@ -487,8 +500,23 @@ function Header({ runtime }: { readonly runtime: AropytRuntime }): JSX.Element {
   );
 }
 
-function isWideScreen(): boolean {
-  return typeof window !== 'undefined' && window.matchMedia('(min-width: 901px)').matches;
+/**
+ * 响应式的媒体查询。
+ *
+ * `isWideScreen()` 是**一次性读取**，窗口拖窄后不会重渲染 ——
+ * 侧栏的"窄屏该不该默认收起"因此永远按第一次的宽度算。
+ * 用 useSyncExternalStore 订阅 matchMedia，窗口跨越断点时自动更新。
+ */
+function useMediaQuery(query: string): boolean {
+  return useSyncExternalStore(
+    (onChange) => {
+      const mql = window.matchMedia(query);
+      mql.addEventListener('change', onChange);
+      return () => mql.removeEventListener('change', onChange);
+    },
+    () => window.matchMedia(query).matches,
+    () => false,
+  );
 }
 
 interface ToolbarProps {

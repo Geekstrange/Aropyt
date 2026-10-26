@@ -10,10 +10,67 @@
 
 ### Planned
 
-- 编辑历史的版本间 diff
-- 完整的多语言界面（English / 简体中文 / 繁體中文 / 日本語 / 한국어 /
-  Deutsch / Français / Italiano / Русский）—— **已跳票**，
-  待核心体验稳定后再排期
+- 编辑历史的版本间 diff（v0.1.2 已完成单版本对比，尚缺版本间对比）
+- 工具栏在触屏上的点按目标（当前约 26px，低于 44px 建议值）
+
+## [0.1.3] - 2026-10-26
+
+> Consistent with `docs/releases/v0.1.3.md`.
+
+Eight interface languages, and a layout that works on a phone.
+
+### Added
+
+- **Eight interface languages** — 简体中文 / English / Deutsch / Français /
+  日本語 / 한국어 / Italiano / Русский, 223 keys each, selectable from
+  Settings › Language as a flag row (plus a globe for "follow system")
+  - `t()` is a plain function over module-level state, not a React hook —
+    runtime messages and plugin code need text outside the component tree
+  - `TextKey = keyof typeof zh`; every dictionary is `Record<TextKey, string>`,
+    so a missing key fails the build instead of falling back at runtime
+  - Initial locale resolves at module load rather than defaulting to Chinese;
+    imperative views render once and would otherwise stay in the wrong language
+  - Command titles and category prefixes translate at render time (plugins
+    declare them in a module-level manifest, where `t()` would freeze the
+    language active at import)
+- **Portrait layout**
+  - > 900px — sidebar occupies layout width, open/closed state persists
+  - ≤ 900px — sidebar becomes an overlay, closed by default, no longer
+    written to settings when toggled
+  - ≤ 1200px — toolbar wraps to a second row (it previously scrolled with
+    its scrollbar hidden, so the last ten buttons were invisible)
+  - ≤ 640px — status bar keeps word count and drops secondary items;
+    settings / history / command panels go full-screen
+
+### Fixed
+
+- **APK shipped the Tauri logo** — `scripts/make-icons.mjs` only writes
+  desktop icons and never touched `src-tauri/icons/android/`, which still
+  held the `tauri init` defaults. Mobile assets are now generated with
+  `npx tauri icon logo.svg` (five densities plus `mipmap-anydpi-v26`
+  adaptive-icon layers). Reinstall the APK to pick it up.
+- Flag icons blank for German, Italian, Russian, Korean — each source SVG has
+  its own coordinate space (`gb` `0 0 60 30`, `de` `0 0 5 3`,
+  `kr` `-72 -48 144 96`); pinning all of them to `0 0 900 600` shrank the
+  artwork into a corner. Each flag keeps its own `viewBox` now.
+- Several flags share `id="a"`; inlined side by side they collided. Every SVG
+  id carries a locale prefix.
+- Selected language always reported as "system" — `RuntimeState.locale` read
+  from `configuration` while `updateSettings()` writes `currentSettings`.
+- Outline and file-tree empty states kept the previous language after a
+  switch — imperatively rendered views are now rebuilt on locale change.
+- Sidebar open/closed state never reacted to window resizing — `isWideScreen()`
+  read the width once; now driven by a `matchMedia` subscription.
+- Narrow-screen status bar lost its word count — the flex spacer pushed it out
+  of the container and `overflow: hidden` clipped from the right.
+
+### Known limitations
+
+- Third-party plugins are not translated; only built-in command titles and
+  categories are mapped.
+- Internal log lines, manifest validation errors and the debug report template
+  stay in Chinese (their audience is developers; the keywords are greppable).
+- Toolbar buttons are ~26px even on touch screens, below the 44px target.
 
 ## [0.1.2] - 2026-10-24
 

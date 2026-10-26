@@ -1,6 +1,17 @@
 /**
  * 从 logo.svg 生成应用图标（PNG + Windows ICO）。
  *
+ * ⚠️ **这个脚本不生成 Android / iOS 图标。**
+ *
+ * 移动端图标有自适应图标（`mipmap-anydpi-v26/` + foreground/background 分层）
+ * 和一套不同的分辨率命名，由 Tauri CLI 负责：
+ *
+ *     npx tauri icon logo.svg
+ *
+ * 它会一次性重写 `src-tauri/icons/` 下的**全部平台**图标（含 android/ios
+ * 子目录）。只想更新桌面图标时用本脚本更快（走本机 Chrome，无额外依赖）；
+ * 但只要动了 logo，两个都该跑一遍 —— 否则 APK 里还是旧图标。
+ *
  * ── 为什么用浏览器而不是图像库 ──────────────────────────────
  * 这个 logo 是纯 path 的 SVG，带多段贝塞尔曲线。用 Python 手写 SVG
  * 光栅化器要处理曲线、填充规则、变换 —— 那是在重造一个渲染引擎。

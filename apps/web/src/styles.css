@@ -2342,3 +2342,104 @@ button {
   outline: none;
   box-shadow: none;
 }
+
+/* ══════════════════════════════════════════════════════════════
+ * 窄屏适配（< 640px）
+ *
+ * 断点分工：
+ *   901px 以上 —— 桌面：侧栏占布局宽度
+ *   901px 以下 —— 侧栏变覆盖层（默认收起，见 @media 900）
+ *   640px 以下 —— 手机：状态栏与面板需要重新分配空间
+ * ══════════════════════════════════════════════════════════════ */
+@media (max-width: 640px) {
+  /*
+   * 状态栏：优先保住字数统计。
+   * 原来 .status-bar 是 overflow:hidden + nowrap，窄屏下统计被挤出可视区，
+   * 用户只剩一个绿点，最有用的信息反而没了。
+   */
+  .status-bar {
+    gap: 6px;
+    padding: 0 8px;
+  }
+
+  .status-bar > .status-item {
+    /* 插件告警这类只在异常时出现的项，窄屏让位给统计 */
+    display: none;
+  }
+
+  /*
+   * 窄屏去掉弹性占位，让 vim 与统计紧挨着排在左侧。
+   * 靠 margin-left:auto 推右在极窄宽度下不可靠 —— 一旦内容总宽超过
+   * 容器，overflow:hidden 会从右侧裁掉，最先消失的就是统计。
+   */
+  .status-bar__spacer {
+    display: none;
+  }
+
+  .status-bar__stats {
+    padding: 0 6px;
+    overflow: hidden;
+    text-overflow: ellipsis;
+  }
+
+  /*
+   * 面板铺满：560px 的卡片在 400px 屏上是四边各留 24px 的小窗，
+   * 设置项本来就密，再挤一层边框就没有可读宽度了。
+   */
+  .settings-dialog {
+    width: 100vw;
+    max-width: 100vw;
+    height: 100dvh;
+    max-height: 100dvh;
+    border: none;
+  }
+
+  .settings-backdrop {
+    padding: 0;
+  }
+
+  /* 工具栏：末个图标不贴边，暗示还有内容可以滑 */
+  .toolbar {
+    padding-right: 14px;
+  }
+}
+
+/*
+ * 中等宽度（641–1200px）：工具栏允许折行。
+ *
+ * 21 个图标加分组间隙约 900px 宽。1024px 窗口扣掉 240px 侧栏后编辑器区
+ * 只剩 784px —— 原来靠横向滚动，而滚动条又被刻意隐藏（见 .toolbar 的
+ * scrollbar-width: none），结果是右侧「设置/插件/源码模式」几个按钮
+ * 完全看不见，用户以为工具栏就那么多。
+ *
+ * 折行最多两行，代价是 +36px 高度；窄于 641px 时仍用横滑（手机上
+ * 纵向空间更宝贵，且横滑符合触摸习惯）。
+ */
+@media (max-width: 1200px) {
+  .toolbar {
+    flex-wrap: wrap;
+    row-gap: 2px;
+    padding-right: 8px;
+  }
+
+  /* 换行后弹性占位会独占一行，把它压掉 */
+  .toolbar-spacer {
+    flex: 0 0 0;
+    min-width: 0;
+  }
+
+  /* 手机上按钮收紧，把折行从 3 行压到 2 行 */
+  .toolbar .tool-button {
+    padding: 4px 5px;
+  }
+}
+
+/*
+ * 竖屏：顶部「平台能力说明」按钮会撑出行高并被裁掉半个。
+ * 它是提示性信息（只在能力受限时出现），窄屏直接让位给标签栏。
+ */
+@media (max-width: 640px) {
+  .app-header > .button {
+    display: none;
+  }
+}
