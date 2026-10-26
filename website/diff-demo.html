@@ -1,0 +1,523 @@
+<!DOCTYPE html>
+<html lang="zh-CN" data-theme="dark">
+
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <title>Aropyt — Diff demo</title>
+    <style>
+        :root {
+            --bg: #131315;
+            --card: #1a1a1c;
+            --card-2: #232326;
+            --fg: #e6e6e3;
+            --muted: #8b8a85;
+            --border: rgba(255, 255, 255, 0.1);
+            --accent: #5bb44e;
+            --accent-strong: #6fc95f;
+            --accent-contrast: #0d2a0c;
+
+            --diff-add-bg: rgba(91, 180, 78, 0.13);
+            --diff-del-bg: rgba(224, 92, 88, 0.13);
+            --diff-add-sign: #6fc95f;
+            --diff-del-sign: #e06c6c;
+            --diff-gutter: rgba(255, 255, 255, 0.022);
+            --diff-empty: rgba(255, 255, 255, 0.03);
+            --diff-empty-stripe: rgba(255, 255, 255, 0.05);
+        }
+
+        :root[data-theme="light"] {
+            color-scheme: light;
+            --bg: #ffffff;
+            --card: #f7f7f5;
+            --card-2: #eeedea;
+            --fg: #26262b;
+            --muted: #6b6a66;
+            --border: rgba(0, 0, 0, 0.1);
+
+            --diff-add-bg: #e9f7e6;
+            --diff-del-bg: #fdeceb;
+            --diff-add-sign: #2f7a26;
+            --diff-del-sign: #b83b35;
+            --diff-gutter: rgba(0, 0, 0, 0.025);
+            --diff-empty: rgba(0, 0, 0, 0.03);
+            --diff-empty-stripe: rgba(0, 0, 0, 0.055);
+        }
+
+        * {
+            box-sizing: border-box;
+            margin: 0;
+            padding: 0;
+        }
+
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", "Noto Sans",
+                "PingFang SC", "Hiragino Sans", "Microsoft YaHei", sans-serif;
+            background: var(--bg);
+            color: var(--fg);
+            line-height: 1.6;
+            -webkit-font-smoothing: antialiased;
+            padding: 16px;
+        }
+
+        ::selection {
+            background: rgba(91, 180, 78, 0.2);
+            color: var(--accent-strong);
+        }
+
+        :root[data-theme="light"] ::selection {
+            background: rgba(91, 180, 78, 0.24);
+            color: #2f7a26;
+        }
+
+        .mono {
+            font-family: var(--mono);
+        }
+
+        /* ── diff 容器 ── */
+        .diff {
+            border: 1px solid var(--border);
+            background: var(--card);
+            overflow: hidden;
+        }
+
+        .diff-head {
+            display: flex;
+            align-items: center;
+            gap: 14px;
+            padding: 9px 14px;
+            background: var(--card-2);
+            border-bottom: 1px solid var(--border);
+            font-size: 13px;
+        }
+
+        .diff-file {
+            color: var(--fg);
+        }
+
+        .diff-file::before {
+            content: "";
+            display: inline-block;
+            width: 6px;
+            height: 6px;
+            margin-right: 8px;
+            vertical-align: 1px;
+            background: var(--accent);
+        }
+
+        .diff-stats {
+            margin-left: auto;
+            display: flex;
+            gap: 10px;
+            font-size: 12.5px;
+        }
+
+        .stat.add {
+            color: var(--diff-add-sign);
+        }
+
+        .stat.del {
+            color: var(--diff-del-sign);
+        }
+
+        .diff-toggle {
+            display: flex;
+            border: 1px solid var(--border);
+        }
+
+        .diff-toggle button {
+            font: inherit;
+            font-size: 12px;
+            padding: 4px 11px;
+            background: transparent;
+            color: var(--muted);
+            border: 0;
+            cursor: pointer;
+        }
+
+        .diff-toggle button+button {
+            border-left: 1px solid var(--border);
+        }
+
+        .diff-toggle button:hover {
+            color: var(--fg);
+        }
+
+        .diff-toggle button.active {
+            background: var(--accent);
+            color: var(--accent-contrast);
+        }
+
+        /* ── 主体 ── */
+        .diff-body {
+            overflow-x: auto;
+        }
+
+        .drow {
+            display: grid;
+            grid-template-columns: 44px 44px 22px minmax(max-content, 1fr);
+            min-height: 24px;
+            font-family: var(--mono);
+            font-size: 13px;
+            line-height: 24px;
+            border-left: 2px solid transparent;
+        }
+
+        .ln {
+            min-height: 24px;
+            text-align: right;
+            padding-right: 10px;
+            color: var(--muted);
+            opacity: 0.55;
+            user-select: none;
+            background: var(--diff-gutter);
+            font-variant-numeric: tabular-nums;
+        }
+
+        .sign {
+            min-height: 24px;
+            text-align: center;
+            user-select: none;
+            color: var(--muted);
+            opacity: 0.7;
+        }
+
+        .tx {
+            min-height: 24px;
+            padding: 0 14px;
+            white-space: pre;
+            color: var(--fg);
+        }
+
+        .drow.add {
+            background: var(--diff-add-bg);
+            border-left-color: var(--diff-add-sign);
+        }
+
+        .drow.add .ln,
+        .drow.add .sign {
+            color: var(--diff-add-sign);
+            opacity: 1;
+        }
+
+        .drow.del {
+            background: var(--diff-del-bg);
+            border-left-color: var(--diff-del-sign);
+        }
+
+        .drow.del .ln,
+        .drow.del .sign {
+            color: var(--diff-del-sign);
+            opacity: 1;
+        }
+
+        .drow.equal .tx {
+            color: var(--fg);
+            opacity: 0.9;
+        }
+
+        /* ── 分栏视图 ── */
+        .drow.split {
+            grid-template-columns: 1fr 1fr;
+            border-left: 0;
+            min-width: 640px;
+        }
+
+        .drow.split .side {
+            display: grid;
+            grid-template-columns: 40px 18px minmax(max-content, 1fr);
+            min-height: 24px;
+        }
+
+        .drow.split .side+.side {
+            border-left: 1px solid var(--border);
+        }
+
+        .drow.split .side .ln {
+            padding-right: 8px;
+        }
+
+        .drow.split .side.add {
+            background: var(--diff-add-bg);
+        }
+
+        .drow.split .side.add .ln,
+        .drow.split .side.add .sign {
+            color: var(--diff-add-sign);
+            opacity: 1;
+        }
+
+        .drow.split .side.del {
+            background: var(--diff-del-bg);
+        }
+
+        .drow.split .side.del .ln,
+        .drow.split .side.del .sign {
+            color: var(--diff-del-sign);
+            opacity: 1;
+        }
+
+        .drow.split .side.empty {
+            background-color: var(--diff-empty);
+            background-image: repeating-linear-gradient(45deg,
+                    transparent 0 5px,
+                    var(--diff-empty-stripe) 5px 10px);
+        }
+
+        .diff-body::-webkit-scrollbar {
+            height: 10px;
+        }
+
+        .diff-body::-webkit-scrollbar-track {
+            background: transparent;
+        }
+
+        .diff-body::-webkit-scrollbar-thumb {
+            background: var(--border);
+            border: 3px solid var(--card);
+        }
+
+        .diff-body::-webkit-scrollbar-thumb:hover {
+            background: var(--muted);
+        }
+    </style>
+</head>
+
+<body>
+
+    <div class="diff" id="diff">
+        <div class="diff-head">
+            <span class="diff-file mono" data-i18n="diff.file">demo.md</span>
+            <span class="diff-stats">
+                <span class="stat add mono" id="stat-add">+0</span>
+                <span class="stat del mono" id="stat-del">−0</span>
+            </span>
+            <div class="diff-toggle" role="tablist" aria-label="Diff view">
+                <button type="button" data-view="unified" class="active" aria-selected="true"
+                    data-i18n="diff.unified">Unified</button>
+                <button type="button" data-view="split" aria-selected="false" data-i18n="diff.split">Split</button>
+            </div>
+        </div>
+        <div class="diff-body" id="diff-body"></div>
+    </div>
+
+    <script>
+        /* ── 数据：demo.md 的两个版本对比 ── */
+        const LINES = [
+            { t: 'equal', text: '# Release notes' },
+            { t: 'equal', text: '' },
+            { t: 'del', text: 'The editor renders what you write in a split-pane.' },
+            { t: 'add', text: 'The editor renders what you write, right where you write it.' },
+            { t: 'equal', text: '' },
+            { t: 'equal', text: '## Highlights' },
+            { t: 'equal', text: '' },
+            { t: 'del', text: '- Split-pane preview' },
+            { t: 'del', text: '- Manual save only' },
+            { t: 'add', text: '- In-place rendering' },
+            { t: 'add', text: '- Files stay plain Markdown' },
+            { t: 'add', text: '- Editing history with snapshots' },
+            { t: 'equal', text: '- Plugin system' },
+            { t: 'equal', text: '' },
+            { t: 'equal', text: '## Install' },
+            { t: 'equal', text: '' },
+            { t: 'del', text: 'npm install -g aropyt' },
+            { t: 'add', text: 'Download from aropyt.com' },
+            { t: 'add', text: '' },
+            { t: 'add', text: 'WebKitGTK is required on Linux.' },
+        ];
+
+        let o = 1, n = 1;
+        LINES.forEach((l) => {
+            if (l.t !== 'add') l.oldNo = o++;
+            if (l.t !== 'del') l.newNo = n++;
+        });
+
+        const esc = (s) => s
+            .replace(/&/g, '&amp;')
+            .replace(/</g, '&lt;')
+            .replace(/>/g, '&gt;');
+
+        function renderUnified(body) {
+            const signOf = { add: '+', del: '−', equal: ' ' };
+            body.innerHTML = LINES.map((l) => `
+    <div class="drow ${l.t}">
+      <span class="ln">${l.t === 'add' ? '' : l.oldNo}</span>
+      <span class="ln">${l.t === 'del' ? '' : l.newNo}</span>
+      <span class="sign">${signOf[l.t]}</span>
+      <code class="tx">${esc(l.text)}</code>
+    </div>
+  `).join('');
+        }
+
+        function toSplitRows() {
+            const rows = [];
+            let dels = [], adds = [];
+
+            const flush = () => {
+                const k = Math.max(dels.length, adds.length);
+                for (let i = 0; i < k; i++) {
+                    rows.push({ left: dels[i] || null, right: adds[i] || null });
+                }
+                dels = [];
+                adds = [];
+            };
+
+            LINES.forEach((l) => {
+                if (l.t === 'del') dels.push(l);
+                else if (l.t === 'add') adds.push(l);
+                else {
+                    flush();
+                    rows.push({ left: l, right: l });
+                }
+            });
+            flush();
+            return rows;
+        }
+
+        function sideHtml(line, side) {
+            if (!line) {
+                return `<div class="side empty">
+      <span class="ln"></span><span class="sign"></span><code class="tx"></code>
+    </div>`;
+            }
+            const cls = line.t === 'del' ? 'del' : line.t === 'add' ? 'add' : '';
+            const no = side === 'left' ? line.oldNo : line.newNo;
+            const sign = line.t === 'del' ? '−' : line.t === 'add' ? '+' : ' ';
+            return `<div class="side ${cls}">
+    <span class="ln">${no ?? ''}</span>
+    <span class="sign">${sign}</span>
+    <code class="tx">${esc(line.text)}</code>
+  </div>`;
+        }
+
+        function renderSplit(body) {
+            body.innerHTML = toSplitRows().map((row) => `
+    <div class="drow split">
+      ${sideHtml(row.left, 'left')}
+      ${sideHtml(row.right, 'right')}
+    </div>
+  `).join('');
+        }
+
+        const bodyEl = document.getElementById('diff-body');
+        const toggleBtns = document.querySelectorAll('.diff-toggle button');
+        let view = 'unified';
+
+        function render() {
+            if (view === 'unified') renderUnified(bodyEl);
+            else renderSplit(bodyEl);
+            toggleBtns.forEach((b) => {
+                const on = b.dataset.view === view;
+                b.classList.toggle('active', on);
+                b.setAttribute('aria-selected', String(on));
+            });
+        }
+
+        toggleBtns.forEach((btn) => {
+            btn.addEventListener('click', () => {
+                if (btn.dataset.view === view) return;
+                view = btn.dataset.view;
+                render();
+            });
+        });
+
+        document.getElementById('stat-add').textContent =
+            '+' + LINES.filter((l) => l.t === 'add').length;
+        document.getElementById('stat-del').textContent =
+            '−' + LINES.filter((l) => l.t === 'del').length;
+
+        render();
+
+        /* ── i18n：跟随父页面 ── */
+        (function () {
+            var I18N = {
+                en: { "diff.file": "demo.md", "diff.unified": "Unified", "diff.split": "Split" },
+                "zh-CN": { "diff.file": "demo.md", "diff.unified": "统一视图", "diff.split": "分栏视图" },
+                "zh-TW": { "diff.file": "demo.md", "diff.unified": "統一視圖", "diff.split": "分欄視圖" },
+                ja: { "diff.file": "demo.md", "diff.unified": "統合ビュー", "diff.split": "分割ビュー" },
+                ko: { "diff.file": "demo.md", "diff.unified": "통합 보기", "diff.split": "분할 보기" },
+                de: { "diff.file": "demo.md", "diff.unified": "Vereint", "diff.split": "Geteilt" },
+                fr: { "diff.file": "demo.md", "diff.unified": "Unifié", "diff.split": "Côte à côte" },
+                it: { "diff.file": "demo.md", "diff.unified": "Unificato", "diff.split": "Diviso" },
+                ru: { "diff.file": "demo.md", "diff.unified": "Общий", "diff.split": "Раздельный" }
+            };
+
+            function detectLang() {
+                try {
+                    if (parent && parent !== window && parent.document && parent.document.documentElement) {
+                        var l = parent.document.documentElement.getAttribute('data-lang') ||
+                            parent.document.documentElement.getAttribute('lang');
+                        if (l && I18N[l]) return l;
+                    }
+                } catch (e) { }
+                try {
+                    var s = localStorage.getItem('aropyt.lang');
+                    if (s && I18N[s]) return s;
+                } catch (e) { }
+                var nav = navigator.language || 'en';
+                if (I18N[nav]) return nav;
+                var base = nav.split('-')[0];
+                var byBase = Object.keys(I18N).find(function (c) { return c.split('-')[0] === base; });
+                return byBase || 'zh-CN';
+            }
+
+            function apply(lang) {
+                var dict = I18N[lang] || I18N['zh-CN'];
+                document.documentElement.setAttribute('data-lang', lang);
+                document.documentElement.setAttribute('lang', lang);
+                document.querySelectorAll('[data-i18n]').forEach(function (el) {
+                    var k = el.getAttribute('data-i18n');
+                    if (dict[k]) el.textContent = dict[k];
+                });
+            }
+
+            apply(detectLang());
+
+            try {
+                new MutationObserver(function () { apply(detectLang()); })
+                    .observe(parent.document.documentElement, {
+                        attributes: true,
+                        attributeFilter: ['lang', 'data-lang']
+                    });
+            } catch (e) { }
+
+            window.addEventListener('storage', function (e) {
+                if (!e.key || e.key === 'aropyt.lang') apply(detectLang());
+            });
+        })();
+
+        /* ── 主题：跟随父页面 ── */
+        (function () {
+            function readParentTheme() {
+                try {
+                    if (parent && parent !== window && parent.document && parent.document.documentElement) {
+                        return parent.document.documentElement.getAttribute('data-theme');
+                    }
+                } catch (e) { }
+                return null;
+            }
+            function readStoredTheme() {
+                try { return localStorage.getItem('aropyt.theme'); } catch (e) { return null; }
+            }
+            function systemTheme() {
+                return window.matchMedia('(prefers-color-scheme: light)').matches ? 'light' : 'dark';
+            }
+            function sync() {
+                var t = readParentTheme() || readStoredTheme() || systemTheme();
+                document.documentElement.setAttribute('data-theme', t);
+            }
+            sync();
+            try {
+                new MutationObserver(sync).observe(parent.document.documentElement, {
+                    attributes: true,
+                    attributeFilter: ['data-theme']
+                });
+            } catch (e) { }
+            window.addEventListener('storage', function (e) {
+                if (!e.key || e.key === 'aropyt.theme') sync();
+            });
+        })();
+    </script>
+</body>
+
+</html>

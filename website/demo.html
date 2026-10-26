@@ -1,0 +1,1566 @@
+<!DOCTYPE html>
+<html lang="zh-CN" data-theme="dark">
+
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <title>Aropyt demo</title>
+    <style>
+        /* ── CodeMirror 核心 ─────────────────────────────────── */
+        .ͼ1.cm-focused {
+            outline: 1px dotted #212121;
+        }
+
+        .ͼ1 {
+            position: relative !important;
+            box-sizing: border-box;
+            display: flex !important;
+            flex-direction: column;
+        }
+
+        .ͼ1 .cm-scroller {
+            display: flex !important;
+            align-items: flex-start !important;
+            font-family: monospace;
+            line-height: 1.4;
+            height: 100%;
+            overflow-x: auto;
+            position: relative;
+            z-index: 0;
+            overflow-anchor: none;
+        }
+
+        .ͼ1 .cm-content[contenteditable=true] {
+            -webkit-user-modify: read-write-plaintext-only;
+        }
+
+        .ͼ1 .cm-content {
+            margin: 0;
+            flex-grow: 2;
+            flex-shrink: 0;
+            display: block;
+            white-space: pre;
+            word-wrap: normal;
+            box-sizing: border-box;
+            min-height: 100%;
+            padding: 4px 0;
+            outline: none;
+        }
+
+        .ͼ3 .cm-content {
+            caret-color: white;
+        }
+
+        .ͼ1 .cm-line {
+            display: block;
+            padding: 0 2px 0 6px;
+        }
+
+        .ͼ1 .cm-layer>* {
+            position: absolute;
+        }
+
+        .ͼ1 .cm-layer {
+            user-select: none;
+            position: absolute;
+            left: 0;
+            top: 0;
+            contain: size style;
+        }
+
+        .ͼ3 .cm-selectionBackground {
+            background: #222;
+        }
+
+        .ͼ3.cm-focused>.cm-scroller>.cm-selectionLayer .cm-selectionBackground {
+            background: #233;
+        }
+
+        .ͼ1 .cm-cursorLayer {
+            pointer-events: none;
+        }
+
+        .ͼ1.cm-focused>.cm-scroller>.cm-cursorLayer {
+            animation: steps(1) cm-blink 1.2s infinite;
+        }
+
+        @keyframes cm-blink {
+            50% {
+                opacity: 0;
+            }
+        }
+
+        .ͼ1 .cm-cursor,
+        .ͼ1 .cm-dropCursor {
+            border-left: 1.2px solid black;
+            margin-left: -0.6px;
+            pointer-events: none;
+        }
+
+        .ͼ1 .cm-cursor {
+            display: none;
+        }
+
+        .ͼ3 .cm-cursor {
+            border-left-color: #ddd;
+        }
+
+        .ͼ1 .cm-dropCursor {
+            position: absolute;
+        }
+
+        .ͼ1.cm-focused>.cm-scroller>.cm-cursorLayer .cm-cursor {
+            display: block;
+        }
+
+        .ͼ1 .cm-announced {
+            position: fixed;
+            top: -10000px;
+        }
+
+        @media print {
+            .ͼ1 .cm-announced {
+                display: none;
+            }
+        }
+
+        .ͼ3 .cm-activeLine {
+            background-color: #99eeff33;
+        }
+
+        .ͼ1.aropyt-render-mode .cm-scroller {
+            font-family: var(--font-sans);
+            font-size: var(--md-font-size, 15px);
+            line-height: 1.2;
+        }
+
+        .ͼ1.aropyt-render-mode .cm-content {
+            padding: 40px 32px 40vh;
+            flex-shrink: 1;
+            min-width: 0;
+            white-space: pre-wrap;
+            overflow-wrap: break-word;
+            word-break: break-word;
+        }
+
+        .ͼ1.aropyt-render-mode .cm-line {
+            line-height: 1.2;
+            white-space: pre-wrap;
+            overflow-wrap: break-word;
+            margin: 0;
+        }
+
+        .ͼ4 .cm-line ::selection,
+        .ͼ4 .cm-line::selection {
+            background-color: transparent !important;
+        }
+
+        .ͼ4 .cm-line {
+            caret-color: transparent !important;
+        }
+
+        .ͼ4 .cm-content :focus::selection,
+        .ͼ4 .cm-content :focus ::selection {
+            background-color: Highlight !important;
+        }
+
+        .ͼ4 .cm-content :focus {
+            caret-color: initial !important;
+        }
+
+        .ͼ4 .cm-content {
+            caret-color: transparent !important;
+        }
+
+        .ͼo {
+            color: var(--md-text);
+            background-color: transparent;
+            height: 100%;
+            font-size: var(--md-font-size);
+        }
+
+        .ͼo.cm-focused {
+            outline: none;
+        }
+
+        .ͼo .cm-content {
+            caret-color: var(--md-accent);
+        }
+
+        .ͼo .cm-cursor,
+        .ͼo .cm-dropCursor {
+            border-left-color: var(--md-accent);
+            border-left-width: 2px;
+        }
+
+        .ͼo.cm-focused>.cm-scroller>.cm-selectionLayer .cm-selectionBackground {
+            background-color: var(--md-selection);
+        }
+
+        .ͼo .cm-content ::selection {
+            background-color: var(--md-selection);
+        }
+
+        .ͼo .cm-activeLine {
+            background-color: var(--md-active-line);
+        }
+
+        /* ── 主题令牌 ────────────────────────────────────────── */
+        :root {
+            --md-brand-green: #5bb44e;
+            --md-brand-soft: rgba(91, 180, 78, 0.22);
+            --md-state-red: #e05252;
+            --md-state-yellow: #e0a53d;
+            --md-vim-green: #43a047;
+            --md-font-size: 15px;
+            --font-sans: system-ui, -apple-system, 'Segoe UI', 'Microsoft YaHei', 'PingFang SC', sans-serif;
+            --font-mono: ui-monospace, SFMono-Regular, 'Cascadia Mono', Consolas, 'Liberation Mono', monospace;
+            --md-radius: 8px;
+            --md-header-height: 40px;
+            --md-status-height: 26px;
+        }
+
+        :root {
+            color-scheme: dark;
+            --md-surface-0: #131315;
+            --md-surface-1: #1a1a1c;
+            --md-surface-2: #232326;
+            --md-surface-3: #2c2c2f;
+            --md-text: #e6e6e3;
+            --md-muted: #8b8a85;
+            --md-faint: #6b6a66;
+            --md-ws-dot: rgba(139, 138, 133, 0.55);
+            --md-border: rgba(255, 255, 255, 0.1);
+            --md-border-strong: rgba(255, 255, 255, 0.18);
+            --md-shadow: rgba(0, 0, 0, 0.45);
+            --md-accent: #378add;
+            --md-accent-contrast: #06121f;
+            --md-selection: rgba(55, 138, 221, 0.28);
+            --md-active-line: rgba(255, 255, 255, 0.035);
+            --md-link: #5dcaa5;
+            --md-code: #f0997b;
+            --md-marker: #6b6a66;
+            --md-danger: #ed6a5a;
+            --md-h1: #b5d4f4;
+            --md-h2: #9fe1cb;
+            --md-h3: #fac775;
+            --md-h4: #f0997b;
+            --md-h5: #ed93b1;
+            --md-h6: #b4b2a9;
+            --md-syntax-keyword: #ed93b1;
+            --md-syntax-string: #9fe1cb;
+            --md-syntax-number: #fac775;
+            --md-syntax-type: #b5d4f4;
+        }
+
+        :root[data-theme='light'] {
+            color-scheme: light;
+            --md-brand-soft: rgba(91, 180, 78, 0.16);
+            --md-surface-0: #ffffff;
+            --md-surface-1: #f7f7f5;
+            --md-surface-2: #eeedea;
+            --md-surface-3: #e3e2de;
+            --md-text: #26262b;
+            --md-muted: #6b6a66;
+            --md-faint: #8f8e88;
+            --md-ws-dot: rgba(140, 138, 130, 0.45);
+            --md-border: rgba(0, 0, 0, 0.1);
+            --md-border-strong: rgba(0, 0, 0, 0.18);
+            --md-shadow: rgba(0, 0, 0, 0.13);
+            --md-accent: #2b6fd4;
+            --md-accent-contrast: #ffffff;
+            --md-selection: rgba(43, 111, 212, 0.18);
+            --md-active-line: rgba(0, 0, 0, 0.03);
+            --md-link: #0d7259;
+            --md-code: #b4460f;
+            --md-marker: #8f8e88;
+            --md-danger: #b91c1c;
+            --md-h1: #1f5c9e;
+            --md-h2: #0d7259;
+            --md-h3: #96650b;
+            --md-h4: #b4460f;
+            --md-h5: #8d1c94;
+            --md-h6: #6b6a66;
+            --md-syntax-keyword: #8d1c94;
+            --md-syntax-string: #0d7259;
+            --md-syntax-number: #96650b;
+            --md-syntax-type: #1f5c9e;
+        }
+
+        /* ── 基础 ────────────────────────────────────────────── */
+        * {
+            box-sizing: border-box;
+        }
+
+        html,
+        body,
+        #root {
+            height: 100%;
+            margin: 0;
+        }
+
+        body {
+            background: var(--md-surface-0);
+            color: var(--md-text);
+            font-family: var(--font-sans, system-ui, -apple-system, 'Segoe UI', 'Microsoft YaHei', sans-serif);
+            font-size: 13px;
+            line-height: 1.6;
+            overflow: hidden;
+            -webkit-font-smoothing: antialiased;
+        }
+
+        button {
+            font: inherit;
+            color: inherit;
+            background: transparent;
+            border: none;
+            cursor: pointer;
+        }
+
+        /* ── 应用骨架 ────────────────────────────────────────── */
+        .app {
+            display: grid;
+            grid-template-rows: var(--md-header-height) 1fr var(--md-status-height);
+            height: 100%;
+        }
+
+        .app-header {
+            display: flex;
+            align-items: center;
+            gap: 12px;
+            padding: 0 12px;
+            background: var(--md-surface-1);
+            border-bottom: 1px solid var(--md-border);
+            min-width: 0;
+        }
+
+        .app-header>.tool-button,
+        .app-header>.icon-button {
+            flex: 0 0 auto;
+        }
+
+        .app-workspace {
+            color: var(--md-muted);
+            overflow: hidden;
+            text-overflow: ellipsis;
+            white-space: nowrap;
+        }
+
+        .app-header-spacer {
+            flex: 1;
+        }
+
+        .app-body {
+            display: flex;
+            min-height: 0;
+        }
+
+        .app-main {
+            display: flex;
+            flex-direction: column;
+            flex: 1 1 0;
+            min-width: 0;
+            min-height: 0;
+            border-left: 1px solid var(--md-border);
+            border-right: 1px solid var(--md-border);
+        }
+
+        .app-editor {
+            flex: 1 1 auto;
+            min-height: 0;
+            overflow: hidden;
+        }
+
+        /* ── 图标按钮 / 工具按钮 ─────────────────────────────── */
+        .icon-button {
+            display: inline-flex;
+            align-items: center;
+            justify-content: center;
+            width: 32px;
+            height: 32px;
+            border-radius: 6px;
+            color: var(--md-muted);
+            flex: 0 0 auto;
+        }
+
+        .icon-button:hover {
+            background: var(--md-surface-3);
+            color: var(--md-text);
+        }
+
+        .icon-button>svg[hidden] {
+            display: none;
+        }
+
+        .tool-button {
+            display: inline-flex;
+            align-items: center;
+            justify-content: center;
+            width: 28px;
+            height: 26px;
+            border-radius: 6px;
+            color: var(--md-muted);
+            transition: background 0.12s ease, color 0.12s ease;
+        }
+
+        .tool-button:hover {
+            background: var(--md-surface-3);
+            color: var(--md-text);
+        }
+
+        .tool-button[aria-pressed='true'] {
+            color: var(--md-brand-green);
+            background: var(--md-brand-soft);
+        }
+
+        .tool-button[aria-pressed='true']:hover {
+            color: var(--md-brand-green);
+            background: var(--md-brand-soft);
+        }
+
+        .tool-button:disabled {
+            opacity: 0.4;
+            cursor: not-allowed;
+        }
+
+        @media (pointer: coarse) {
+            .icon-button {
+                width: 40px;
+                height: 40px;
+            }
+
+            .tool-button {
+                width: 36px;
+                height: 34px;
+            }
+        }
+
+        /* ── 视图容器 ────────────────────────────────────────── */
+        .view-column {
+            display: flex;
+            flex-direction: column;
+            min-height: 0;
+            background: var(--md-surface-1);
+            overflow: hidden;
+        }
+
+        .view-column[data-open='false'] {
+            display: none;
+        }
+
+        /* 侧栏收窄到 170px，让主区能放下一行完整的工具栏 */
+        .view-column--left {
+            width: 170px;
+            flex: 0 0 170px;
+            border-right: 1px solid var(--md-border);
+        }
+
+        .view {
+            display: flex;
+            flex-direction: column;
+            min-height: 0;
+            flex: 1 1 auto;
+            border-bottom: 1px solid var(--md-border);
+        }
+
+        .view:last-child {
+            border-bottom: none;
+        }
+
+        .view-header {
+            display: flex;
+            align-items: center;
+            gap: 6px;
+            height: 28px;
+            padding: 0 10px;
+            font-size: 11px;
+            letter-spacing: 0.06em;
+            text-transform: uppercase;
+            color: var(--md-faint);
+            flex: 0 0 auto;
+            width: 100%;
+            appearance: none;
+            background: transparent;
+            border: none;
+            font-family: inherit;
+            text-align: left;
+            cursor: pointer;
+        }
+
+        .view-header:hover {
+            color: var(--md-muted);
+            background: var(--md-surface-2);
+        }
+
+        .view-header:focus-visible {
+            outline: 2px solid var(--md-accent);
+            outline-offset: -2px;
+        }
+
+        .view-header__title {
+            min-width: 0;
+            overflow: hidden;
+            text-overflow: ellipsis;
+            white-space: nowrap;
+        }
+
+        .view-body {
+            flex: 1 1 auto;
+            min-height: 0;
+            overflow: auto;
+        }
+
+        /* ── 滚动条 ──────────────────────────────────────────── */
+        * {
+            scrollbar-width: thin;
+            scrollbar-color: var(--md-border-strong) transparent;
+        }
+
+        ::-webkit-scrollbar {
+            width: 8px;
+            height: 8px;
+        }
+
+        ::-webkit-scrollbar-track {
+            background: transparent;
+        }
+
+        ::-webkit-scrollbar-thumb {
+            background: var(--md-border-strong);
+            border-radius: 4px;
+            border: 2px solid transparent;
+            background-clip: content-box;
+        }
+
+        ::-webkit-scrollbar-thumb:hover {
+            background: var(--md-muted);
+            background-clip: content-box;
+        }
+
+        ::-webkit-scrollbar-corner {
+            background: transparent;
+        }
+
+        /* ── 标签栏 / 工具栏 ─────────────────────────────────── */
+        .tab-bar {
+            display: flex;
+            align-items: stretch;
+            flex: 1 1 auto;
+            min-width: 0;
+            flex-wrap: nowrap;
+            overflow-x: auto;
+            overflow-y: hidden;
+            scrollbar-width: none;
+        }
+
+        .tab-bar::-webkit-scrollbar {
+            display: none;
+        }
+
+        .tab {
+            display: flex;
+            align-items: center;
+            gap: 6px;
+            flex: 0 0 auto;
+            max-width: 180px;
+            padding: 0 6px 0 12px;
+            height: 28px;
+            border-right: 1px solid var(--md-border);
+            color: var(--md-muted);
+            font-size: 12px;
+            cursor: pointer;
+            user-select: none;
+        }
+
+        .tab:hover {
+            background: var(--md-surface-2);
+        }
+
+        .tab--active {
+            background: var(--md-surface-0);
+            color: var(--md-text);
+            box-shadow: inset 0 2px 0 var(--md-accent);
+        }
+
+        .tab-add {
+            appearance: none;
+            flex: 0 0 auto;
+            width: 26px;
+            height: 28px;
+            padding: 0;
+            border: none;
+            background: transparent;
+            color: var(--md-muted);
+            font-size: 16px;
+            line-height: 1;
+            cursor: pointer;
+            transition: color 0.12s ease, background 0.12s ease;
+        }
+
+        .tab-add:hover,
+        .tab-add:focus-visible {
+            color: var(--md-text);
+            background: var(--md-surface-2);
+        }
+
+        /* 工具栏：单行显示，正常不溢出；极端窄屏下可横向滑动（滚动条隐藏） */
+        .toolbar {
+            display: flex;
+            align-items: center;
+            gap: 2px;
+            padding: 4px 8px;
+            background: var(--md-surface-1);
+            border-bottom: 1px solid var(--md-border);
+            flex: 0 0 auto;
+            flex-wrap: nowrap;
+            overflow-x: auto;
+            scrollbar-width: none;
+        }
+
+        .toolbar-spacer {
+            flex: 1 0 auto;
+            min-width: 8px;
+        }
+
+        .toolbar::-webkit-scrollbar {
+            display: none;
+        }
+
+        .toolbar-separator {
+            width: 1px;
+            height: 16px;
+            margin: 0 6px;
+            background: var(--md-border);
+            flex: 0 0 auto;
+        }
+
+        /* ── 文件树 / 大纲 ───────────────────────────────────── */
+        .tree-item {
+            display: flex;
+            align-items: center;
+            gap: 6px;
+            width: 100%;
+            padding: 3px 10px;
+            text-align: left;
+            color: var(--md-muted);
+            overflow: hidden;
+        }
+
+        .twisty,
+        .tree-item__twisty {
+            flex: 0 0 auto;
+            width: 0;
+            height: 0;
+            border-left: 4px solid currentColor;
+            border-top: 3.5px solid transparent;
+            border-bottom: 3.5px solid transparent;
+            opacity: 0.75;
+            transition: transform 0.12s ease;
+        }
+
+        .twisty--expanded,
+        .tree-item__twisty:not(.tree-item__twisty--collapsed) {
+            transform: rotate(90deg);
+        }
+
+        .tree-item__twisty--leaf {
+            border-left-color: transparent;
+            opacity: 0;
+        }
+
+        .tree-item__twisty:not(.tree-item__twisty--leaf) {
+            position: relative;
+            cursor: pointer;
+        }
+
+        .tree-item__twisty:not(.tree-item__twisty--leaf)::after {
+            content: '';
+            position: absolute;
+            left: -7px;
+            top: -7px;
+            width: 18px;
+            height: 18px;
+        }
+
+        .tree-item:hover {
+            background: var(--md-surface-2);
+            color: var(--md-text);
+        }
+
+        .tree-item--active {
+            background: var(--md-surface-3);
+            color: var(--md-text);
+        }
+
+        .tree-item__label {
+            overflow: hidden;
+            text-overflow: ellipsis;
+            white-space: nowrap;
+        }
+
+        .view-empty {
+            padding: 12px 10px;
+            color: var(--md-faint);
+            line-height: 1.7;
+        }
+
+        /* 大纲 */
+        .outline-tree {
+            padding: 4px 0;
+        }
+
+        .outline-item {
+            display: block;
+            width: 100%;
+            padding: 3px 10px;
+            color: var(--md-muted);
+            font-size: 12px;
+            text-align: left;
+            border-left: 2px solid transparent;
+            overflow: hidden;
+            text-overflow: ellipsis;
+            white-space: nowrap;
+            cursor: pointer;
+        }
+
+        .outline-item:hover {
+            background: var(--md-surface-2);
+            color: var(--md-text);
+        }
+
+        .outline-item--active {
+            color: var(--md-text);
+            background: var(--md-surface-2);
+            border-left-color: var(--md-accent);
+        }
+
+        .outline-item--h3 {
+            padding-left: 10px;
+            color: var(--md-text);
+        }
+
+        .outline-item--h4 {
+            padding-left: 22px;
+        }
+
+        .outline-item--h5 {
+            padding-left: 34px;
+            font-size: 11.5px;
+            color: var(--md-faint);
+        }
+
+        /* ── 状态栏 ──────────────────────────────────────────── */
+        .status-bar {
+            display: flex;
+            align-items: center;
+            gap: 14px;
+            padding: 0 12px;
+            background: var(--md-surface-1);
+            border-top: 1px solid var(--md-border);
+            font-size: 11px;
+            color: var(--md-faint);
+            overflow: hidden;
+            white-space: nowrap;
+        }
+
+        .status-bar__spacer {
+            flex: 1;
+        }
+
+        .status-bar__vim {
+            appearance: none;
+            display: inline-flex;
+            align-items: center;
+            gap: 6px;
+            padding: 0 10px;
+            height: 100%;
+            border: none;
+            background: transparent;
+            color: var(--md-muted);
+            font-size: 11px;
+            letter-spacing: 0.08em;
+            cursor: pointer;
+        }
+
+        .status-bar__vim:hover,
+        .status-bar__vim:focus-visible {
+            color: var(--md-text);
+            background: var(--md-surface-2);
+        }
+
+        .status-bar__vim[aria-pressed='true'] {
+            color: var(--md-text);
+        }
+
+        .status-bar__vim svg {
+            width: 14px;
+            height: 14px;
+        }
+
+        .status-bar__vim[aria-pressed='true'] svg {
+            color: var(--md-vim-green);
+        }
+
+        .status-bar__dot {
+            width: 8px;
+            height: 8px;
+            border-radius: 50%;
+            background: var(--md-brand-green);
+        }
+
+        .status-bar__dot--red {
+            background: var(--md-state-red);
+        }
+
+        .status-bar__dot--yellow {
+            background: var(--md-state-yellow);
+        }
+
+        /* Vim 开关的三态显示：绿点 / Vim logo / NORMAL 文字 */
+        .status-bar__vim-icon,
+        .status-bar__vim-label {
+            display: none;
+        }
+
+        .status-bar__vim[aria-pressed='true'] .status-bar__dot {
+            display: none;
+        }
+
+        .status-bar__vim[aria-pressed='true'] .status-bar__vim-icon {
+            display: inline-block;
+        }
+
+        .status-bar__vim[aria-pressed='true'] .status-bar__vim-label {
+            display: inline-block;
+            color: var(--md-vim-green);
+            font-size: 10px;
+            font-weight: 600;
+            letter-spacing: 0.08em;
+        }
+
+        .status-bar__stats {
+            flex: 0 0 auto;
+            padding: 0 10px;
+            font-size: 11px;
+            color: var(--md-muted);
+            font-variant-numeric: tabular-nums;
+            white-space: nowrap;
+        }
+
+        /* ── 窄屏侧栏 ────────────────────────────────────────── */
+        @media (max-width: 900px) {
+            .view-column--left {
+                position: absolute;
+                top: 0;
+                bottom: 0;
+                left: 0;
+                z-index: 20;
+                width: min(280px, 80vw);
+                transform: translateX(-100%);
+                transition: transform 0.18s ease;
+                box-shadow: 0 0 24px var(--md-shadow);
+            }
+
+            .view-column--left[data-open='true'] {
+                transform: none;
+            }
+
+            .app-body {
+                position: relative;
+            }
+        }
+
+        /* ── demo 区块 ───────────────────────────────────────── */
+        html,
+        body {
+            height: 100%;
+            margin: 0;
+        }
+
+        #root {
+            height: 100%;
+            display: flex;
+            flex-direction: column;
+        }
+
+        .demo-paper {
+            flex: 1 1 auto;
+            min-width: 0;
+            min-height: 0;
+            padding: 22px 28px;
+            overflow: auto;
+            background: var(--md-surface-1);
+            color: var(--md-text);
+            line-height: 1.75;
+            font-size: 15px;
+        }
+
+        .demo-paper> :first-child {
+            margin-top: 0;
+        }
+
+        .demo-paper h3 {
+            font-size: 21px;
+            margin: 0 0 12px;
+            color: var(--md-h1);
+        }
+
+        .demo-paper h4 {
+            font-size: 16px;
+            margin: 18px 0 8px;
+            color: var(--md-h2);
+        }
+
+        .demo-paper p {
+            margin: 0 0 11px;
+        }
+
+        .demo-paper ul {
+            margin: 0 0 12px 20px;
+        }
+
+        .demo-paper li {
+            margin-bottom: 5px;
+        }
+
+        .demo-paper blockquote {
+            margin: 0 0 12px;
+            border-left: 3px solid var(--md-accent);
+            padding: 2px 0 2px 14px;
+            color: var(--md-h2);
+        }
+
+        .demo-paper pre {
+            margin: 0 0 12px;
+            background: var(--md-surface-2);
+            border: 1px solid var(--md-border);
+            padding: 12px 14px;
+            overflow-x: auto;
+        }
+
+        .demo-paper pre code {
+            font-family: var(--font-mono);
+            font-size: 12.5px;
+            color: var(--md-code);
+        }
+
+        /* 源码视图 */
+        .demo-source {
+            display: none;
+            flex: 1 1 auto;
+            min-width: 0;
+            min-height: 0;
+            overflow: auto;
+            padding: 18px 0;
+            background: var(--md-surface-1);
+            color: var(--md-text);
+            font-family: var(--font-mono);
+            font-size: 13px;
+            line-height: 1.6;
+        }
+
+        .demo-source__line {
+            display: flex;
+        }
+
+        .demo-source__num {
+            flex: 0 0 44px;
+            padding-right: 12px;
+            text-align: right;
+            color: var(--md-faint);
+            user-select: none;
+            font-variant-numeric: tabular-nums;
+        }
+
+        .demo-source__code {
+            flex: 1;
+            min-width: 0;
+            white-space: pre-wrap;
+            overflow-wrap: anywhere;
+        }
+
+        /* 源码视图的语法高亮 + 空白点 */
+        .demo-source__ws {
+            color: var(--md-ws-dot);
+        }
+
+        .demo-source__marker {
+            color: var(--md-marker);
+        }
+
+        .demo-source__h1 {
+            color: var(--md-h1);
+            font-weight: 600;
+        }
+
+        .demo-source__h2 {
+            color: var(--md-h2);
+            font-weight: 600;
+        }
+
+        .demo-source__h3 {
+            color: var(--md-h3);
+            font-weight: 600;
+        }
+
+        .demo-source__quote {
+            color: var(--md-h2);
+        }
+
+        .demo-source__code-text {
+            color: var(--md-code);
+        }
+
+        .demo-source__fence {
+            color: var(--md-marker);
+        }
+
+        .app-editor[hidden] {
+            display: none;
+        }
+
+        .view-column--left .view:last-child {
+            flex: 0 1 auto;
+        }
+    </style>
+</head>
+
+<body>
+    <div id="root">
+        <div class="app">
+            <header class="app-header"><button type="button" class="icon-button" data-demo-action="rail"
+                    aria-pressed="true"><svg data-rail-state="open" width="16" height="16" viewBox="0 0 200 200"
+                        aria-hidden="true" focusable="false" style="flex: 0 0 auto;">
+                        <path d="M72.7,23.2H0v145.5h200V23.2h-127.3ZM181.8,150.5h-109.1V41.4h109.1v109.1Z"
+                            fill="currentColor"></path>
+                    </svg><svg data-rail-state="closed" width="16" height="16" viewBox="0 0 1024 1024"
+                        aria-hidden="true" focusable="false" style="flex: 0 0 auto; display: none;">
+                        <path
+                            d="m372.36 118.91h651.64v744.73h-1024v-744.73zm558.55 651.64v-558.55h-558.55v558.55zm-837.82 0h186.18v-558.55h-186.18z"
+                            fill="currentColor"></path>
+                    </svg></button><span class="app-workspace">demo</span>
+                <div class="tab-bar" role="tablist">
+                    <div class="tab tab--active" role="tab" aria-selected="true">demo.md ×</div><button type="button"
+                        class="tab-add">+</button>
+                </div><span class="app-header-spacer"></span>
+            </header>
+            <div class="app-body">
+                <aside class="view-column view-column--left" data-open="true" tabindex="-1">
+                    <section class="view"><button type="button" class="view-header" aria-expanded="true"><span
+                                class="twisty twisty--expanded" aria-hidden="true"></span><span
+                                class="view-header__title" data-i18n="view.files">文件</span></button>
+                        <div class="view-body">
+                            <div class="explorer-tree" tabindex="-1">
+                                <div class="tree-item tree-item--active"><span class="tree-item__label">demo.md</span>
+                                </div>
+                            </div>
+                        </div>
+                    </section>
+                    <section class="view"><button type="button" class="view-header" aria-expanded="true"><span
+                                class="twisty twisty--expanded" aria-hidden="true"></span><span
+                                class="view-header__title" data-i18n="view.outline">大纲</span></button>
+                        <div class="view-body">
+                            <div class="outline-tree" tabindex="-1"><button type="button"
+                                    class="outline-item outline-item--h3 outline-item--active">Release
+                                    notes</button><button type="button"
+                                    class="outline-item outline-item--h4">Highlights</button><button type="button"
+                                    class="outline-item outline-item--h5">In-place rendering</button><button
+                                    type="button" class="outline-item outline-item--h5">Plain files</button><button
+                                    type="button" class="outline-item outline-item--h4">Editing history</button><button
+                                    type="button" class="outline-item outline-item--h5">Auto snapshots</button><button
+                                    type="button" class="outline-item outline-item--h5">Line-level diff</button><button
+                                    type="button" class="outline-item outline-item--h4">Install</button></div>
+                        </div>
+                    </section>
+                </aside>
+                <main class="app-main">
+                    <div class="toolbar" role="toolbar"><button type="button" class="tool-button"><svg width="16"
+                                height="16" viewBox="0 0 1052 1024" aria-hidden="true" focusable="false"
+                                style="flex: 0 0 auto;">
+                                <path
+                                    d="m22.926 1001.1v-955.4h397.57l151.24 137.28h457.93v818.12zm91.523-91.523h823.7v-439.31h-823.7zm823.7-530.83v-104.34h-401.74l-26.13-23.796-125.16-113.58h-270.68v241.71z"
+                                    fill="currentColor"></path>
+                            </svg></button><button type="button" class="tool-button"><svg width="16" height="16"
+                                viewBox="0 0 1024 1024" aria-hidden="true" focusable="false" style="flex: 0 0 auto;">
+                                <path
+                                    d="m692.4 46h-592.8v932h824.9v-700l-232-232zm140 840h-440s-92 0-92 0-75.3 0-75.3 0-33.5 0-33.5 0v-147h506.9v-93h-506.9v-146h640.9v386zm0-479h-640.8v-269h462.8l178.1 178.1v90.9z"
+                                    fill="currentColor"></path>
+                            </svg></button><button type="button" class="tool-button"><svg width="16" height="16"
+                                viewBox="0 0 1024 1024" aria-hidden="true" focusable="false" style="flex: 0 0 auto;">
+                                <path
+                                    d="M792,46H46v932h932V232l-186-186ZM698,883h-372v-119h372v119ZM886,886h-94v-206H232v206h-94V138h215v77h280v-77h120.9l132.1,132.1v615.9Z"
+                                    fill="currentColor"></path>
+                            </svg></button><span class="toolbar-separator"></span><button type="button"
+                            class="tool-button"><svg width="16" height="16" viewBox="0 0 1024 1024" aria-hidden="true"
+                                focusable="false" style="flex: 0 0 auto;">
+                                <path
+                                    d="M582.83 125.77c78.2 0 138.52 17.89 183.23 55.86 42.43 35.75 63.66 83.8 63.66 145.25 0 44.68-11.16 82.66-33.5 113.95-22.34 29.05-52.52 51.39-92.73 65.91 52.5 10.05 92.73 31.27 119.52 63.68 26.82 32.39 40.23 75.95 40.23 129.59 0 80.43-27.93 138.52-82.66 176.5-46.93 31.3-112.84 46.93-197.75 46.93h-364.2V125.77h364.2zM340.4 464.29h210.02c55.86 0 96.09-10.07 120.66-29.05 24.59-20.11 36.86-51.39 36.86-93.84 0-40.23-12.27-69.27-36.86-87.16-24.57-18.98-64.8-27.91-118.41-27.91H340.4v237.96z m0 358.62h225.68c51.39 0 91.59-8.93 120.64-24.57 35.75-21.23 54.75-54.75 54.75-100.57 0-46.91-14.52-81.55-42.45-102.77-27.93-21.23-71.5-31.27-129.59-31.27H340.4v259.18z"
+                                    fill="currentColor"></path>
+                            </svg></button><button type="button" class="tool-button"><svg width="16" height="16"
+                                viewBox="0 0 1024 1024" aria-hidden="true" focusable="false" style="flex: 0 0 auto;">
+                                <path
+                                    d="m776.41 199.08v-69.85h-256.68v69.85h70.83l-230.97 627.71h-96.54v69.85h256.68v-69.85h-70.83l230.98-627.71z"
+                                    fill="currentColor"></path>
+                            </svg></button><button type="button" class="tool-button"><svg width="16" height="16"
+                                viewBox="0 0 1024 1024" aria-hidden="true" focusable="false" style="flex: 0 0 auto;">
+                                <path
+                                    d="M1024 511.81H687.11c-38.48-16.41-94.03-35.49-167.45-57.37-77.09-22.34-126.25-39.09-146.36-50.27-45.8-24.57-68.14-56.98-68.14-97.18 0-45.82 18.98-79.32 56.98-101.66 33.5-20.11 79.32-29.07 138.52-29.07 64.8 0 115.07 13.41 150.82 42.45 34.64 27.93 56.98 70.39 67.05 128.48H809c-7.82-83.77-37.98-147.45-91.61-189.91C666 115.94 594.5 95.83 505.14 95.83c-82.68 0-150.82 17.89-203.34 53.64-59.2 37.98-88.25 92.73-88.25 161.98 0 67.05 30.16 118.43 91.61 154.18 19.87 10.38 61.41 26.15 123.58 46.19H0v93.09h681.64c35.63 26.24 54.75 59.59 54.75 100.93 0 42.43-20.11 75.95-60.32 100.55-40.23 24.57-93.84 36.86-158.66 36.86-71.5 0-125.11-15.64-161.98-44.68-40.23-32.41-64.8-83.8-72.61-153.07h-90.5c6.7 98.32 41.34 170.93 103.91 218.98 53.61 40.2 127.34 60.32 221.18 60.32 94.98 0 169.82-20.11 225.68-59.2 55.86-40.23 83.8-96.09 83.8-165.34 0-35.82-8.24-67.53-24.42-95.34H1024v-93.11z"
+                                    fill="currentColor"></path>
+                            </svg></button><button type="button" class="tool-button"><svg width="16" height="16"
+                                viewBox="0 0 1024 1024" aria-hidden="true" focusable="false" style="flex: 0 0 auto;">
+                                <path
+                                    d="m917.21 447.4-197.48-197.48-65.82 65.83 197.47 197.47-197.47 197.48 65.82 65.82 197.48-197.47 65.83-65.83zm-623.19-197.48-263.3 263.3 65.82 65.83 197.48 197.47 65.82-65.82-197.47-197.48 197.47-197.47z"
+                                    fill="currentColor"></path>
+                            </svg></button><button type="button" class="tool-button"><svg width="16" height="16"
+                                viewBox="0 0 1024 1024" aria-hidden="true" focusable="false" style="flex: 0 0 auto;">
+                                <path
+                                    d="M762.38 19.59L430.31 351.68l65.82 65.82 266.25-266.28 127.5 127.5-266.27 266.25 65.82 65.82 332.09-332.07zM292.74 875.86l-127.47-127.5 266.25-266.25-65.82-65.82L33.63 748.36l259.11 259.14 332.07-332.09-65.82-65.82z"
+                                    fill="currentColor"></path>
+                                <path d="m368.92 606.36 251.46-251.47 65.817 65.817-251.47 251.47z" fill="currentColor">
+                                </path>
+                            </svg></button><span class="toolbar-separator"></span><button type="button"
+                            class="tool-button"><svg width="16" height="16" viewBox="0 0 1047 1024" aria-hidden="true"
+                                focusable="false" style="flex: 0 0 auto;">
+                                <path
+                                    d="m472.3 930.91v-372.36h-355.93v372.36h-93.091v-837.82h93.091v372.36h355.89v-372.36h93.091v837.82z"
+                                    fill="currentColor"></path>
+                                <path
+                                    d="m874.17 930.96v-0.41891h-120.41v-69.818h120.41v-364.17a283.93 283.93 0 0 1-120.41 67.072v-80.477a301.34 301.34 0 0 0 74.147-31.279 304.5 304.5 0 0 0 66.188-52.922h60.183v461.73h93.091v69.818h-93.091v0.41891z"
+                                    fill="currentColor"></path>
+                            </svg></button><button type="button" class="tool-button"><svg width="16" height="16"
+                                viewBox="0 0 1024 1024" aria-hidden="true" focusable="false" style="flex: 0 0 auto;">
+                                <path
+                                    d="m662.67 930.91a203.78 203.78 0 0 1 52.131-139.31 667.79 667.79 0 0 1 118.23-96.954 547.47 547.47 0 0 0 74.892-61.021 130.65 130.65 0 0 0 35.98-87.18 86.947 86.947 0 0 0-24.25-67.025 102.4 102.4 0 0 0-71.215-22.342 86.854 86.854 0 0 0-74.938 34.257 163.61 163.61 0 0 0-27.927 97.745h-80.058a206.2 206.2 0 0 1 50.688-143.03 170.4 170.4 0 0 1 134.98-57.344 176.27 176.27 0 0 1 124.14 43.939 150.81 150.81 0 0 1 47.663 114.73 185.53 185.53 0 0 1-51.2 125.95 740.86 740.86 0 0 1-108.68 85.69 258.51 258.51 0 0 0-101.33 100.54h262.24v71.354zm-216.48 0v-372.36h-353.09v372.36h-93.091v-837.82h93.091v372.36h353.05v-372.36h93.091v837.82z"
+                                    fill="currentColor"></path>
+                            </svg></button><button type="button" class="tool-button"><svg width="16" height="16"
+                                viewBox="0 0 1024 1024" aria-hidden="true" focusable="false" style="flex: 0 0 auto;">
+                                <path
+                                    d="m707.49 894.42a188.51 188.51 0 0 1-61.719-136.33h80.803a110.03 110.03 0 0 0 34.49 82.711 105.01 105.01 0 0 0 74.845 26.81 114.64 114.64 0 0 0 81.548-29.789 90.671 90.671 0 0 0 27.229-66.327 82.199 82.199 0 0 0-28.672-69.26 119.2 119.2 0 0 0-78.569-22.435h-38.167v-61.068h37.516a107.8 107.8 0 0 0 72.657-21.644 78.383 78.383 0 0 0 24.995-61.812 80.71 80.71 0 0 0-22.807-61.068 102.4 102.4 0 0 0-71.261-21.644 104.87 104.87 0 0 0-74.147 24.669 110.31 110.31 0 0 0-31.604 73.681h-78.569a174.64 174.64 0 0 1 58.042-123.67 177.52 177.52 0 0 1 125.67-43.939 194.7 194.7 0 0 1 127.02 38.772 133.35 133.35 0 0 1 47.011 107.05 115.25 115.25 0 0 1-86.668 117.02 146.34 146.34 0 0 1 70.516 43.892 113.94 113.94 0 0 1 26.391 77.545 159 159 0 0 1-49.943 120.65 200.47 200.47 0 0 1-137.31 47.663 193.12 193.12 0 0 1-129.3-41.472zm-261.31 41.891v-382.98h-353.09v372.36h-93.091v-837.82h93.091v372.36h353.09v-361.94h93.091v837.82z"
+                                    fill="currentColor"></path>
+                            </svg></button><span class="toolbar-separator"></span><button type="button"
+                            class="tool-button"><svg width="16" height="16" viewBox="0 0 1024 1024" aria-hidden="true"
+                                focusable="false" style="flex: 0 0 auto;">
+                                <path
+                                    d="M280.3 181.3h708.8v93.09H280.3zM173.05 297.67H36.41c-0.83 0-1.5-0.67-1.5-1.5V159.53c0-0.83 0.67-1.5 1.5-1.5h136.64c0.83 0 1.5 0.67 1.5 1.5v136.64c0 0.83-0.68 1.5-1.5 1.5zM280.3 478.78h708.8v93.09H280.3zM173.05 595.14H36.41c-0.83 0-1.5-0.67-1.5-1.5V457.01c0-0.83 0.67-1.5 1.5-1.5h136.64c0.83 0 1.5 0.67 1.5 1.5v136.64c0 0.82-0.68 1.49-1.5 1.49z"
+                                    fill="currentColor"></path>
+                                <path
+                                    d="M280.3 776.26h708.8v93.09H280.3zM173.05 892.62H36.41c-0.83 0-1.5-0.67-1.5-1.5V754.48c0-0.83 0.67-1.5 1.5-1.5h136.64c0.83 0 1.5 0.67 1.5 1.5v136.64c0 0.83-0.68 1.5-1.5 1.5z"
+                                    fill="currentColor"></path>
+                            </svg></button><button type="button" class="tool-button"><svg width="16" height="16"
+                                viewBox="0 0 1024 1024" aria-hidden="true" focusable="false" style="flex: 0 0 auto;">
+                                <path
+                                    d="M139.58 132.62v199.3h-32.25V171.99c-11.84 10.89-26.73 18.98-44.91 24.27V163.9c8.82-2.25 18.18-6.16 28.11-11.73 9.91-6.14 18.18-12.57 24.8-19.55h24.25zM171.01 434.24c12.14 11.16 18.2 25.41 18.2 43.27 0 17.3-6.64 32.93-19.3 47.16-7.73 8.39-21.5 18.98-40.8 32.11-20.11 13.39-32.23 25.11-36.64 35.16h97v28.75H52.24c0-20.39 6.34-37.95 19.57-53.02 7.18-8.39 22.32-20.66 45.2-36.57 12.66-8.93 21.48-16.48 27-22.34 8.55-9.77 12.95-20.36 12.95-31.55 0-10.89-3.02-18.98-8.55-24.27-5.8-5.3-14.34-7.82-25.64-7.82-12.11 0-21.2 4.18-27.27 12.57-6.07 7.82-9.36 19.82-9.93 35.43H53.35c0.27-22.32 6.61-40.18 19.3-53.86 12.93-14.5 30.02-21.77 51.25-21.77 19 0 34.73 5.59 47.11 16.75zM171.04 729.06c11.86 9.77 17.91 23.16 17.91 40.48 0 21.77-11.02 36.27-32.8 43.55 11.59 3.61 20.68 8.93 26.75 16.18 6.61 7.52 9.91 17.3 9.91 29.02 0 18.43-6.34 33.5-19.02 45.23-13.23 12-30.57 18.14-52.07 18.14-20.39 0-36.93-5.3-49.34-15.91-13.77-11.73-21.48-29.02-23.14-51.36h32.8c0.55 12.84 4.41 22.89 12.11 29.86 6.91 6.43 16 9.77 27.3 9.77 12.39 0 22.32-3.64 29.48-10.61 6.34-6.41 9.64-14.23 9.64-23.7 0-11.45-3.57-19.82-10.18-25.14-6.61-5.57-16.27-8.09-28.93-8.09h-13.8V801.9h13.8c11.57 0 20.39-2.5 26.45-7.52 5.77-5.02 8.82-12.57 8.82-22.34s-2.75-17.02-8-22.05c-5.8-5.02-14.32-7.55-25.61-7.55-11.59 0-20.41 2.8-26.75 8.66-6.61 5.86-10.45 14.8-11.57 26.8H53.1c1.64-20.09 8.82-35.73 22.05-46.89 12.39-11.16 28.39-16.48 47.66-16.48 19.84 0 36.11 4.75 48.23 14.53z"
+                                    fill="currentColor"></path>
+                                <path
+                                    d="m281.3 180.62h708.8v93.09h-708.8zm0 297.48h708.8v93.09h-708.8zm0 297.48h708.8v93.09h-708.8z"
+                                    fill="currentColor"></path>
+                            </svg></button><button type="button" class="tool-button"><svg width="16" height="16"
+                                viewBox="0 0 1034 1024" aria-hidden="true" focusable="false" style="flex: 0 0 auto;">
+                                <path
+                                    d="m302.64 932.68v-93.091h709.03v93.091zm0-297.47v-93.091h709.03v93.091zm-256-291.47 68.794-62.697 98.071 107.71 261.68-295.61 69.818 61.673-330.47 373.2zm592.66-6.0509v-93.091h372.36v93.091z"
+                                    fill="currentColor"></path>
+                            </svg></button><button type="button" class="tool-button"><svg width="16" height="16"
+                                viewBox="0 0 1024 1024" aria-hidden="true" focusable="false" style="flex: 0 0 auto;">
+                                <path
+                                    d="m46.545 907.45v-814.55h93.091v814.55zm218.76-63.162v-93.091h557.24v93.091zm0-297.47v-93.091h557.24v93.091zm0-297.47v-93.091h708.75v93.091z"
+                                    fill="currentColor"></path>
+                            </svg></button><span class="toolbar-separator"></span><button type="button"
+                            class="tool-button"><svg width="16" height="16" viewBox="0 0 1024 1024" aria-hidden="true"
+                                focusable="false" style="flex: 0 0 auto;">
+                                <path
+                                    d="m958.17 447.4-197.48-197.48-65.82 65.83 197.47 197.47-197.47 197.48 65.82 65.82 197.48-197.47 65.83-65.83zm-694.87-197.48-263.3 263.3 65.82 65.83 197.48 197.47 65.82-65.82-197.47-197.48 197.47-197.47zm79.947 699.56 247.71-897.29 89.72 24.768-247.71 897.3z"
+                                    fill="currentColor"></path>
+                            </svg></button><button type="button" class="tool-button"><svg width="16" height="16"
+                                viewBox="0 0 1024 1024" aria-hidden="true" focusable="false" style="flex: 0 0 auto;">
+                                <path
+                                    d="m139.64 698.18h189.95v186.18h-189.95zm283.14 0h186.18v186.18h-186.18zm279.27 0h182.32v186.18h-182.37zm-562.41-279.27h189.95v186.18h-189.95zm283.09 0h186.18v186.18h-186.18zm279.27 0h182.37v186.18h-182.37zm-562.36-279.27h189.95v186.18h-189.95zm283.09 0h186.18v186.18h-186.18zm279.27 0h182.37v186.18h-182.37zm0-93.091h-655.45v930.91h930.91v-930.91z"
+                                    fill="currentColor"></path>
+                            </svg></button><button type="button" class="tool-button"><svg width="16" height="16"
+                                viewBox="0 0 1053 1024" aria-hidden="true" focusable="false" style="flex: 0 0 auto;">
+                                <path
+                                    d="M95.941353 671.543695l-71.544053 0.961244-1.190112-91.547092 133.384113-1.785168 34.375933 82.392383L333.826472 91.547092h696.39873v91.547092H405.141657L212.618122 951.540477zM446.887131 883.42944l157.369451-266.722453-152.746323-292.538733h415.944213l57.766215 137.320638-84.360645 35.474498-34.192839-81.431138h-204.150016l106.377722 203.646506-101.800367 172.70359h200.625453l33.735103-73.786957 83.170533 38.083591-58.178177 127.250458z"
+                                    fill="currentColor"></path>
+                            </svg></button><button type="button" class="tool-button"><svg width="16" height="16"
+                                viewBox="0 0 1024 1024" aria-hidden="true" focusable="false" style="flex: 0 0 auto;">
+                                <path
+                                    d="m46.545 977.45v-930.91h930.91v930.91zm93.091-186.18v93.091h744.73v-166.45l-214.11-228.31zm0-107.05 548.58-311.85 196.14 209.45v-442.18h-744.73zm99.281-376.23a82.758 82.758 0 0 1 82.758-82.758 82.758 82.758 0 0 1 82.758 82.758 82.758 82.758 0 0 1-82.758 82.804 82.804 82.804 0 0 1-82.758-82.897z"
+                                    fill="currentColor"></path>
+                            </svg></button><span class="toolbar-spacer"></span><button type="button" class="tool-button"
+                            disabled=""><svg width="16" height="16" viewBox="0 0 200 200" aria-hidden="true"
+                                focusable="false" style="flex: 0 0 auto;">
+                                <path
+                                    d="M185.3,125.2h-20V34.6h-32.5l8-8-12.9-12.9-30,30,30,30,12.9-12.9-8-8h14.3v72.4h-20.2v58.4h58.7v-58.4h-.3ZM167.4,165.4h-22.3v-22h22.3v22Z"
+                                    fill="currentColor"></path>
+                                <path
+                                    d="M14.7,74.8h20s0,90.6,0,90.6h32.5s-8,8-8,8l12.9,12.9,30-30-30-30-12.9,12.9,8,8h-14.3s0-72.4,0-72.4h20.2V16.4H14.7s-.3,0-.3,0v58.4h.3ZM32.6,34.6h22.3s0,22,0,22h-22.3s0-22,0-22Z"
+                                    fill="currentColor"></path>
+                            </svg></button><button type="button" class="tool-button"><svg width="16" height="16"
+                                viewBox="0 0 200 200" aria-hidden="true" focusable="false" style="flex: 0 0 auto;">
+                                <path
+                                    d="M173.3,90.3s20.3-20.4,22-22.1l-19.8-33.1c-2.2.5-30.6,7.2-30.6,7.2-5.1-3.9-10.7-7.1-16.7-9.4,0,0-7.9-26.9-8.6-29.1h-39.4c-.9,3.2-8.6,29.4-8.6,29.4-5.9,2.4-11.5,5.6-16.6,9.4,0,0-28.9-6.8-30.6-7.2L4.7,68.4c1.4,1.4,22,22.1,22,22.1-.4,3.1-.4,15.6,0,18.7,0,0-20.7,20.8-22,22.1l19.7,33.3c1.3-.3,30.6-7.2,30.6-7.2,5.1,3.9,10.7,7,16.6,9.4,0,0,8.4,28.7,8.6,29.4h39.4c.4-1.3,8.6-29.4,8.6-29.4,6-2.4,11.6-5.6,16.7-9.4,0,0,29.5,6.9,30.6,7.2l19.8-33.3c-1.1-1.1-22-22.1-22-22.1.4-3.1.4-15.8,0-18.9ZM153.8,93c.3,2.3.5,11.2,0,14.1l-1.4,10.8,8.8,6.7,10.6,8-6.9,11.6-12.6-4.9-10.2-4-8.9,6.5c-3.8,2.8-7.9,5.2-12.3,7l-10.5,4.1-1.6,11.1-1.9,13h-13.8l-1.9-13-1.5-10.9-10.5-4.2c-4.3-1.8-8.4-4.1-12.2-6.8l-9-6.7-10.5,4.1-12.5,4.9-7.1-11.6,10.6-8,8.8-6.7-1.4-10.8c-.5-4.7-.4-9.5.2-14.2l1.4-10.8-8.8-6.7-10.8-8.1,7-11.6,12.5,4.9,10.2,4,9-6.5c3.8-2.8,7.9-5.2,12.3-7l10.4-4.1,1.8-11,2-13h13.7l1.9,13,1.6,10.9,10.4,4.1c4.3,1.8,8.4,4,12.2,6.8l9,6.7,10.5-4.1,12.6-4.9,7.1,11.8-10.6,8-8.8,6.7,1.2,11Z"
+                                    fill="currentColor"></path>
+                                <path
+                                    d="M101.1,61.6h-1.1c-21.5-.3-39.1,16.9-39.4,38.4.3,21.5,18,38.7,39.4,38.4,21.5.3,39.2-16.9,39.5-38.4.3-21.4-17-38.7-38.4-38.4ZM99.4,119.2c-11.3-.3-20-10.4-18.5-21.9,1.2-8.7,8.4-15.6,17.1-16.4,11.5-1.1,21.1,7.9,21.1,19.1-.2,10.7-9,19.3-19.8,19.2Z"
+                                    fill="currentColor"></path>
+                            </svg></button><button type="button" class="tool-button"><svg width="16" height="16"
+                                viewBox="0 0 1024 1024" aria-hidden="true" focusable="false" style="flex: 0 0 auto;">
+                                <path
+                                    d="m451.33 36.501a189.08 189.08 0 0 1 187.6 165.43h190.52v190.57a189.08 189.08 0 0 1 0 375.19v190.57h-282.88l-0.051-70.964h-0.666a94.515 94.515 0 0 0-188.82-7.014l-0.154 4.198v73.728h-283.7v-282.32h70.86v-1.28a94.515 94.515 0 0 0 10.906-188.42h-81.766v-284.26h190.57a189.08 189.08 0 0 1 187.6-165.43zm0 94.566a94.566 94.566 0 0 0-94.361 87.45l-0.256 7.014h-0.256v70.964h-188.72v96a189.08 189.08 0 0 1 0 375.19v96.051h96.052a189.13 189.13 0 0 1 375.19 0h96v-187.39l70.861-0.05v-1.69a94.566 94.566 0 0 0 10.086-188.57l-80.947 0.102v-189.64h-188.93v-70.964h-0.153a94.464 94.464 0 0 0-94.567-94.464z"
+                                    fill="currentColor"></path>
+                            </svg></button><button type="button" class="tool-button" data-demo-action="mode"
+                            data-mode-to="source" aria-pressed="false"><svg width="16" height="16"
+                                viewBox="0 0 1024 1024" aria-hidden="true" focusable="false" style="flex: 0 0 auto;">
+                                <path
+                                    d="m223.42 147.36h801v93.091h-157.88v661.55h-93.091v-661.55h-240.27v661.55h-93.091v-310.88h-216.67a221.84 221.84 0 1 1 0-443.67m0 350.58h216.67v-257.58h-216.67a128.74 128.74 0 1 0 0 257.49"
+                                    fill="currentColor"></path>
+                            </svg></button></div>
+                    <article class="demo-paper">
+                        <h3>Release notes</h3>
+                        <p>The editor renders what you write, right where you write it. No split panes, no preview button.</p>
+                        <h4>Highlights</h4>
+                        <ul>
+                            <li>In-place rendering of headings, lists and quotes</li>
+                            <li>Files stay plain Markdown on disk</li>
+                            <li>Line-level history diff</li>
+                        </ul>
+                        <blockquote>Files are the truth — what you copy out is always the source.</blockquote>
+                        <pre><code>npm install -g aropyt</code></pre>
+                    </article>
+                    <article class="demo-source"></article>
+                    <div class="app-editor" hidden>
+                        <div class="cm-editor ͼ1 ͼ3 ͼ4 ͼo aropyt-render-mode">
+                            <div class="cm-announced" aria-live="polite"></div>
+                            <div tabindex="-1" class="cm-scroller">
+                                <div spellcheck="false" autocorrect="off" autocapitalize="off"
+                                    writingsuggestions="false" translate="no" contenteditable="true"
+                                    style="tab-size: 4;" class="cm-content" role="textbox" aria-multiline="true"
+                                    data-language="markdown" aria-autocomplete="list">
+                                    <div class="cm-line cm-activeLine"><br></div>
+                                </div>
+                                <div class="cm-layer cm-layer-above cm-cursorLayer" aria-hidden="true"
+                                    style="z-index: 150; animation-duration: 1200ms;">
+                                    <div class="cm-cursor cm-cursor-primary"
+                                        style="left: 38px; top: 39px; height: 19px;"></div>
+                                </div>
+                                <div class="cm-layer cm-selectionLayer" aria-hidden="true" style="z-index: -2;"></div>
+                            </div>
+                        </div>
+                    </div>
+                </main>
+            </div>
+            <footer class="status-bar"><button type="button" class="status-bar__vim" data-demo-action="vim"
+                    aria-pressed="false"><span class="status-bar__dot" aria-hidden="true"></span><svg
+                        class="status-bar__vim-icon" width="14" height="14" viewBox="0 0 1024 1024" aria-hidden="true"
+                        focusable="false" style="flex: 0 0 auto;">
+                        <path
+                            d="m575.15 188.8v-20.352l23.168-24.533h286.81l19.627 25.259v63.147l-625.58 647.81h-81.323l-36.523-20.309v-603.82h-21.035l-20.992-20.309v-65.877l22.443-25.941h283.39l22.315 25.344 1.3653 2.048v62.464l-18.944 29.44h-23.168v196.39l203.43-196.44h-11.179l-23.893-28.757"
+                            fill="currentColor"></path>
+                    </svg><span class="status-bar__vim-label">NORMAL</span></button><span
+                    class="status-bar__spacer"></span><span class="status-bar__stats" data-i18n="stats.format"
+                    data-i18n-title="stats.title" data-stats-lines="10" data-stats-words="304" data-stats-chars="54"
+                    title="行 / 词 / 字">10 行 · 304 词 · 54 字</span></footer>
+        </div>
+        <script>
+            /* ── demo i18n ──────────────────────────────────────────
+             * 跟随父页面（index.html）的 data-lang / lang 属性切换。
+             * 语言来源优先级：父页面 > localStorage(aropyt.lang) > 浏览器语言。
+             * ────────────────────────────────────────────────────── */
+            var I18N = {
+                en: {
+                    "view.files": "Files",
+                    "view.outline": "Outline",
+                    "stats.format": "{lines} lines · {words} words · {chars} chars",
+                    "stats.title": "Lines / Words / Chars"
+                },
+                "zh-CN": {
+                    "view.files": "文件",
+                    "view.outline": "大纲",
+                    "stats.format": "{lines} 行 · {words} 词 · {chars} 字",
+                    "stats.title": "行 / 词 / 字"
+                },
+                "zh-TW": {
+                    "view.files": "檔案",
+                    "view.outline": "大綱",
+                    "stats.format": "{lines} 行 · {words} 詞 · {chars} 字",
+                    "stats.title": "行 / 詞 / 字"
+                },
+                ja: {
+                    "view.files": "ファイル",
+                    "view.outline": "アウトライン",
+                    "stats.format": "{lines} 行 · {words} 語 · {chars} 字",
+                    "stats.title": "行 / 語 / 字"
+                },
+                ko: {
+                    "view.files": "파일",
+                    "view.outline": "개요",
+                    "stats.format": "{lines}줄 · {words}단어 · {chars}자",
+                    "stats.title": "줄 / 단어 / 글자"
+                },
+                de: {
+                    "view.files": "Dateien",
+                    "view.outline": "Gliederung",
+                    "stats.format": "{lines} Zeilen · {words} Wörter · {chars} Zeichen",
+                    "stats.title": "Zeilen / Wörter / Zeichen"
+                },
+                fr: {
+                    "view.files": "Fichiers",
+                    "view.outline": "Plan",
+                    "stats.format": "{lines} lignes · {words} mots · {chars} car.",
+                    "stats.title": "Lignes / Mots / Caractères"
+                },
+                it: {
+                    "view.files": "File",
+                    "view.outline": "Struttura",
+                    "stats.format": "{lines} righe · {words} parole · {chars} caratt.",
+                    "stats.title": "Righe / Parole / Caratteri"
+                },
+                ru: {
+                    "view.files": "Файлы",
+                    "view.outline": "Структура",
+                    "stats.format": "{lines} строк · {words} слов · {chars} симв.",
+                    "stats.title": "Строки / Слова / Символы"
+                }
+            };
+
+            function detectDemoLang() {
+                var fromParent = null;
+                try {
+                    if (parent && parent !== window && parent.document && parent.document.documentElement) {
+                        fromParent = parent.document.documentElement.getAttribute('data-lang') ||
+                            parent.document.documentElement.getAttribute('lang');
+                    }
+                } catch (e) { }
+                if (fromParent && I18N[fromParent]) return fromParent;
+
+                try {
+                    var saved = localStorage.getItem('aropyt.lang');
+                    if (saved && I18N[saved]) return saved;
+                } catch (e) { }
+
+                var nav = navigator.language || 'en';
+                if (I18N[nav]) return nav;
+                var base = nav.split('-')[0];
+                var byBase = Object.keys(I18N).find(function (code) { return code.split('-')[0] === base; });
+                return byBase || 'zh-CN';
+            }
+
+            function applyDemoI18n(lang) {
+                var dict = I18N[lang] || I18N['zh-CN'];
+                document.documentElement.setAttribute('data-lang', lang);
+                document.documentElement.setAttribute('lang', lang);
+
+                document.querySelectorAll('[data-i18n]').forEach(function (el) {
+                    var key = el.getAttribute('data-i18n');
+                    var tpl = dict[key];
+                    if (!tpl) return;
+                    if (key === 'stats.format') {
+                        var lines = el.getAttribute('data-stats-lines') || '0';
+                        var words = el.getAttribute('data-stats-words') || '0';
+                        var chars = el.getAttribute('data-stats-chars') || '0';
+                        el.textContent = tpl
+                            .replace('{lines}', lines)
+                            .replace('{words}', words)
+                            .replace('{chars}', chars);
+                    } else {
+                        el.textContent = tpl;
+                    }
+                });
+
+                document.querySelectorAll('[data-i18n-title]').forEach(function (el) {
+                    var key = el.getAttribute('data-i18n-title');
+                    if (dict[key]) el.setAttribute('title', dict[key]);
+                });
+            }
+
+            (function initDemoI18n() {
+                applyDemoI18n(detectDemoLang());
+
+                // 监听父页面语言变化
+                try {
+                    new MutationObserver(function () {
+                        applyDemoI18n(detectDemoLang());
+                    }).observe(parent.document.documentElement, {
+                        attributes: true,
+                        attributeFilter: ['lang', 'data-lang']
+                    });
+                } catch (e) { }
+
+                window.addEventListener('storage', function (e) {
+                    if (!e.key || e.key === 'aropyt.lang') applyDemoI18n(detectDemoLang());
+                });
+            })();
+        </script>
+        <script>
+            (function () {
+                var app = document.querySelector('.app');
+                var paper = document.querySelector('.demo-paper');
+                var source = document.querySelector('.demo-source');
+                var side = document.querySelector('.view-column--left');
+                var railBtn = document.querySelector('[data-demo-action="rail"]');
+                var vimBtn = document.querySelector('[data-demo-action="vim"]');
+                var modeBtn = document.querySelector('[data-demo-action="mode"]');
+
+                function escHtml(s) {
+                    return s.replace(/&/g, '&amp;').replace(/</g, '&lt;');
+                }
+
+                function dotSpaces(text) {
+                    return text.replace(/ /g, '<span class="demo-source__ws">·</span>');
+                }
+
+                function renderLine(line, ctx) {
+                    var m;
+
+                    if (/^```/.test(line)) {
+                        ctx.inFence = !ctx.inFence;
+                        return '<span class="demo-source__fence">' + dotSpaces(escHtml(line)) + '</span>';
+                    }
+
+                    if (ctx.inFence) {
+                        return '<span class="demo-source__code-text">' + dotSpaces(escHtml(line)) + '</span>';
+                    }
+
+                    m = line.match(/^(#{1,6})(\s+)(.*)$/);
+                    if (m) {
+                        var lvl = Math.min(m[1].length, 3);
+                        return '<span class="demo-source__marker">' + m[1] + '</span>' +
+                            dotSpaces(m[2]) +
+                            '<span class="demo-source__h' + lvl + '">' + dotSpaces(escHtml(m[3])) + '</span>';
+                    }
+
+                    m = line.match(/^(\s*)([-*+])(\s+)(.*)$/);
+                    if (m) {
+                        return dotSpaces(m[1]) +
+                            '<span class="demo-source__marker">' + m[2] + '</span>' +
+                            dotSpaces(m[3]) +
+                            dotSpaces(escHtml(m[4]));
+                    }
+
+                    m = line.match(/^(\s*)(>)(\s?)(.*)$/);
+                    if (m) {
+                        return dotSpaces(m[1]) +
+                            '<span class="demo-source__marker">' + m[2] + '</span>' +
+                            dotSpaces(m[3]) +
+                            '<span class="demo-source__quote">' + dotSpaces(escHtml(m[4])) + '</span>';
+                    }
+
+                    return dotSpaces(escHtml(line));
+                }
+
+                function setMode(m) {
+                    app.setAttribute('data-mode', m);
+                    modeBtn.setAttribute('aria-pressed', String(m === 'source'));
+                    paper.style.display = m === 'source' ? 'none' : '';
+                    source.style.display = m === 'source' ? 'block' : 'none';
+                }
+
+                function updateRailIcon(open) {
+                    var openIcon = railBtn.querySelector('[data-rail-state="open"]');
+                    var closedIcon = railBtn.querySelector('[data-rail-state="closed"]');
+                    if (openIcon) openIcon.style.display = open ? '' : 'none';
+                    if (closedIcon) closedIcon.style.display = open ? 'none' : '';
+                }
+
+                modeBtn.addEventListener('click', function () {
+                    setMode(app.getAttribute('data-mode') === 'source' ? 'document' : 'source');
+                });
+
+                railBtn.addEventListener('click', function () {
+                    var open = side.getAttribute('data-open') !== 'false';
+                    var next = !open;
+                    side.setAttribute('data-open', String(next));
+                    railBtn.setAttribute('aria-pressed', String(next));
+                    updateRailIcon(next);
+                });
+
+                vimBtn.addEventListener('click', function () {
+                    var on = vimBtn.getAttribute('aria-pressed') !== 'true';
+                    vimBtn.setAttribute('aria-pressed', String(on));
+                    if (on) {
+                        setMode('source');
+                        modeBtn.style.display = 'none';
+                    } else {
+                        setMode('document');
+                        modeBtn.style.display = '';
+                    }
+                });
+
+                var outlineItems = document.querySelectorAll('.outline-item');
+                outlineItems.forEach(function (item) {
+                    item.addEventListener('click', function () {
+                        outlineItems.forEach(function (o) { o.classList.remove('outline-item--active'); });
+                        item.classList.add('outline-item--active');
+                    });
+                });
+
+                setMode('document');
+                side.setAttribute('data-open', 'true');
+                railBtn.setAttribute('aria-pressed', 'true');
+                updateRailIcon(true);
+
+                if (source && source.dataset.filled !== '1') {
+                    var md = [];
+                    paper.querySelectorAll('h3, h4, p, li, blockquote, pre code').forEach(function (n) {
+                        var t = n.tagName;
+                        var x = n.textContent.trim();
+                        if (t === 'H3') md.push('# ' + x);
+                        else if (t === 'H4') md.push('', '## ' + x);
+                        else if (t === 'LI') md.push('- ' + x);
+                        else if (t === 'BLOCKQUOTE') md.push('', '> ' + x);
+                        else if (t === 'CODE') md.push('', '```', x, '```');
+                        else md.push('', x);
+                    });
+
+                    var ctx = { inFence: false };
+                    source.innerHTML = md.map(function (line, i) {
+                        return '<div class="demo-source__line">' +
+                            '<span class="demo-source__num">' + (i + 1) + '</span>' +
+                            '<span class="demo-source__code">' + renderLine(line, ctx) + '</span>' +
+                            '</div>';
+                    }).join('');
+                    source.dataset.filled = '1';
+                }
+            })();
+        </script>
+        <script>
+            /* 跟随官网（父页面）的深浅模式：读父页面 data-theme，并监听变化 */
+            (function () {
+                function readParentTheme() {
+                    try {
+                        if (parent && parent !== window && parent.document && parent.document.documentElement) {
+                            return parent.document.documentElement.getAttribute('data-theme');
+                        }
+                    } catch (e) { }
+                    return null;
+                }
+
+                function readStoredTheme() {
+                    try { return localStorage.getItem('aropyt.theme'); } catch (e) { return null; }
+                }
+
+                function systemTheme() {
+                    return window.matchMedia('(prefers-color-scheme: light)').matches ? 'light' : 'dark';
+                }
+
+                function sync() {
+                    var t = readParentTheme() || readStoredTheme() || systemTheme();
+                    document.documentElement.setAttribute('data-theme', t);
+                }
+
+                sync();
+
+                try {
+                    new MutationObserver(sync).observe(parent.document.documentElement, {
+                        attributes: true,
+                        attributeFilter: ['data-theme']
+                    });
+                } catch (e) { }
+
+                window.addEventListener('storage', function (e) {
+                    if (!e.key || e.key === 'aropyt.theme') sync();
+                });
+            })();
+        </script>
+</body>
+
+</html>
