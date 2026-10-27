@@ -1,7 +1,5 @@
 @import 'katex/dist/katex.min.css';
 
-@import 'katex/dist/katex.min.css';
-
 /**
  * 应用层样式。
  *
@@ -33,6 +31,8 @@
 :root {
   /* 品牌色绿点：vim 未开启时的指示（用户指定的品牌色，不随主题变化） */
   --md-brand-green: #5bb44e;
+  /* 品牌色淡底：工具按钮激活态（源码模式）的背景。
+     默认值按深色主题给，浅色主题在 [data-theme='light'] 里覆盖。 */
   /* 状态灯三态：未保存（红）/ 已保存（品牌绿）/ 本次启动发生过恢复（黄） */
   --md-state-red: #e05252;
   --md-state-yellow: #e0a53d;
@@ -115,6 +115,9 @@
 
 :root[data-theme='light'] {
   color-scheme: light;
+
+  /* 浅色下品牌色淡底要更轻，否则在白底上偏重 */
+  --md-brand-soft: rgba(91, 180, 78, 0.16);
 
   --md-surface-0: #ffffff;
   --md-surface-1: #f7f7f5;
@@ -288,14 +291,31 @@ button {
  * 用户期望"开关亮起来 = 图案变深"，蓝色在浅色主题下反而像"链接"。
  * 特异性高于 .tool-button--on，且写在它之后，稳定生效。
  */
-.tool-button[aria-pressed='true'] {
+.tool-button {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 28px;
+  height: 26px;
+  border-radius: 6px;
+  color: var(--md-muted);
+  transition: background 0.12s ease, color 0.12s ease;
+}
+
+.tool-button:hover {
+  background: var(--md-surface-3);
   color: var(--md-text);
 }
 
-.tool-button--on {
-  background: var(--md-surface-3);
-  color: var(--md-link);
-  box-shadow: inset 0 0 0 1px var(--md-link);
+.tool-button[aria-pressed='true'],
+.tool-button[aria-pressed='true']:hover {
+  color: var(--md-brand-green);
+  background: var(--md-brand-soft);
+}
+
+.tool-button:disabled {
+  opacity: 0.4;
+  cursor: not-allowed;
 }
 
 /* 头部图标按钮（侧栏开关）。触屏最小命中区域 40px。 */

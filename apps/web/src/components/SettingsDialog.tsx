@@ -186,7 +186,7 @@ export function SettingsDialog({
                 href="https://github.com/Geekstrange/Aropyt/releases"
                 onClick={handleLink('https://github.com/Geekstrange/Aropyt/releases')}
               >
-                {`Aropyt v${__APP_VERSION__}`}
+                {`v${__APP_VERSION__}`}
               </a>
             </div>
             <div className="settings-row">

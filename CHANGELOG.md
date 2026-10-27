@@ -13,6 +13,34 @@
 - 编辑历史的版本间 diff（v0.1.2 已完成单版本对比，尚缺版本间对比）
 - 工具栏在触屏上的点按目标（当前约 26px，低于 44px 建议值）
 
+## [0.1.4] - 2026-10-27
+
+> Consistent with `docs/releases/v0.1.4.md`.
+
+Small fixes only. No new features.
+
+### Fixed
+
+- **Desktop icons looked undersized** — `npx tauri icon` was run to repair
+  the Android icon, but it also rewrites the desktop PNGs and pads them to
+  the mobile safe-area ratio (artwork covered ~80% of the canvas). Desktop
+  icons are rendered edge to edge again via `scripts/make-icons.mjs`;
+  `tauri icon` runs first for the icns, then the PNGs are overwritten.
+- **Language preference was written but never read** — `normalizeSettings`
+  validated `settings.locale` (the default, always valid) and never assigned
+  `obj.locale`, so `"locale": "de"` in settings.jsonc had no effect and every
+  restart fell back to "follow system". The check had also drifted inside the
+  `obj.theme` branch, so it did not run when the file omitted a theme. Both
+  fixed; `LOCALES` is now the single source of allowed values.
+- **Source-mode toggle was hard to read** — the pressed state used link blue,
+  which reads as a hyperlink rather than an engaged switch, most visibly in
+  light themes. Now uses the body colour with a brand-tinted background.
+- **APK still showed the Tauri icon** — the bundled icons have been correct
+  since v0.1.3. A build showing the default icon is reusing an existing
+  `src-tauri/gen/android` directory, since Tauri copies `icons/android/mipmap-*`
+  into it only on first generation. Run `npx tauri android clean` before
+  rebuilding.
+
 ## [0.1.3] - 2026-10-26
 
 > Consistent with `docs/releases/v0.1.3.md`.

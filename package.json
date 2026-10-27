@@ -1,6 +1,6 @@
 {
   "name": "aropyt",
-  "version": "0.1.3",
+  "version": "0.1.4",
   "private": true,
   "description": "跨平台 Markdown 编辑器 — Windows / macOS / Linux / Android，统一 Tauri 外壳",
   "license": "AGPL-3.0-or-later",

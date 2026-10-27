@@ -25,6 +25,10 @@ export interface AppSettings {
   history: { limit: number; /** 自动保存版本（按间隔）。 */ autoSave: boolean; /** 间隔秒数。 */ autoSaveInterval: number };
 }
 
+/** 所有合法的 locale 值。`auto` 表示跟随系统。 */
+export const LOCALES = ['auto', 'zh', 'en', 'de', 'fr', 'ja', 'ko', 'it', 'ru'] as const;
+export type LocaleCode = (typeof LOCALES)[number];
+
 export const DEFAULT_SETTINGS: AppSettings = {
   theme: 'auto',
   locale: 'auto',
@@ -136,11 +140,24 @@ export function normalizeSettings(raw: unknown): {
   for (const key of Object.keys(obj)) {
     if (!known.has(key)) unknownKeys.push(key);
   }
-    if (obj.theme !== undefined) {
+  if (obj.theme !== undefined) {
     if (obj.theme === 'light' || obj.theme === 'dark' || obj.theme === 'auto') settings.theme = obj.theme;
     else invalidValues.push('theme');
-  if (settings.locale !== 'auto' && !['zh','en','de','fr','ja','ko','it','ru'].includes(settings.locale))
-    invalidValues.push('locale');
+  }
+
+  /*
+   * locale 必须**从文件读**。
+   *
+   * 这里原来只校验了 `settings.locale`（默认值 'auto'，永远合法），
+   * 却从没把 `obj.locale` 赋回去 —— 于是 settings.jsonc 里写了
+   * "locale": "de" 也不会生效，每次启动都回到跟随系统。
+   */
+  if (obj.locale !== undefined) {
+    if (typeof obj.locale === 'string' && LOCALES.includes(obj.locale as LocaleCode)) {
+      settings.locale = obj.locale as LocaleCode;
+    } else {
+      invalidValues.push('locale');
+    }
   }
   const editor = obj.editor as Record<string, unknown> | undefined;
   if (editor?.fontSize !== undefined) {
