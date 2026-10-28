@@ -133,6 +133,8 @@ const COMMAND_TITLES: Record<string, TextKey> = {
   文件: 'panel.files',
   大纲: 'panel.outline',
   恢复上次工作区: 'toolbar.restoreWorkspace',
+  关闭工作区: 'toolbar.closeWorkspace',
+  恢复已移除的目录: 'view.restoreRemoved',
 };
 
 /** 把命令标题翻成当前语言；表里没有的原样返回（第三方插件）。 */

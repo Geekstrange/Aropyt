@@ -239,4 +239,14 @@ export const fr: Record<keyof typeof import('./zh').zh, string> = {
   'toolbar.source.exit': 'Quitter le mode source',
   'toolbar.source.enter': 'Passer en mode source',
 
+  // Espace de travail : fermer / retirer un sous-dossier
+  'toolbar.closeWorkspace': 'Fermer l’espace de travail',
+  'view.removeFromWorkspace': 'Retirer de l’espace de travail',
+  'view.restoreRemoved': 'Restaurer les dossiers retirés',
+  'view.nothingToRestore': 'Aucun dossier n’a été retiré.',
+  'view.restoredAll': '{n} dossier(s) restauré(s)',
+  'view.allRemoved': 'Tous les dossiers ont été retirés de cet espace de travail. Utilisez « Restaurer les dossiers retirés » dans la palette de commandes pour les récupérer.',
+  'rt.closeWorkspaceDirty': '{n} onglet(s) contiennent des modifications non enregistrées. Fermer l’espace de travail les fera perdre.',
+  'rt.closeAnyway': 'Fermer quand même',
+
 };

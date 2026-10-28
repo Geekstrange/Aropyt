@@ -239,4 +239,14 @@ export const ko: Record<keyof typeof import('./zh').zh, string> = {
   'toolbar.source.exit': '소스 모드 종료',
   'toolbar.source.enter': '소스 모드로 전환',
 
+  // 작업 공간: 닫기 / 하위 폴더 제거
+  'toolbar.closeWorkspace': '작업 공간 닫기',
+  'view.removeFromWorkspace': '작업 공간에서 제거',
+  'view.restoreRemoved': '제거한 폴더 복원',
+  'view.nothingToRestore': '제거된 폴더가 없습니다.',
+  'view.restoredAll': '폴더 {n}개를 복원했습니다',
+  'view.allRemoved': '이 작업 공간의 폴더가 모두 제거되었습니다. 명령 팔레트의 「제거한 폴더 복원」으로 되돌릴 수 있습니다.',
+  'rt.closeWorkspaceDirty': '저장하지 않은 탭이 {n}개 있습니다. 작업 공간을 닫으면 이 변경 사항이 사라집니다.',
+  'rt.closeAnyway': '그래도 닫기',
+
 };

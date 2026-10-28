@@ -763,6 +763,58 @@ button {
   padding: 2px 0 8px;
 }
 
+/*
+ * 工作区抬头（目录名 + 关闭）。
+ *
+ * 树只渲染根目录的子项，根目录自己叫什么原本无处可见；而"关闭工作区"
+ * 如果只存在于命令面板，等于没有入口 —— 用户不会去搜一个自己不知道
+ * 存在的命令。这一行把两件事都补上了。
+ *
+ * 用 border-bottom 而不是 margin 分隔：.tree-item 上不能有 margin
+ * （见 CM6 坐标那几条），这里虽然不在编辑器里，也统一按这条来。
+ */
+.explorer-header {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 4px 10px 6px;
+  border-bottom: 1px solid var(--md-border);
+  margin-bottom: 2px;
+  color: var(--md-faint);
+  font-size: 11px;
+  letter-spacing: 0.02em;
+}
+
+.explorer-header__name {
+  /* min-width: 0 是 flex item 能收缩的前提，缺了它省略号永远不出现 */
+  flex: 1 1 auto;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.explorer-header__close {
+  flex: 0 0 auto;
+  display: grid;
+  place-items: center;
+  width: 18px;
+  height: 18px;
+  padding: 0;
+  border: 0;
+  border-radius: 4px;
+  background: transparent;
+  color: var(--md-faint);
+  font-size: 14px;
+  line-height: 1;
+  cursor: pointer;
+}
+
+.explorer-header__close:hover {
+  background: var(--md-surface-3);
+  color: var(--md-text);
+}
+
 .tree-item {
   display: flex;
   align-items: center;
@@ -874,10 +926,63 @@ button {
   color: var(--md-text);
 }
 
+/*
+ * 标签必须能收缩，否则 text-overflow 永远不生效。
+ *
+ * `min-width: auto` 是 flex item 的默认值（= 内容宽度），长文件名会
+ * 把整行撑宽、把右侧的移除按钮顶出可视区（外层 .tree-item 是 overflow:hidden，
+ * 顶出去就直接看不见了）。声明了省略号却不给 `min-width: 0`，
+ * 是本项目反复出现的那类"写了但没生效"。
+ */
 .tree-item__label {
+  flex: 1 1 auto;
+  min-width: 0;
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
+}
+
+/*
+ * 目录行右侧的「从工作区移除」。
+ *
+ * 用 visibility 而不是 display:none：display 会让整行宽度在悬停时变化，
+ * 文件名随之跳动一下 —— 在一棵树里连续指过去的时候非常刺眼。
+ * 保留占位则位置恒定，代价只是文件名提前 16px 截断。
+ */
+.tree-item__action {
+  flex: 0 0 auto;
+  display: grid;
+  place-items: center;
+  width: 16px;
+  height: 16px;
+  margin-left: auto;
+  padding: 0;
+  border-radius: 3px;
+  color: var(--md-faint);
+  font-size: 13px;
+  line-height: 1;
+  cursor: pointer;
+  visibility: hidden;
+}
+
+.tree-item:hover .tree-item__action,
+.tree-item--focused .tree-item__action {
+  visibility: visible;
+}
+
+.tree-item__action:hover {
+  background: var(--md-surface-3);
+  color: var(--md-text);
+}
+
+/*
+ * 触摸屏没有"悬停"这回事 —— 不加这条，手机上这个功能等于不存在。
+ * 用 hover: none 而不是宽度断点：桌面窄窗口仍然是鼠标，仍该保持安静。
+ */
+@media (hover: none) {
+  .tree-item__action {
+    visibility: visible;
+  }
 }
 
 .tree-empty,

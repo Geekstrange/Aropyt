@@ -239,4 +239,14 @@ export const ru: Record<keyof typeof import('./zh').zh, string> = {
   'toolbar.source.exit': 'Выйти из режима исходника',
   'toolbar.source.enter': 'Перейти в режим исходника',
 
+  // Рабочая область: закрыть / убрать подпапку
+  'toolbar.closeWorkspace': 'Закрыть рабочую область',
+  'view.removeFromWorkspace': 'Убрать из рабочей области',
+  'view.restoreRemoved': 'Восстановить убранные папки',
+  'view.nothingToRestore': 'Убранных папок нет.',
+  'view.restoredAll': 'Восстановлено папок: {n}',
+  'view.allRemoved': 'Все папки убраны из этой рабочей области. Вернуть их можно командой «Восстановить убранные папки» в палитре команд.',
+  'rt.closeWorkspaceDirty': 'В {n} вкладках есть несохранённые изменения. При закрытии рабочей области они будут потеряны.',
+  'rt.closeAnyway': 'Всё равно закрыть',
+
 };

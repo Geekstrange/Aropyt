@@ -358,6 +358,17 @@ export interface WindowApi {
   regrantLastWorkspaceFolder(): Promise<boolean>;
 
   /**
+   * 关闭当前工作区（只解绑，不动磁盘上的文件）。
+   *
+   * 与 pickWorkspaceFolder 是一对：一个进、一个出。没有它，用户只能靠
+   * "再打开另一个文件夹"来换工作区 —— 想回到"没有工作区"这个初始态
+   * 则完全无路可走。
+   *
+   * 返回 false 表示没有工作区可关，或者标签里有未保存改动、用户在确认框里取消。
+   */
+  closeWorkspace(): Promise<boolean>;
+
+  /**
    * 把工作区之外的一张图片导入进来，返回它在工作区内的**相对路径**。
    *
    * 为什么不给插件"选一个文件"+"拷贝一个绝对路径"两个更通用的能力：

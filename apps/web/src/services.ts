@@ -111,6 +111,7 @@ class StatusBarItemImpl implements StatusBarItem {
 export interface WindowHostBindings {
   pickWorkspaceFolder(): Promise<boolean>;
   regrantLastWorkspaceFolder(): Promise<boolean>;
+  closeWorkspace(): Promise<boolean>;
   importImage(targetDir: string): Promise<ImportedFile | null>;
   openMarkdownFile(): Promise<boolean>;
 }
@@ -175,6 +176,12 @@ export class WindowService implements WindowApi {
   async regrantLastWorkspaceFolder(): Promise<boolean> {
     if (!this.#host) throw new Error('宿主尚未注入工作区能力');
     return this.#host.regrantLastWorkspaceFolder();
+  }
+
+  /** 关闭工作区：与"打开"同源，都要走宿主才改得了运行时的绑定状态。 */
+  async closeWorkspace(): Promise<boolean> {
+    if (!this.#host) throw new Error('宿主尚未注入工作区能力');
+    return this.#host.closeWorkspace();
   }
 
   /**

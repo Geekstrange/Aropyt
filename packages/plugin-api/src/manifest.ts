@@ -56,13 +56,7 @@ export type ActivationEvent =
 
 export interface CommandContribution {
   readonly id: string;
-  /**
-   * 标题。内置命令优先用 `titleKey`（运行时按语言求值），
-   * `title` 作为兜底文案，也供第三方插件直接写死文本。
-   */
   readonly title: string;
-  /** i18n key。提供时渲染层优先取它，语言切换即时生效。 */
-  readonly titleKey?: string;
   readonly category?: string;
   readonly enablement?: string;
   readonly icon?: string;

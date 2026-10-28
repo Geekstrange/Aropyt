@@ -255,4 +255,14 @@ export const zh = {
   'toolbar.source.exit': '退出源码模式',
   'toolbar.source.enter': '进入源码模式',
 
+  // 工作区：关闭 / 移除子目录
+  'toolbar.closeWorkspace': '关闭工作区',
+  'view.removeFromWorkspace': '从工作区移除',
+  'view.restoreRemoved': '恢复已移除的目录',
+  'view.nothingToRestore': '没有被移除的目录。',
+  'view.restoredAll': '已恢复 {n} 个目录',
+  'view.allRemoved': '工作区里的目录都被移除了。用命令面板的「恢复已移除的目录」找回。',
+  'rt.closeWorkspaceDirty': '还有 {n} 个标签未保存，关闭工作区会丢弃这些改动。',
+  'rt.closeAnyway': '仍然关闭',
+
 } as const;

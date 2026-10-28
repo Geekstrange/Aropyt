@@ -239,4 +239,14 @@ export const de: Record<keyof typeof import('./zh').zh, string> = {
   'toolbar.source.exit': 'Quelltextmodus verlassen',
   'toolbar.source.enter': 'Quelltextmodus öffnen',
 
+  // Arbeitsbereich: schließen / Unterordner entfernen
+  'toolbar.closeWorkspace': 'Arbeitsbereich schließen',
+  'view.removeFromWorkspace': 'Aus Arbeitsbereich entfernen',
+  'view.restoreRemoved': 'Entfernte Ordner wiederherstellen',
+  'view.nothingToRestore': 'Es wurden keine Ordner entfernt.',
+  'view.restoredAll': '{n} Ordner wiederhergestellt',
+  'view.allRemoved': 'Alle Ordner wurden aus diesem Arbeitsbereich entfernt. Über „Entfernte Ordner wiederherstellen“ in der Befehlspalette lassen sie sich zurückholen.',
+  'rt.closeWorkspaceDirty': '{n} Tab(s) haben ungespeicherte Änderungen. Beim Schließen des Arbeitsbereichs gehen sie verloren.',
+  'rt.closeAnyway': 'Trotzdem schließen',
+
 };

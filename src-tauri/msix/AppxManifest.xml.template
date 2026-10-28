@@ -1,0 +1,110 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+  微软商店提交用的包清单。
+
+  占位符由 pack.ps1 替换（{{NAME}} {{PUBLISHER}} {{DISPLAY_NAME}} {{VERSION}} {{ARCH}}）。
+  **发布者必须逐字符等于 Partner Center 的 Package/Identity/Publisher**，
+  一个大小写不一致就会在上传时被拒（identity mismatch）。
+
+  几条来自实测 / 官方文档的硬约束，改这个文件之前先读：
+    1. 子元素顺序是 schema 规定的：Identity → Properties → Dependencies →
+       Resources → Applications → Capabilities。顺序错了 makeappx 直接报
+       "元素无效"，但错误信息不会告诉你是顺序问题。
+    2. EntryPoint 用 `Windows.FullTrustApplication`（老写法）。新的
+       uap10:TrustLevel 写法在老版本 Windows 10 上不认。
+    3. 带 runFullTrust 的桌面应用才能像普通 Win32 程序一样读写用户目录 ——
+       Aropyt 的 `~/.aropyt/settings.jsonc` 靠的就是它。
+    4. 一旦声明了 Square310x310Logo，就必须同时给 Wide310x150Logo，
+       否则清单校验失败。这里**不声明**大图标，避免多一套资源。
+    5. MSIX 有注册表虚拟化：安装器写注册表那套文件关联在这里无效，
+       关联必须写在下面的 <uap:Extension> 里。
+-->
+<Package
+  xmlns="http://schemas.microsoft.com/appx/manifest/foundation/windows10"
+  xmlns:uap="http://schemas.microsoft.com/appx/manifest/uap/windows10"
+  xmlns:rescap="http://schemas.microsoft.com/appx/manifest/foundation/windows10/restrictedcapabilities"
+  IgnorableNamespaces="uap rescap">
+
+  <Identity
+    Name="{{NAME}}"
+    Publisher="{{PUBLISHER}}"
+    Version="{{VERSION}}"
+    ProcessorArchitecture="{{ARCH}}" />
+
+  <Properties>
+    <DisplayName>{{DISPLAY_NAME}}</DisplayName>
+    <PublisherDisplayName>{{DISPLAY_NAME}}</PublisherDisplayName>
+    <Logo>Assets\StoreLogo.png</Logo>
+  </Properties>
+
+  <Dependencies>
+    <!--
+      10.0.19041.0 = Windows 10 2004。商店当前接受的最低版本比这更早，
+      但 WebView2 的 Evergreen 运行时在这个版本上的覆盖最稳。
+      包内**不捆绑** WebView2 固定版（那要多 150MB），依赖系统已装的运行时。
+    -->
+    <TargetDeviceFamily Name="Windows.Desktop" MinVersion="10.0.19041.0" MaxVersionTested="10.0.22621.0" />
+  </Dependencies>
+
+  <Resources>
+    <Resource Language="zh-CN" />
+    <Resource Language="zh-TW" />
+    <Resource Language="en-US" />
+    <Resource Language="de-DE" />
+    <Resource Language="fr-FR" />
+    <Resource Language="ja-JP" />
+    <Resource Language="ko-KR" />
+    <Resource Language="it-IT" />
+    <Resource Language="ru-RU" />
+  </Resources>
+
+  <Applications>
+    <Application Id="Aropyt" Executable="Aropyt.exe" EntryPoint="Windows.FullTrustApplication">
+      <uap:VisualElements
+        DisplayName="{{DISPLAY_NAME}}"
+        Description="A Markdown editor where the file is the source of truth."
+        BackgroundColor="transparent"
+        Square150x150Logo="Assets\Square150x150Logo.png"
+        Square44x44Logo="Assets\Square44x44Logo.png" />
+
+      <Extensions>
+        <!-- 文件关联：与 tauri.conf.json 的 bundle.fileAssociations 一一对应 -->
+        <uap:Extension Category="windows.fileTypeAssociation">
+          <uap:FileTypeAssociation Name="aropyt.markdown">
+            <uap:DisplayName>Markdown Document</uap:DisplayName>
+            <uap:Logo>Assets\Square44x44Logo.png</uap:Logo>
+            <uap:SupportedFileTypes>
+              <uap:FileType>.md</uap:FileType>
+              <uap:FileType>.markdown</uap:FileType>
+            </uap:SupportedFileTypes>
+          </uap:FileTypeAssociation>
+        </uap:Extension>
+
+        <uap:Extension Category="windows.fileTypeAssociation">
+          <uap:FileTypeAssociation Name="aropyt.latex">
+            <uap:DisplayName>LaTeX Document</uap:DisplayName>
+            <uap:Logo>Assets\Square44x44Logo.png</uap:Logo>
+            <uap:SupportedFileTypes>
+              <uap:FileType>.tex</uap:FileType>
+              <uap:FileType>.latex</uap:FileType>
+            </uap:SupportedFileTypes>
+          </uap:FileTypeAssociation>
+        </uap:Extension>
+
+        <uap:Extension Category="windows.fileTypeAssociation">
+          <uap:FileTypeAssociation Name="aropyt.fountain">
+            <uap:DisplayName>Fountain Screenplay</uap:DisplayName>
+            <uap:Logo>Assets\Square44x44Logo.png</uap:Logo>
+            <uap:SupportedFileTypes>
+              <uap:FileType>.fountain</uap:FileType>
+            </uap:SupportedFileTypes>
+          </uap:FileTypeAssociation>
+        </uap:Extension>
+      </Extensions>
+    </Application>
+  </Applications>
+
+  <Capabilities>
+    <rescap:Capability Name="runFullTrust" />
+  </Capabilities>
+</Package>

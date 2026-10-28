@@ -167,6 +167,14 @@ export interface AropytRuntime {
   pickWorkspace(): Promise<Workspace | null>;
   regrantWorkspace(): Promise<boolean>;
   /**
+   * 关闭当前工作区：解绑目录，**不动磁盘上的任何文件**。
+   *
+   * 做三件事：清空文件树、关掉全部标签、把 `workspace.lastId` 从配置里抹掉
+   * （不抹掉的话下次启动又会自动恢复回来 —— 用户明确关掉的东西不该自己回来）。
+   * 标签里有未保存改动时先问一次，返回 false 表示用户取消。
+   */
+  closeWorkspace(): Promise<boolean>;
+  /**
    * 打开文件。
    *
    * `preview` 对应"文件树里单击"：开在预览标签里（斜体），
@@ -668,6 +676,7 @@ export function createRuntime(options: RuntimeOptions): AropytRuntime {
   windowService.bindHost({
     pickWorkspaceFolder: async () => (await pickWorkspace()) !== null,
     regrantLastWorkspaceFolder: () => regrantWorkspace(),
+    closeWorkspace: () => closeWorkspace(),
     importImage: (targetDir) => importImage(targetDir),
     openMarkdownFile: () => openMarkdownFile(),
   });
@@ -703,6 +712,7 @@ export function createRuntime(options: RuntimeOptions): AropytRuntime {
 
     pickWorkspace,
     regrantWorkspace,
+    closeWorkspace,
     openFile,
     activateTab,
     closeTab,
@@ -1985,6 +1995,62 @@ function validateContributions(manifest: PluginManifest): void {
      * 后者恰恰是最常见的静默故障。宁可多一条 5 秒自动消失的提示。
      */
     await windowService.showMessage(t('rt.saved', { path }), { level: 'info' });
+  }
+
+  /**
+   * 关闭工作区。
+   *
+   * 注意"关闭"只解除绑定：文件、目录、编辑历史、草稿全都留在原处。
+   * 唯一需要主动清除的是配置里的 `workspace.lastId` —— 那是"上次用哪个
+   * 工作区"的记账，留着就等于下次启动又替用户打开一个他已经关掉的东西。
+   *
+   * 标签必须一起清空。工作区没了，标签上的相对路径就失去了参照
+   * （保存、图片解析、历史全要拼绝对路径），留着它们只会让后续操作
+   * 报一串"文件不存在"。
+   */
+  async function closeWorkspace(): Promise<boolean> {
+    if (!state.workspace) return false;
+
+    const dirtyCount = state.tabs.filter((tab) => tab.dirty).length;
+    if (dirtyCount > 0) {
+      const choice = await windowService.showMessage(
+        t('rt.closeWorkspaceDirty', { n: String(dirtyCount) }),
+        {
+          level: 'warning',
+          actions: [{ label: t('rt.closeAnyway'), run: () => undefined }],
+        },
+      );
+      // undefined = 用户直接关掉了提示 = 取消
+      if (choice === undefined) return false;
+    }
+
+    state.workspace = null;
+    state.tabs = [];
+    state.activePath = null;
+    state.dirty = false;
+    resetAssetCache();
+
+    // 编辑器要显式清空：停在上一篇文档上会让"工作区已关闭"看起来像没生效。
+    loadingDocument = true;
+    try {
+      editor.setActiveFile(null, null);
+      editor.replaceDocument('');
+    } finally {
+      loadingDocument = false;
+    }
+
+    emitWorkspaceChange();
+    notify();
+
+    void configuration
+      .update('workspace.lastId', undefined)
+      .then(() => configuration.update('workspace.lastName', undefined))
+      .catch((error: unknown) => {
+        // 抹不掉只是下次启动自动恢复，不该把"关闭"这个动作也弄失败
+        console.warn('[aropyt] 清除上次工作区失败', error);
+      });
+
+    return true;
   }
 
   async function regrantWorkspace(): Promise<boolean> {

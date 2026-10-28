@@ -23,6 +23,11 @@ const manifest: PluginManifest = {
       { id: 'aropyt.file.pickWorkspace', title: '打开文件夹…', category: '文件', icon: 'openFolder' },
       { id: 'aropyt.file.openFile', title: '打开文件…', category: '文件', icon: 'openFile' },
       { id: 'aropyt.file.regrant', title: '恢复上次工作区', category: '文件' },
+      /*
+       * 与"打开文件夹"成对。没有这条命令时，"关闭工作区"这个状态根本没有
+       * 入口 —— 用户只能靠再打开另一个文件夹来换，想回到初始态无路可走。
+       */
+      { id: 'aropyt.file.closeWorkspace', title: '关闭工作区', category: '文件' },
       { id: 'aropyt.file.save', title: '保存', category: '文件', icon: 'save' },
     ],
     menus: {
@@ -46,6 +51,14 @@ function activate(context: PluginContext): void {
   context.commands.register('aropyt.file.openFile', () => context.window.openMarkdownFile());
 
   context.commands.register('aropyt.file.regrant', () => context.window.regrantLastWorkspaceFolder());
+
+  /*
+   * 关闭工作区。
+   *
+   * 返回值刻意不处理：用户取消（标签脏 + 点了取消）时宿主已经问过一遍，
+   * 这里再弹一句"已取消"只会多一次噪音。
+   */
+  context.commands.register('aropyt.file.closeWorkspace', () => context.window.closeWorkspace());
 
   /*
    * 保存。

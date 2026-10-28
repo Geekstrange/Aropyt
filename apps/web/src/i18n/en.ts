@@ -239,4 +239,14 @@ export const en: Record<keyof typeof import('./zh').zh, string> = {
   'toolbar.source.exit': 'Exit source mode',
   'toolbar.source.enter': 'Enter source mode',
 
+  // Workspace: close / remove subfolder
+  'toolbar.closeWorkspace': 'Close Workspace',
+  'view.removeFromWorkspace': 'Remove from Workspace',
+  'view.restoreRemoved': 'Restore Removed Folders',
+  'view.nothingToRestore': 'No folders have been removed.',
+  'view.restoredAll': 'Restored {n} folder(s)',
+  'view.allRemoved': 'Every folder has been removed from this workspace. Use “Restore Removed Folders” in the command palette to bring them back.',
+  'rt.closeWorkspaceDirty': '{n} tab(s) have unsaved changes. Closing the workspace discards them.',
+  'rt.closeAnyway': 'Close Anyway',
+
 };

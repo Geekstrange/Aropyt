@@ -13,6 +13,52 @@
 - 编辑历史的版本间 diff（v0.1.2 已完成单版本对比，尚缺版本间对比）
 - 工具栏在触屏上的点按目标（当前约 26px，低于 44px 建议值）
 
+## [0.1.5] - 2026-10-28
+
+> Consistent with `docs/releases/v0.1.5.md`.
+
+The workspace finally has an exit, and folders you never open can be put away.
+
+### Added
+
+- **Remove a folder from the workspace** — directory rows in the file tree now
+  carry a `×` that appears on hover (always visible on touch devices, where
+  hover does not exist). Removing hides the folder **and its whole subtree**;
+  nothing on disk is touched. The list is persisted per workspace name, and
+  `恢复已移除的目录` in the command palette brings everything back — removing
+  would otherwise be a one-way street.
+- **Close workspace** — the tree gained a header showing the workspace name
+  with a close button (the command palette has `关闭工作区` too). Closing also
+  clears `workspace.lastId`, so a deliberately closed workspace does not
+  reopen on the next launch; tabs are closed along with it, and unsaved tabs
+  prompt first.
+
+### Changed
+
+- **MSI is no longer built.** The Windows download has always been the NSIS
+  `setup.exe`; the MSI only cost a WiX run per tag. Release assets for Windows
+  are now `*_x64-setup.exe` and `*_arm64-setup.exe`.
+- **Microsoft Store package added to releases** —
+  `Aropyt_<version>_x64_arm64.msixupload`, built by `src-tauri/msix/pack.ps1`
+  + `bundle.ps1` from the same bare executables. Tauri has no MSIX target, so
+  the package is assembled with `makeappx`: manifest + tiles + exe, then a
+  bundle of both architectures, then the upload container. Unsigned on
+  purpose — the Store re-signs it, which is what removes the code-signing
+  certificate from the release path entirely.
+
+### Fixed
+
+- **File-tree keyboard navigation leaked a listener per click** — the
+  `keydown` handler (and `focusedRow`) had been pasted *inside* the directory
+  row's click handler. Every click on a directory added another listener, so
+  a single `j` could move several rows, and the cursor reset to the top each
+  time. Moved back to the mount scope.
+- **Collapsing any directory could empty the tree on next launch** —
+  `explorer.collapsed` was persisted as `null` to mean "nothing collapsed",
+  but `Memento.get` uses `has(key)`, so it returned `null` instead of the
+  fallback and `new Set(null)` threw. Now the key is deleted (`undefined`)
+  and the read is defensive.
+
 ## [0.1.4] - 2026-10-27
 
 > Consistent with `docs/releases/v0.1.4.md`.

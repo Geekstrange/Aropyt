@@ -239,4 +239,14 @@ export const ja: Record<keyof typeof import('./zh').zh, string> = {
   'toolbar.source.exit': 'ソースモードを終了',
   'toolbar.source.enter': 'ソースモードに切り替え',
 
+  // ワークスペース：閉じる / サブフォルダーの削除
+  'toolbar.closeWorkspace': 'ワークスペースを閉じる',
+  'view.removeFromWorkspace': 'ワークスペースから削除',
+  'view.restoreRemoved': '削除したフォルダーを復元',
+  'view.nothingToRestore': '削除されたフォルダーはありません。',
+  'view.restoredAll': '{n} 個のフォルダーを復元しました',
+  'view.allRemoved': 'このワークスペースのフォルダーはすべて削除されています。コマンドパレットの「削除したフォルダーを復元」で戻せます。',
+  'rt.closeWorkspaceDirty': '未保存のタブが {n} 個あります。ワークスペースを閉じるとこれらの変更は失われます。',
+  'rt.closeAnyway': 'それでも閉じる',
+
 };

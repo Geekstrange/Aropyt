@@ -239,4 +239,14 @@ export const it: Record<keyof typeof import('./zh').zh, string> = {
   'toolbar.source.exit': 'Esci dalla modalità sorgente',
   'toolbar.source.enter': 'Passa alla modalità sorgente',
 
+  // Area di lavoro: chiudi / rimuovi sottocartella
+  'toolbar.closeWorkspace': 'Chiudi area di lavoro',
+  'view.removeFromWorkspace': 'Rimuovi dall’area di lavoro',
+  'view.restoreRemoved': 'Ripristina cartelle rimosse',
+  'view.nothingToRestore': 'Nessuna cartella è stata rimossa.',
+  'view.restoredAll': '{n} cartelle ripristinate',
+  'view.allRemoved': 'Tutte le cartelle sono state rimosse da quest’area di lavoro. Usa «Ripristina cartelle rimosse» nella palette dei comandi per recuperarle.',
+  'rt.closeWorkspaceDirty': '{n} schede hanno modifiche non salvate. Chiudere l’area di lavoro le farà perdere.',
+  'rt.closeAnyway': 'Chiudi comunque',
+
 };
