@@ -57,19 +57,24 @@ Partner Center → 你的产品 → 提交 → **包** 页面 → 把 `.msixuplo
 
 ## 身份
 
-`identity.json` 里的三个值必须与 Partner Center **逐字符**一致：
+`identity.json` 里的四个值，前三个必须与 Partner Center **逐字符**一致：
 
 ```json
 {
   "name": "Geekstrange.Aropyt",
   "publisher": "CN=0D2F5EE7-F423-4A55-9E5A-23548FCAD974",
+  "displayName": "Aropyt",
   "publisherDisplayName": "Geekstrange"
 }
 ```
 
-`publisher` 是账户级的值（Partner Center → 账户设置 → 开发者信息 →
-Windows publisher ID），不是你自己起的名字。大小写差一个字符，上传时就是
-"identity mismatch"，而报错不会告诉你是哪一位不同。
+- `publisher` 是账户级的值（Partner Center → 账户设置 → 开发者信息 →
+  Windows publisher ID），不是你自己起的名字。大小写差一个字符，上传时就是
+  "identity mismatch"，而报错不会告诉你是哪一位不同。
+- **`displayName` 必须是已预留的应用名**，`publisherDisplayName` 是开发者名。
+  这两个字段作用不同、校验也不同：前者对不上预留名，商店会报
+  「此软件包的清单（Package/Properties/DisplayName）使用了你未保留的显示名称」；
+  后者写开发者名即可，不校验预留。第一次提交就是因为两者混用被拒的。
 
 ## 几个已知的坑（都写在脚本注释里，这里只列清单）
 

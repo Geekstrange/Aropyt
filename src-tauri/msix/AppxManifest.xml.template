@@ -32,8 +32,16 @@
     ProcessorArchitecture="{{ARCH}}" />
 
   <Properties>
+    <!--
+      DisplayName 与 PublisherDisplayName 是**两个不同的名字**，混用会被商店拒：
+
+        DisplayName         = 应用名，必须是你在 Partner Center **已经预留**的名字
+                              （这里是 "Aropyt"）。写成开发者名会报
+                              "使用了你未保留的显示名称"。
+        PublisherDisplayName = 开发者显示名（"Geekstrange"），账户级，随便写不会校验预留。
+    -->
     <DisplayName>{{DISPLAY_NAME}}</DisplayName>
-    <PublisherDisplayName>{{DISPLAY_NAME}}</PublisherDisplayName>
+    <PublisherDisplayName>{{PUBLISHER_DISPLAY_NAME}}</PublisherDisplayName>
     <Logo>Assets\StoreLogo.png</Logo>
   </Properties>
 

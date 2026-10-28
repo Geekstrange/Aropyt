@@ -150,10 +150,26 @@ New-TileImage -Source $logoSource -Size 44 -Destination (Join-Path $assets 'Squa
 
 # ── 4. 渲染清单 ──────────────────────────────────────────────
 $manifest = Get-Content (Join-Path $here 'AppxManifest.xml.template') -Raw
+
+<#
+  DisplayName（应用名）必须是 Partner Center 里**已预留**的名字。
+  漏填时不能退回成 PublisherDisplayName —— 那正是第一次上传被拒的原因：
+  两者混用，清单里写了 "Geekstrange"，商店回一句
+  "使用了你未保留的显示名称"，而错误信息完全没提是哪个字段写错了。
+  这里直接拦下来，比让商店替你拦要快得多。
+#>
+if (-not $identity.displayName) {
+  throw "identity.json 缺少 displayName —— 必须是 Partner Center 里已预留的应用名（如 Aropyt），不是开发者名。"
+}
+if (-not $identity.publisherDisplayName) {
+  throw 'identity.json 缺少 publisherDisplayName。'
+}
+
 $manifest = $manifest.
   Replace('{{NAME}}', $identity.name).
   Replace('{{PUBLISHER}}', $identity.publisher).
-  Replace('{{DISPLAY_NAME}}', $identity.publisherDisplayName).
+  Replace('{{DISPLAY_NAME}}', $identity.displayName).
+  Replace('{{PUBLISHER_DISPLAY_NAME}}', $identity.publisherDisplayName).
   Replace('{{VERSION}}', $packageVersion).
   Replace('{{ARCH}}', $Arch)
 
