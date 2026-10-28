@@ -306,6 +306,30 @@
       justify-content: center;
     }
 
+    /*
+     * Microsoft Store 徽章。
+     *
+     * 只用官方生成器给出的图片（apps.microsoft.com/badge），不自己画、
+     * 不拉伸、不改色——商店品牌指南对此有明确要求，改图是明确禁止的。
+     * 高度 48px：指南要求屏幕显示不低于 32px，且要为徽章留出 1/4 高度的
+     * 净空（margin 就是净空，别用负边距去"挤"版面）。
+     */
+    .store-badge {
+      display: inline-block;
+      /* 指南要求徽章周围留出约 1/4 高度的净空，20px 正好覆盖 48px 徽章的这点余量 */
+      margin-top: 20px;
+      line-height: 0;
+    }
+
+    .store-badge[hidden] {
+      display: none;
+    }
+
+    .store-badge img {
+      height: 48px;
+      width: auto;
+    }
+
     .btn {
       display: inline-flex;
       align-items: center;
@@ -515,6 +539,13 @@
       <a class="btn" href="https://github.com/Geekstrange/Aropyt" target="_blank" rel="noopener"
         data-i18n="hero.github">View on GitHub</a>
     </div>
+    <!--
+      Store 徽章默认 hidden：上架前它的链接是 404。
+      填入 STORE_APP_ID 后由脚本点亮，见页面底部的 renderStoreBadge()。
+    -->
+    <a class="store-badge" id="msStoreBadge" hidden>
+      <img id="msStoreBadgeImg" alt="Get it from Microsoft Store" height="48" loading="lazy" />
+    </a>
     <p class="platforms" data-i18n="hero.platforms">Windows · macOS · Linux · Android</p>
   </header>
 
@@ -894,6 +925,54 @@
       ko: "한국어", de: "Deutsch", fr: "Français", it: "Italiano", ru: "Русский"
     };
 
+    /*
+     * ── Microsoft Store 徽章 ────────────────────────────────────
+     *
+     * STORE_APP_ID 留空 = 徽章整块不显示。这不是偷懒，是因为商店在认证通过
+     * 之前那个链接是死链：宁可没有，也不能让首屏挂一个 404。
+     *
+     * 上架后把 12 位 Store ID 填进来即可。取法：Partner Center →
+     * 应用管理 → 应用标识 → Store ID（也是 apps.microsoft.com/detail/<ID>
+     * 结尾那一串）。填完不用改任何 HTML —— 语言、明暗变体都自动跟随。
+     */
+    const STORE_APP_ID = "9PL9CM7QX8JF";
+    const BADGE_LOCALE = {
+      en: "en-us", "zh-CN": "zh-cn", "zh-TW": "zh-tw", ja: "ja-jp",
+      ko: "ko-kr", de: "de-de", fr: "fr-fr", it: "it-it", ru: "ru-ru",
+    };
+    const BADGE_ALT = {
+      en: "Get it from Microsoft Store",
+      "zh-CN": "从 Microsoft Store 获取",
+      "zh-TW": "從 Microsoft Store 取得",
+      ja: "Microsoft Store から入手",
+      ko: "Microsoft Store에서 받기",
+      de: "Im Microsoft Store erhältlich",
+      fr: "Obtenir sur Microsoft Store",
+      it: "Scarica da Microsoft Store",
+      ru: "Получить в Microsoft Store",
+    };
+    let currentLang = "en";
+
+    function renderStoreBadge() {
+      const link = document.getElementById("msStoreBadge");
+      const img = document.getElementById("msStoreBadgeImg");
+      if (!link || !img) return;
+      if (!STORE_APP_ID) {
+        link.hidden = true;
+        return;
+      }
+      const locale = BADGE_LOCALE[currentLang] || "en-us";
+      /*
+       * 变体要跟着站点主题走：指南的建议是浅色背景配深色徽章、深色背景配
+       * 浅色徽章 —— 反了之后徽章的描边会和背景糊在一起，看着像张脏图。
+       */
+      const variant = document.documentElement.getAttribute("data-theme") === "light" ? "dark" : "light";
+      img.src = "https://get.microsoft.com/images/" + locale + "%20" + variant + ".svg";
+      img.alt = BADGE_ALT[currentLang] || BADGE_ALT.en;
+      link.href = "https://apps.microsoft.com/detail/" + STORE_APP_ID;
+      link.hidden = false;
+    }
+
     function detectLang() {
       const fromUrl = new URLSearchParams(location.search).get("lang");
       if (fromUrl && I18N[fromUrl]) return fromUrl;
@@ -927,6 +1006,8 @@
       document.querySelectorAll("#langMenu button[data-code]").forEach((b) => {
         b.setAttribute("aria-selected", b.dataset.code === lang ? "true" : "false");
       });
+      currentLang = lang;
+      renderStoreBadge();
     }
 
     /* 语言下拉：由 I18N 与 LANG_LABELS 生成，保持与原生 select 一致的数据源 */
@@ -976,6 +1057,8 @@
     }
     function applyTheme(theme) {
       document.documentElement.setAttribute('data-theme', theme);
+      // 徽章有明暗两套美术，换主题必须重选一次，否则深色页面上还挂着浅色徽章
+      renderStoreBadge();
     }
     (function initTheme() {
       try {
