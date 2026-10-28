@@ -1,8 +1,11 @@
 # Aropyt 三平台发布构建。
 #
 # 触发：推送 v* 标签（git tag v0.0.1 && git push --tags）。
-# 产物：Windows（exe/msi）、macOS（dmg/app）、Linux（AppImage/deb），
+# 产物：Windows（exe）、macOS（dmg/app）、Linux（AppImage/deb），
 #       由 tauri-action 自动创建 GitHub Release 草稿并上传。
+#
+# Windows 只出 NSIS（exe）：MSI 从来不是用户的安装方式，构建它纯属白跑一遍
+# WiX。商店提交走 MSIX，那是独立的一条流水线（见 docs/releases/v0.1.5.md）。
 #
 # Linux 必须装 WebKitGTK 系依赖（Tauri 2 用 4.1 API）——
 # 这也是 Linux 包只能在 Linux 上编译的原因（无法从 Windows 交叉编译）。
@@ -58,7 +61,7 @@ jobs:
       matrix:
         include:
           - platform: windows-latest
-            args: ''
+            args: '--bundles nsis'
           # Windows ARM64：x64 runner 交叉编译，**只出 NSIS**（WiX 对 arm64 支持不完整）
           - platform: windows-latest
             args: '--target aarch64-pc-windows-msvc --bundles nsis'
@@ -109,6 +112,44 @@ jobs:
           releaseId: ${{ needs.prepare-release.outputs.release_id }}
           args: ${{ matrix.args }}
 
+      # ── MSIX 输入（仅 Windows）────────────────────────────────
+      #
+      # MSIX 装的是**裸 exe**，不是 setup.exe —— 所以不能像 APK 那样从
+      # Release 下载现成资产再打包，必须在产出它的 job 里顺手暂存。
+      # 这样 msix job 不需要重跑一遍 cargo build（那要多花十几分钟）。
+      - name: Stage bare exe for MSIX (x64)
+        if: matrix.platform == 'windows-latest' && !contains(matrix.args, 'aarch64')
+        shell: pwsh
+        run: |
+          New-Item -ItemType Directory -Force -Path msix-input/x64 | Out-Null
+          Copy-Item src-tauri/target/release/Aropyt.exe msix-input/x64/
+          if (Test-Path src-tauri/target/release/Aropyt.pdb) {
+            Copy-Item src-tauri/target/release/Aropyt.pdb msix-input/x64/
+          }
+
+      - name: Stage bare exe for MSIX (arm64)
+        if: matrix.platform == 'windows-latest' && contains(matrix.args, 'aarch64')
+        shell: pwsh
+        run: |
+          New-Item -ItemType Directory -Force -Path msix-input/arm64 | Out-Null
+          Copy-Item src-tauri/target/aarch64-pc-windows-msvc/release/Aropyt.exe msix-input/arm64/
+          if (Test-Path src-tauri/target/aarch64-pc-windows-msvc/release/Aropyt.pdb) {
+            Copy-Item src-tauri/target/aarch64-pc-windows-msvc/release/Aropyt.pdb msix-input/arm64/
+          }
+
+      - uses: actions/upload-artifact@v4
+        if: matrix.platform == 'windows-latest'
+        with:
+          name: msix-input-${{ contains(matrix.args, 'aarch64') && 'arm64' || 'x64' }}
+          # 指到架构子目录而不是 msix-input 整体：artifact 的根就是这里的目录，
+          # 下载回来才是 msix-input/msix-input-x64/{Aropyt.exe,Aropyt.pdb}。
+          # 给外层的 msix-input，里面会多套一层 x64/，路径就和调用方对不上了。
+          path: msix-input/${{ contains(matrix.args, 'aarch64') && 'arm64' || 'x64' }}
+          if-no-files-found: error
+          # 比"够用一次"留点余量：只 rerun 失败的 msix job 时，
+          # 上一步的 artifact 还在（1 天的话隔天重试就直接失败）
+          retention-days: 3
+
       # ── macOS 完整性门禁（issue #1）──────────────────────────
       # 签名声明带资源目录而 _CodeSignature/CodeResources 缺失时，
       # Gatekeeper 报"已损坏"而不是"未识别的开发者"（实测）。
@@ -127,6 +168,74 @@ jobs:
           codesign --verify --deep --strict "$APP"
           codesign -dv "$APP" 2>&1 | head -20
           echo "Bundle integrity OK"
+
+
+  # ── 微软商店提交件（MSIX）───────────────────────────────────
+  #
+  # 只产出 .msixupload，不上架任何东西 —— 上传是人工动作：
+  # 从 Release 把它下载下来，拖进 Partner Center 的「包」页面。
+  #
+  # 为什么单独一个 job 而不是塞进 build：msixbundle 必须同时拿到 x64 与
+  # arm64 的裸 exe，而它们是在两个矩阵 job 里分别编译的。用 artifact 把
+  # 两者汇合，比在一个 job 里编译两遍便宜得多。
+  msix:
+    permissions:
+      contents: write
+    runs-on: windows-latest
+    needs: build
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/download-artifact@v4
+        with:
+          pattern: msix-input-*
+          path: msix-input
+
+      - name: Pack MSIX bundle
+        shell: pwsh
+        run: |
+          $version = (Get-Content src-tauri/tauri.conf.json -Raw | ConvertFrom-Json).version
+
+          # 按架构**搜索** exe，而不是写死 msix-input/msix-input-x64/Aropyt.exe。
+          # artifact 的目录层级取决于上传时的 path 写法，写死路径的下场是：
+          # 上传那边一调整，这里就找不到文件，而报错发生在 makeappx 那一层，
+          # 看起来像"打包工具的问题"。搜不到就直接 throw，错误信息说人话。
+          function Find-Package([string]$arch) {
+            $exe = Get-ChildItem msix-input -Recurse -Filter 'Aropyt.exe' -File |
+              Where-Object { $_.FullName -match [regex]::Escape($arch) } |
+              Select-Object -First 1
+            if (-not $exe) { throw "msix-input 下找不到 $arch 的 Aropyt.exe（artifact 没下下来？）" }
+            $pdb = Join-Path $exe.DirectoryName 'Aropyt.pdb'
+            return [pscustomobject]@{ Exe = $exe.FullName; Pdb = $(if (Test-Path $pdb) { $pdb } else { '' }) }
+          }
+
+          $x64 = Find-Package 'x64'
+          $arm64 = Find-Package 'arm64'
+          Write-Host "x64:   $($x64.Exe)"
+          Write-Host "arm64: $($arm64.Exe)"
+
+          ./src-tauri/msix/pack.ps1 -Arch x64 -Exe $x64.Exe -Pdb $x64.Pdb -Version $version
+          ./src-tauri/msix/pack.ps1 -Arch arm64 -Exe $arm64.Exe -Pdb $arm64.Pdb -Version $version
+          ./src-tauri/msix/bundle.ps1 -Version $version
+
+      # 同时留一份 workflow artifact：Release 上传失败时还能从 Actions 页面取包，
+      # 不至于为了一个 10MB 的文件重跑整条流水线。
+      - uses: actions/upload-artifact@v4
+        with:
+          name: msix-upload
+          path: src-tauri/target/msix/*.msixupload
+
+      - name: Attach store package to release
+        shell: pwsh
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          $file = (Get-ChildItem src-tauri/target/msix/*.msixupload).FullName
+          Write-Host "上传 $file"
+          # --clobber 是给"同一次 tag 重跑流水线"用的（临时性失败很常见）。
+          # 它不等于"可以换二进制"：一旦这个包被提交到 Partner Center，
+          # 就只能发新 tag，见 src-tauri/msix/README.md。
+          gh release upload "$env:GITHUB_REF_NAME" $file --clobber
 
 
   # ── Android APK（release 签名）──────────────────────────────
