@@ -37,7 +37,15 @@ export function toggleLinePrefix(view: EditorView, prefix: string | ((index: num
         : line.text.replace(/^\s*\d+\.\s/, '');
       return { from: line.from, to: line.to, insert: stripped };
     }
-    const stripped = line.text.replace(/^\s*(\d+\.\s|[-*+]\s|>\s|#{1,6}\s)/, '');
+    /*
+     * 剥掉已有的块级前缀。列表前缀要连复选框一起剥：
+     * `- [x] 内容` 在切到任务列表时必须变成 `- [ ] 内容`，
+     * 只剥 `- ` 会留下 `[x] `，结果拼成 `- [ ] [x] 内容`。
+     */
+    const stripped = line.text.replace(
+      /^\s*(\d+\.\s|[-*+]\s(?:\[[ xX]\]\s)?|>\s|#{1,6}\s)/,
+      '',
+    );
     return { from: line.from, to: line.to, insert: prefixOf(index, line) + stripped };
   });
 

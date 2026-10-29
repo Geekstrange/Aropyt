@@ -99,7 +99,7 @@ VSCode-style declarative contributions with lazy activation. Outline, file tree 
 ### Files, associations and portability
 
 - **Files as the source of truth.** Documents are always plain Markdown on disk. Copy out is always source text. No lock-in, no proprietary format, fully version-controllable
-- **File associations.** Installed builds register **Markdown** (`.md`/`.markdown`), **LaTeX** (`.tex`/`.latex`) and **Fountain screenplays** (`.fountain`). Double-click to open, edit and **save back in place** (atomic write, 8 MB limit). Each type has its own icon, written to the registry by the installer
+- **File associations.** Installed builds register **Markdown** (`.md`/`.markdown`), **LaTeX** (`.tex`/`.latex`) and **Fountain screenplays** (`.fountain`). Double-click to open, edit and **save back in place** (atomic write, 8 MB limit). Each type has its own icon, written to the registry by the installer, and each resolves to its own language: the status bar and tab show the type, LaTeX gets syntax highlighting, and Fountain gets a **scene list in the sidebar** plus screenplay styling (scene headings, characters, dialogue, transitions) from the built-in plugin. All three appear in the file tree and in the Open / Save dialogs
 - **CLI.** `Aropyt.exe note.md` works too
 - **Portable builds.** Provided, but do **not** register associations
 - **Known gap.** Double-clicking a file while Aropyt is already running does not yet focus the existing window — planned for the next release
@@ -242,6 +242,15 @@ Contributions register **before** `activate`, so a plugin whose `activate` throw
 - **API version gate.** Plugins declaring an older `engines.aropyt` are disabled with an explicit reason.
 
 ### Debugging
+
+Press `F12` for the debug panel. It captures from startup — not from the moment you open it —
+and gives you: live logs with full stacks for uncaught errors, an operation timeline
+(open / close / save / command / focus failures), runtime budget violations, plugin states
+with failure reasons, and a one-click **Copy report** diagnostic bundle that contains
+environment details and errors but never document text.
+
+Errors are also persisted across launches, so a crash that never let you open the panel
+can still be inspected on the next start.
 
 Watch the console for `[plugin-host] <id>` prefixed errors. The plugin manager shows each plugin's state — *declared / active / disabled / failed* — with the failure reason.
 

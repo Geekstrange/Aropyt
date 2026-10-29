@@ -25,6 +25,8 @@ export * from './commands.js';
 export { inlineRender, type InlineRenderConfig } from './wysiwyg/inline-render.js';
 export * from './safety.js';
 export * from './performance.js';
+// 语言识别属于内核职责（文档身份），渲染不属于 —— 见 languages.ts 的说明。
+export * from './languages.js';
 
 export * from './kernel/idb.js';
 export * from './kernel/commands.js';

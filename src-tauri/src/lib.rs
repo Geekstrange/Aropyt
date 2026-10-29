@@ -11,6 +11,7 @@
 //! 编译状态：Windows 本地 `cargo build --release` 与 GitHub Actions
 //! （ubuntu-22.04 / macos-latest）均已通过。改完记得 `cargo check`。
 
+use std::collections::HashMap;
 use std::fs;
 use std::io::Write;
 use std::path::{Component, Path, PathBuf};
@@ -68,30 +69,70 @@ fn log_line(message: &str) {
  * 现在状态只注册一次（在 setup 里），后续只是换里面的值。
  */
 pub struct WorkspaceState {
-    root: Mutex<Option<Workspace>>,
+    /// 已注册的工作区根。key 是规范化后的绝对路径。
+    ///
+    /// 一次会话里可以同时打开多个工作区（标签各带颜色、保存互不干扰），
+    /// 所以这里必须是表而不是单值。单值时的症状很隐蔽：打开新文件夹
+    /// 会顶掉旧根，旧标签之后再保存，内容就写进了**另一个项目**的同名文件。
+    roots: Mutex<HashMap<String, Workspace>>,
+}
+
+/// 注册工作区后返回给前端的标识。
+///
+/// id 就是规范化后的根路径：前端拿它当标签归属、保存路由与会话恢复的键。
+/// 不用哈希是因为排障时看日志需要能直接读出是哪个目录。
+#[derive(Debug, serde::Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct WorkspaceDescriptor {
+    pub id: String,
+    pub name: String,
+    pub root: String,
 }
 
 impl WorkspaceState {
-    fn set(&self, workspace: Workspace) {
-        if let Ok(mut guard) = self.root.lock() {
-            *guard = Some(workspace);
-        }
-    }
+    fn register(&self, workspace: Workspace) -> Result<WorkspaceDescriptor, String> {
+        let root = workspace.root.clone();
+        let id = root.to_string_lossy().to_string();
+        let name = root
+            .file_name()
+            .map(|item| item.to_string_lossy().to_string())
+            .unwrap_or_else(|| id.clone());
 
-    /// 取当前工作区的根，用于需要路径但又不想持有锁的场合。
-    fn root(&self) -> Result<PathBuf, String> {
-        self.root
+        self.roots
             .lock()
             .map_err(|_| "工作区状态已损坏".to_string())?
-            .as_ref()
-            .map(|w| w.root.clone())
-            .ok_or_else(|| "尚未设置工作区".to_string())
+            .insert(id.clone(), workspace);
+
+        Ok(WorkspaceDescriptor {
+            id,
+            name,
+            root: root.to_string_lossy().to_string(),
+        })
     }
 
-    /// 在工作区上执行一个操作。锁在闭包执行期间一直持有。
-    fn with<T>(&self, action: impl FnOnce(&Workspace) -> Result<T, String>) -> Result<T, String> {
-        let guard = self.root.lock().map_err(|_| "工作区状态已损坏".to_string())?;
-        let workspace = guard.as_ref().ok_or_else(|| "尚未设置工作区".to_string())?;
+    /// 取某个根的绝对路径，用于需要路径但又不想持有锁的场合（日志）。
+    fn root_of(&self, root_id: &str) -> Result<PathBuf, String> {
+        self.roots
+            .lock()
+            .map_err(|_| "工作区状态已损坏".to_string())?
+            .get(root_id)
+            .map(|workspace| workspace.root.clone())
+            .ok_or_else(|| format!("工作区未注册：{root_id}"))
+    }
+
+    /// 在指定根上执行一个操作。锁在闭包执行期间一直持有。
+    fn with<T>(
+        &self,
+        root_id: &str,
+        action: impl FnOnce(&Workspace) -> Result<T, String>,
+    ) -> Result<T, String> {
+        let guard = self
+            .roots
+            .lock()
+            .map_err(|_| "工作区状态已损坏".to_string())?;
+        let workspace = guard
+            .get(root_id)
+            .ok_or_else(|| format!("工作区未注册：{root_id}"))?;
         action(workspace)
     }
 }
@@ -465,12 +506,16 @@ impl FileEntry {
 #[derive(Debug, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct ReadArgs {
+    /// 哪个工作区根（`set_workspace` 返回的 id）。多工作区并存后，
+    /// 只给相对路径是不够的 —— 同名文件在不同根下是完全不同的文件。
+    pub root_id: String,
     pub path: String,
 }
 
 #[derive(Debug, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct WriteArgs {
+    pub root_id: String,
     pub path: String,
     pub content: String,
 }
@@ -481,6 +526,7 @@ pub struct WriteArgs {
 #[derive(Debug, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct WriteBytesArgs {
+    pub root_id: String,
     pub path: String,
     pub base64: String,
 }
@@ -488,14 +534,18 @@ pub struct WriteBytesArgs {
 #[derive(Debug, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct ListArgs {
+    pub root_id: String,
     #[serde(default)]
     pub path: String,
 }
 
 #[tauri::command]
 fn workspace_read(state: State<'_, WorkspaceState>, args: ReadArgs) -> Result<String, String> {
-    log_line(&format!("workspace_read path={:?}", args.path));
-    let result = state.with(|ws| ws.read_to_string(&args.path));
+    log_line(&format!(
+        "workspace_read root={:?} path={:?}",
+        args.root_id, args.path
+    ));
+    let result = state.with(&args.root_id, |ws| ws.read_to_string(&args.path));
     if let Err(error) = &result {
         log_line(&format!("workspace_read 失败：{error}"));
     }
@@ -509,8 +559,11 @@ fn workspace_read_base64(
 ) -> Result<String, String> {
     // 日志只记路径与长度，**不记内容** —— base64 的图片能把日志文件撑爆，
     // 而日志是排查用的，写满一次就废了。
-    log_line(&format!("workspace_read_base64 path={:?}", args.path));
-    let result = state.with(|ws| ws.read_base64(&args.path));
+    log_line(&format!(
+        "workspace_read_base64 root={:?} path={:?}",
+        args.root_id, args.path
+    ));
+    let result = state.with(&args.root_id, |ws| ws.read_base64(&args.path));
     match &result {
         Ok(encoded) => log_line(&format!("workspace_read_base64 ok base64_len={}", encoded.len())),
         Err(error) => log_line(&format!("workspace_read_base64 失败：{error}")),
@@ -521,11 +574,12 @@ fn workspace_read_base64(
 #[tauri::command]
 fn workspace_write(state: State<'_, WorkspaceState>, args: WriteArgs) -> Result<(), String> {
     log_line(&format!(
-        "workspace_write path={:?} bytes={}",
+        "workspace_write root={:?} path={:?} bytes={}",
+        args.root_id,
         args.path,
         args.content.len()
     ));
-    let result = state.with(|ws| ws.write_atomic(&args.path, &args.content));
+    let result = state.with(&args.root_id, |ws| ws.write_atomic(&args.path, &args.content));
     if let Err(error) = &result {
         log_line(&format!("workspace_write 失败：{error}"));
     }
@@ -536,13 +590,19 @@ fn workspace_write(state: State<'_, WorkspaceState>, args: WriteArgs) -> Result<
 fn workspace_list(state: State<'_, WorkspaceState>, args: ListArgs) -> Result<Vec<FileEntry>, String> {
     // 这一条是排查"文件树为空"的关键：它能区分三种情况 ——
     // 目录列举失败（带原因）、目录为空（count=0）、数据正常（count>0）。
-    let root = state.root().map(|r| r.display().to_string());
+    let root = state.root_of(&args.root_id).map(|r| r.display().to_string());
     match root {
-        Ok(root) => log_line(&format!("workspace_list path={:?} root={root}", args.path)),
-        Err(error) => log_line(&format!("workspace_list path={:?} 无工作区：{error}", args.path)),
+        Ok(root) => log_line(&format!(
+            "workspace_list rootId={:?} path={:?} root={root}",
+            args.root_id, args.path
+        )),
+        Err(error) => log_line(&format!(
+            "workspace_list rootId={:?} path={:?} 无工作区：{error}",
+            args.root_id, args.path
+        )),
     }
 
-    let result = state.with(|ws| ws.list(&args.path));
+    let result = state.with(&args.root_id, |ws| ws.list(&args.path));
     match &result {
         Ok(entries) => log_line(&format!("workspace_list → {} 项", entries.len())),
         Err(error) => log_line(&format!("workspace_list 失败：{error}")),
@@ -613,6 +673,8 @@ async fn pick_folder(app: tauri::AppHandle) -> Result<Option<String>, String> {
 #[derive(Debug, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct ImportImageArgs {
+    /// 哪个工作区根（`set_workspace` 返回的 id）。
+    pub root_id: String,
     /// 工作区内的目标目录，如 "assets"。缺省为工作区根。
     #[serde(default)]
     pub target_dir: String,
@@ -628,12 +690,16 @@ pub struct ImportedFile {
     pub bytes: u64,
 }
 
-/// 选一个 Markdown 文件，返回它的绝对路径。
+/// 选一个可编辑文件，返回它的绝对路径。
 ///
 /// 用途是"打开文件"：宿主拿到路径后，把工作区设为它所在的目录并打开它。
 /// 与 `pick_folder` 互补 —— 文件夹选择器看不到文件（只显示子目录），
 /// 用户在一个装满 .md 的目录里会以为"没有匹配项"；而文件选择器
 /// 恰好相反。两条路都提供，用户按直觉走哪条都能到。
+///
+/// 函数名与命令名仍叫 `pick_markdown_file`：前端按这个名字 invoke，
+/// 改名要同步改三处（命令注册、前端 provider、Android 壳），而它现在的
+/// 语义是"选一个可编辑文本"—— 名字是历史包袱，行为以 EDITABLE_EXTS 为准。
 #[tauri::command]
 async fn pick_markdown_file(app: tauri::AppHandle) -> Result<Option<String>, String> {
     use tauri_plugin_dialog::DialogExt;
@@ -644,8 +710,8 @@ async fn pick_markdown_file(app: tauri::AppHandle) -> Result<Option<String>, Str
     let picked = tauri::async_runtime::spawn_blocking(move || {
         app.dialog()
             .file()
-            .set_title("打开 Markdown 文件")
-            .add_filter("Markdown", &["md", "markdown", "txt"])
+            .set_title("打开文件")
+            .add_filter("可编辑文本", &EDITABLE_EXTS)
             .blocking_pick_file()
     })
     .await
@@ -685,8 +751,8 @@ async fn save_markdown_file(
         let mut dialog = app
             .dialog()
             .file()
-            .set_title("保存 Markdown 文件")
-            .add_filter("Markdown", &["md", "markdown", "txt"]);
+            .set_title("保存文件")
+            .add_filter("可编辑文本", &EDITABLE_EXTS);
         // 未命名文档给一个默认文件名，让用户改而不是从空白开始想。
         if let Some(name) = suggested {
             if !name.is_empty() {
@@ -759,7 +825,7 @@ async fn import_image(
         .map(|n| n.to_string_lossy().to_string())
         .unwrap_or_else(|| "image.png".to_string());
 
-    let imported = state.with(|workspace| {
+    let imported = state.with(&args.root_id, |workspace| {
         let relative = workspace.unique_relative_path(&args.target_dir, &file_name);
         workspace.write_bytes_atomic(&relative, &bytes)?;
         Ok(relative)
@@ -785,7 +851,7 @@ fn workspace_write_base64(
         args.base64.len()
     ));
     let result = base64_decode(&args.base64).and_then(|bytes| {
-        state.with(|ws| {
+        state.with(&args.root_id, |ws| {
             log_line(&format!("workspace_write_base64 解码后 {} 字节", bytes.len()));
             ws.write_bytes_atomic(&args.path, &bytes)
         })
@@ -797,7 +863,10 @@ fn workspace_write_base64(
 }
 
 #[tauri::command]
-fn set_workspace(state: State<'_, WorkspaceState>, root: String) -> Result<(), String> {
+fn set_workspace(
+    state: State<'_, WorkspaceState>,
+    root: String,
+) -> Result<WorkspaceDescriptor, String> {
     log_line(&format!("set_workspace root={root:?}"));
 
     let path = PathBuf::from(&root);
@@ -818,8 +887,7 @@ fn set_workspace(state: State<'_, WorkspaceState>, root: String) -> Result<(), S
     };
 
     log_line(&format!("set_workspace → {}", canonical.display()));
-    state.set(Workspace { root: canonical });
-    Ok(())
+    state.register(Workspace { root: canonical })
 }
 
 /*
@@ -887,14 +955,19 @@ fn settings_write(app: tauri::AppHandle, text: String) -> Result<(), String> {
  * 那是下一步，本版只处理"冷启动带文件"。
  */
 
-/// 允许通过命令行打开的文件扩展名（也是写盘的允许列表）。
-const EXTERNAL_EXTS: [&str; 5] = ["md", "markdown", "tex", "latex", "fountain"];
+/// 可编辑的文本扩展名。
+///
+/// **一份列表管三处**：文件关联（命令行打开 / 外部文件读写）、
+/// "打开文件…" 与 "另存为…" 的对话框过滤器。三处各写一份的结果是：
+/// `.fountain` 关联得上、也能打开，却出现在对话框里选不到 —— 用户只能
+/// 双击文件，工作区里的剧本则完全打不开。列表必须只有一个来源。
+const EDITABLE_EXTS: [&str; 7] = ["md", "markdown", "txt", "log", "tex", "latex", "fountain"];
 
 fn is_supported_external(path: &Path) -> bool {
     path
         .extension()
         .and_then(|ext| ext.to_str())
-        .map(|ext| EXTERNAL_EXTS.contains(&ext.to_ascii_lowercase().as_str()))
+        .map(|ext| EDITABLE_EXTS.contains(&ext.to_ascii_lowercase().as_str()))
         .unwrap_or(false)
 }
 
@@ -1012,7 +1085,7 @@ pub fn run() {
             app.manage(PendingOpen(Mutex::new(launch_file_from_args())));
             // 状态只在这里注册一次。命令里不再 manage —— 重复注册会 panic。
             app.manage(WorkspaceState {
-                root: Mutex::new(None),
+                roots: Mutex::new(HashMap::new()),
             });
             log_line("应用启动");
 

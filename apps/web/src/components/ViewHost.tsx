@@ -27,6 +27,7 @@ import { guardSync } from '@aropyt/core';
 
 import type { ViewRegistration } from '../services.js';
 import type { AropytRuntime } from '../runtime.js';
+import { WorkspaceBar } from './WorkspaceBar.js';
 
 interface MountedViewProps {
   readonly viewId: string;
@@ -58,6 +59,24 @@ function MountedView({
    */
   const locale = useSyncExternalStore(subscribe, getLocale);
 
+  /*
+   * "正在激活"与"激活卡住了"必须能区分。
+   *
+   * 真实故障里见过插件一直停在 declared：侧栏永远显示"正在激活插件…"，
+   * 用户既不知道是慢还是坏了，也没有任何可操作的出口。等 3 秒仍未拿到
+   * provider 就改成"未激活"并给出重试按钮 —— 至少能自愈，也能被截图报障。
+   */
+  const [stalled, setStalled] = useState(false);
+
+  useEffect(() => {
+    if (provider) {
+      setStalled(false);
+      return undefined;
+    }
+    const timer = setTimeout(() => setStalled(true), 3000);
+    return () => clearTimeout(timer);
+  }, [provider, viewId]);
+
   useEffect(() => {
     const container = containerRef.current;
     if (!container) return undefined;
@@ -79,8 +98,21 @@ function MountedView({
       note.className = 'view-empty';
       note.textContent = runtime.getState().safeMode
         ? t('view.safeMode')
-        : t('view.activating');
+        : stalled
+          ? t('view.activateStalled')
+          : t('view.activating');
       container.append(note);
+
+      if (stalled && !runtime.getState().safeMode) {
+        const retry = document.createElement('button');
+        retry.type = 'button';
+        retry.className = 'settings-button';
+        retry.textContent = t('view.activateRetry');
+        retry.addEventListener('click', () => {
+          void runtime.host.activateFor(`onView:${viewId}`);
+        });
+        container.append(retry);
+      }
       return () => container.replaceChildren();
     }
 
@@ -117,7 +149,7 @@ function MountedView({
       }, undefined);
       container.replaceChildren();
     };
-  }, [provider, viewId, pluginId, runtime, locale]);
+  }, [provider, viewId, pluginId, runtime, locale, stalled]);
 
   return (
     <section className={collapsed ? 'view view--collapsed' : 'view'}>
@@ -226,8 +258,27 @@ interface ViewColumnProps {
   readonly open: boolean;
 }
 
+/**
+ * 视图的显示条件：声明了 `languages` 就只在对应语言下出现。
+ *
+ * 宿主不认识任何具体插件 id —— 判定完全来自贡献声明。缺省（无 `languages`）
+ * 的视图始终显示，所以文件树、内核视图这些不会被这条规则误伤。
+ */
+function visibleInLanguage(view: { readonly languages?: readonly string[] }, language: string): boolean {
+  if (!view.languages || view.languages.length === 0) return true;
+  return view.languages.includes(language);
+}
+
+/** 只订阅当前语言这一个标量：文档内容变化不会让侧栏重渲染。 */
+function useActiveLanguage(runtime: AropytRuntime): string | null {
+  const subscribe = useCallback((listener: () => void) => runtime.subscribe(listener), [runtime]);
+  const getSnapshot = useCallback(() => runtime.getState().activeLanguage, [runtime]);
+  return useSyncExternalStore(subscribe, getSnapshot);
+}
+
 export function ViewColumn({ runtime, location, side, open }: ViewColumnProps): JSX.Element | null {
   const revision = useWindowRevision(runtime);
+  const activeLanguage = useActiveLanguage(runtime);
 
   // 惰性初始化：首次渲染前就把偏好读进来，避免"先展开再收起"的闪动。
   const [collapsedIds, setCollapsedIds] = useState<ReadonlySet<string>>(() =>
@@ -262,11 +313,18 @@ export function ViewColumn({ runtime, location, side, open }: ViewColumnProps): 
   // 只读第2 个会让预览凭空消失（它不再出现在插件清单里）；
   // 只读第 1 个则所有插件视图都不显示。两条通道并存是"内核固有 + 插件贡献"
   // 这个结构的必然结果，不是可以合并掉的历史包袱。
+  /*
+   * 未打开文件时按 Markdown 处理：新装的应用第一屏不该是"什么都没有"。
+   * （新建的未命名文档本来就是 markdown，与这里保持一致。）
+   */
+  const language = activeLanguage ?? 'markdown';
+
   const declared = [
     ...runtime.windowService.coreViews.map((view) => ({ ...view, pluginId: null, builtin: true })),
     ...runtime.host.contributions.views.map((view) => ({ ...view, builtin: false })),
   ]
     .filter((view) => view.location === location)
+    .filter((view) => visibleInLanguage(view, language))
     .sort((a, b) => (a.order ?? 0) - (b.order ?? 0));
 
   // 用 id 列表做依赖，避免每次渲染都生成新数组导致 effect 空转。
@@ -274,13 +332,20 @@ export function ViewColumn({ runtime, location, side, open }: ViewColumnProps): 
   const declaredRef = useRef(declared);
   declaredRef.current = declared;
 
-  const requestedRef = useRef(new Set<string>());
+  /*
+   * 每个视图都要派发一次 onView —— **不要用 ref 去重**。
+   *
+   * 曾经用一个 `requestedRef: Set<string>` 记录"已请求过"，避免重复触发。
+   * 但 ref 会跨重挂载保留（HMR、侧栏折叠再展开、视图按语言隐藏再出现），
+   * 而插件可能因为那次激活失败或宿主重建而没有 provider —— 结果就是
+   * "永远显示正在激活插件…"，且再也没有第二次派发。
+   *
+   * `activateFor` 本身幂等（只处理 declared 的插件），重复调用没有代价。
+   */
   useEffect(() => {
     for (const view of declaredRef.current) {
       // 内核固有视图不需要激活 —— 派发 onView 给它是无意义的。
       if (view.builtin) continue;
-      if (requestedRef.current.has(view.id)) continue;
-      requestedRef.current.add(view.id);
       void runtime.host.activateFor(`onView:${view.id}`).catch((error: unknown) => {
         console.error(t('view.activateFailed', { id: view.id }), error);
         void runtime.windowService.showMessage(t('view.loadFailed', { title: view.title }), { level: 'error' });
@@ -303,6 +368,12 @@ export function ViewColumn({ runtime, location, side, open }: ViewColumnProps): 
       // 可编程聚焦：Ctrl+0 焦点落到侧栏（内部没有可聚焦项时兜底）
       tabIndex={-1}
     >
+      {/*
+       * 工作区条在**所有视图之上**：它回答的是"现在有哪几个项目、
+       * 我在哪个"，比任何单个视图的标题都更靠上。只在左侧栏显示，
+       * 右侧栏（预览等）没有工作区概念。
+       */}
+      {side === 'left' && location === 'sidebar' && <WorkspaceBar runtime={runtime} />}
       {declared.map((view) => (
         <MountedView
           key={view.id}

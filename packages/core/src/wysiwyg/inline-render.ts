@@ -299,12 +299,18 @@ class RuleWidget extends WidgetType {
  * 那属于"编辑操作"，与这里"只影响怎么画"的职责边界不同，单独做。
  */
 class TaskWidget extends WidgetType {
-  constructor(private readonly checked: boolean) {
+  constructor(
+    /** `[ ]` / `[x]` 在文档里的起止位置 —— 点击时要就地改这两个位置之间的字符。 */
+    private readonly from: number,
+    private readonly to: number,
+    private readonly checked: boolean,
+  ) {
     super();
   }
 
   eq(other: TaskWidget): boolean {
-    return other.checked === this.checked;
+    /* 位置也参与比较：滚走后复用旧 DOM 会让点击改到别处 */
+    return other.from === this.from && other.to === this.to && other.checked === this.checked;
   }
 
   toDOM(): HTMLElement {
@@ -312,7 +318,23 @@ class TaskWidget extends WidgetType {
     box.className = `cm-md-task${this.checked ? ' cm-md-task--done' : ''}`;
     box.setAttribute('role', 'checkbox');
     box.setAttribute('aria-checked', String(this.checked));
-    box.setAttribute('aria-disabled', 'true');
+    /*
+     * 直接点击切换，不用把光标挪进来手改 `x`。
+     *
+     * 透传给 CM6 的事件自己处理：`ignoreEvent()` 返回 true 表示"别把这次
+     * 点击当成定位光标"，但 DOM 事件照常到达这个元素，所以 click 能生效
+     * 且不会把光标从别处拽走。
+     */
+    box.addEventListener('click', (event) => {
+      event.preventDefault();
+      event.stopPropagation();
+      const view = EditorView.findFromDOM(box);
+      if (!view) return;
+      view.dispatch({
+        changes: { from: this.from, to: this.to, insert: this.checked ? '[ ]' : '[x]' },
+      });
+      view.focus();
+    });
     return box;
   }
 
@@ -333,7 +355,9 @@ class TaskWidget extends WidgetType {
  * 引擎走动态 import（markdown-it + highlight.js 不进首屏，见 check:bundle）。
  * 就绪前所有块显示源码，就绪后通过 effect 触发一次重建。
  */
-type MarkdownEngine = { renderMarkdown(source: string): string };
+type MarkdownEngine = {
+  renderMarkdown(source: string, env?: Record<string, unknown>): string;
+};
 
 let engine: MarkdownEngine | null = null;
 let enginePromise: Promise<MarkdownEngine> | null = null;
@@ -359,11 +383,51 @@ const engineReadyEffect = StateEffect.define<null>();
  */
 const blockHtmlCache = new Map<string, string>();
 
+/**
+ * 引用式链接/图片的定义表（`[label]: url`）。
+ *
+ * 块级渲染是**逐块**调 markdown-it 的，而定义行通常单独占一行（属于另一个
+ * 块）。逐块渲染时 `env.references` 为空，`![logo][img-ref]` 于是退化成
+ * 纯文本 —— 用户看到的就是"引用式图片不渲染"。
+ *
+ * 这里先把全文的定义行喂一次引擎，让 markdown-it 填好 `env.references`，
+ * 再让每个块共享这个 env。
+ */
+let referencesEnv: Record<string, unknown> = {};
+let referencesSignature = '';
+
+function collectReferenceDefinitions(doc: Text): string {
+  const lines: string[] = [];
+  for (let number = 1; number <= doc.lines; number += 1) {
+    const text = doc.line(number).text;
+    /* `[img-ref]: https://…`（允许最多 3 个前导空格，CommonMark 的规定） */
+    if (/^ {0,3}\[[^\]]+\]:\s*\S/.test(text)) lines.push(text);
+  }
+  return lines.join('\n');
+}
+
+function syncReferences(doc: Text): void {
+  const signature = collectReferenceDefinitions(doc);
+  if (signature === referencesSignature) return;
+
+  referencesSignature = signature;
+  referencesEnv = {};
+  if (engine && signature.length > 0) {
+    /* 只为填充 env.references，输出本身丢弃 */
+    engine.renderMarkdown(signature, referencesEnv);
+  }
+  /*
+   * 定义变了，同一段文本的渲染结果可能变（`![x][ref]` 从纯文本变成 <img>）。
+   * 缓存键是块文本，所以必须整体清空。
+   */
+  blockHtmlCache.clear();
+}
+
 function renderBlockCached(source: string): string {
   if (!engine) return '';
   const hit = blockHtmlCache.get(source);
   if (hit !== undefined) return hit;
-  const html = engine.renderMarkdown(source);
+  const html = engine.renderMarkdown(source, referencesEnv);
   if (blockHtmlCache.size > 800) blockHtmlCache.clear();
   blockHtmlCache.set(source, html);
   return html;
@@ -403,12 +467,17 @@ class BlockWidget extends WidgetType {
   constructor(
     readonly html: string,
     private readonly resolveAsset?: AssetResolver,
+    /** 块在文档里的起点：点击任务复选框要按序号映射回文档位置。 */
+    private readonly from = 0,
+    /** 块源码：`[ ]` / `[x]` 的出现顺序与 DOM 里复选框的序号一一对应。 */
+    private readonly source = '',
   ) {
     super();
   }
 
   override eq(other: BlockWidget): boolean {
-    return other.html === this.html;
+    /* from 也参与比较：文档前部插入内容后位置会变，复用旧 DOM 会点错地方 */
+    return other.html === this.html && other.from === this.from;
   }
 
   override toDOM(): HTMLElement {
@@ -432,11 +501,59 @@ class BlockWidget extends WidgetType {
         });
       }
     }
+    this.#bindTaskCheckboxes(wrap);
     return wrap;
   }
 
-  override ignoreEvent(): boolean {
-    // 点击事件交给 CM6 处理：光标会落到替换范围的边界（块首），
+  /**
+   * 让渲染出来的任务复选框可以直接点。
+   *
+   * 块级渲染是静态 HTML，widget 本身不知道自己在文档里的位置，所以
+   * 构建时带上块起点与块源码：DOM 里第 N 个复选框 ↔ 源码里第 N 个
+   * `[ ]` / `[x]`，点击时把那一处三个字符改掉并 dispatch。
+   */
+  #bindTaskCheckboxes(wrap: HTMLElement): void {
+    const boxes = [...wrap.querySelectorAll<HTMLInputElement>('input.task-checkbox')];
+    if (boxes.length === 0) return;
+
+    const marks: { at: number; checked: boolean }[] = [];
+    const pattern = /\[([ xX])\]/g;
+    let match: RegExpExecArray | null = pattern.exec(this.source);
+    while (match) {
+      marks.push({ at: match.index, checked: (match[1] ?? '').toLowerCase() === 'x' });
+      match = pattern.exec(this.source);
+    }
+
+    for (const box of boxes) {
+      box.disabled = false;
+      box.addEventListener('click', (event) => {
+        event.preventDefault();
+        event.stopPropagation();
+        const mark = marks[Number(box.dataset.task ?? '-1')];
+        if (!mark) return;
+        const view = EditorView.findFromDOM(wrap);
+        if (!view) return;
+        const from = this.from + mark.at;
+        view.dispatch({
+          changes: { from, to: from + 3, insert: mark.checked ? '[ ]' : '[x]' },
+        });
+      });
+    }
+  }
+
+  override ignoreEvent(event: Event): boolean {
+    /*
+     * 点在任务复选框上时**不能**交给 CM6。
+     *
+     * CM6 处理 widget 上的 mousedown 时会 preventDefault（为了把光标落到
+     * 替换范围边界），而复选框的勾选依赖这次点击的默认行为 —— 结果就是
+     * "框点不动、没有任何反应"。返回 true 表示"这次事件我自己处理"，
+     * CM6 不再拦截，click 才能到达 input 上的监听器。
+     */
+    const target = event.target;
+    if (target instanceof Element && target.closest('input.task-checkbox')) return true;
+
+    // 其余情况交给 CM6：光标会落到替换范围的边界（块首），
     // 块随即切回源码态 —— 与 Typora"点进段落开始编辑"一致。
     return false;
   }
@@ -596,6 +713,10 @@ function createBlockDecorationsField(
   const buildBlocks = (state: EditorState): DecorationSet => {
     const ranges: { from: number; to: number; value: Decoration }[] = [];
     if (!isEngineReady()) return Decoration.set(ranges, true);
+
+    /* 引用定义要先同步：块的渲染依赖它（图片/链接的 [ref] 形式） */
+    syncReferences(state.doc);
+
     const tree = ensureSyntaxTree(state, state.doc.length, 100) ?? syntaxTree(state);
     const headLine = state.doc.lineAt(state.selection.main.head).number;
 
@@ -618,7 +739,7 @@ function createBlockDecorationsField(
           from: block.from,
           to: block.to,
           value: Decoration.replace({
-            widget: new BlockWidget(html, resolveAsset),
+            widget: new BlockWidget(html, resolveAsset, block.from, ''),
             block: true,
           }),
         });
@@ -685,7 +806,7 @@ function createBlockDecorationsField(
               from: cursor.from,
               to: cursor.to,
               value: Decoration.replace({
-                widget: new BlockWidget(html, resolveAsset),
+                widget: new BlockWidget(html, resolveAsset, cursor.from, source),
                 block: true,
               }),
             });
@@ -1095,7 +1216,9 @@ function build(
         ranges.push({
           from: cursor.from,
           to: cursor.to,
-          value: Decoration.replace({ widget: new TaskWidget(checked) }),
+          value: Decoration.replace({
+            widget: new TaskWidget(cursor.from, cursor.to, checked),
+          }),
         });
       }
       continue;
@@ -1919,11 +2042,61 @@ const aropytInlineTheme = EditorView.baseTheme({
     display: 'inline-block',
     width: '0.95em',
     height: '0.95em',
-    border: '1.5px solid var(--md-border-strong)',
+    /*
+     * 未勾选不再是灰色边框：灰色读起来像"禁用"，而它现在是可以点的。
+     * 用链接色的淡版：既看得出可交互，又不至于在正文里抢眼。
+     */
+    border: '1.5px solid color-mix(in srgb, var(--md-link) 45%, transparent)',
     borderRadius: '3px',
     marginRight: '0.4em',
     verticalAlign: '-0.12em',
     position: 'relative',
+    cursor: 'pointer',
+    transition: 'border-color 120ms ease, background-color 120ms ease',
+  },
+  '.cm-md-task:hover': {
+    borderColor: 'var(--md-link)',
+    background: 'color-mix(in srgb, var(--md-link) 12%, transparent)',
+  },
+
+  /*
+   * markdown-it 输出的任务复选框（块级渲染路径）。
+   *
+   * 原生 checkbox 有两处不能接受：`disabled` 时是灰的且点不动，而
+   * `appearance: none` 之后才能用品牌绿画边框与勾。勾用 CSS 画，
+   * 与上面的行内 widget 同一套画法（不依赖字体里有没有 ✓ 字形）。
+   */
+  '.task-checkbox': {
+    appearance: 'none',
+    width: '0.95em',
+    height: '0.95em',
+    margin: '0 0.4em 0 0',
+    border: '1.5px solid color-mix(in srgb, var(--md-link) 45%, transparent)',
+    borderRadius: '3px',
+    background: 'transparent',
+    cursor: 'pointer',
+    verticalAlign: '-0.12em',
+    position: 'relative',
+    transition: 'border-color 120ms ease, background-color 120ms ease',
+  },
+  '.task-checkbox:hover': {
+    borderColor: 'var(--md-link)',
+    background: 'color-mix(in srgb, var(--md-link) 12%, transparent)',
+  },
+  '.task-checkbox:checked': {
+    background: 'var(--md-link)',
+    borderColor: 'var(--md-link)',
+  },
+  '.task-checkbox:checked::after': {
+    content: '""',
+    position: 'absolute',
+    left: '0.26em',
+    top: '0.06em',
+    width: '0.26em',
+    height: '0.5em',
+    borderRight: '1.6px solid #fff',
+    borderBottom: '1.6px solid #fff',
+    transform: 'rotate(45deg)',
   },
   '.cm-md-task--done': {
     background: 'var(--md-link)',

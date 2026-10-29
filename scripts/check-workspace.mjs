@@ -120,7 +120,15 @@ try {
     window.__TAURI_INTERNALS__ = {
       invoke: function (command, args) {
         if (command === 'pick_folder') return Promise.resolve(${JSON.stringify(DEMO_ROOT)});
-        if (command === 'set_workspace') return Promise.resolve(null);
+        /* 多工作区后必须返回描述符，见 check-tabs.mjs 的说明。 */
+        if (command === 'set_workspace') {
+          var root = (args && args.root) || '';
+          return Promise.resolve({
+            id: root,
+            name: String(root).split(String.fromCharCode(92)).pop().split('/').pop(),
+            root: root,
+          });
+        }
         if (command === 'workspace_list') {
           var dir = (args && args.args && args.args.path) || '';
           if (dir === '') {
@@ -160,10 +168,10 @@ try {
   };
 
   const tree = () => ev(`(() => {
-    const header = document.querySelector('.explorer-header__name');
+    const header = document.querySelector('.workspace-bar__item--active .workspace-bar__name');
     return {
       header: header ? header.textContent : null,
-      hasCloseButton: !!document.querySelector('.explorer-header__close'),
+      hasCloseButton: !!document.querySelector('.workspace-bar__item--active .workspace-bar__close'),
       rows: [...document.querySelectorAll('.tree-item')].map((r) => ({
         label: r.querySelector('.tree-item__label')?.textContent ?? '',
         hasAction: !!r.querySelector('.tree-item__action'),
@@ -259,7 +267,7 @@ try {
 
   console.log('\n=== 关闭工作区 ===');
   const closed = await ev(`(() => {
-    const b = document.querySelector('.explorer-header__close');
+    const b = document.querySelector('.workspace-bar__item--active .workspace-bar__close');
     if (!b) return 'NO_BUTTON';
     b.click();
     return 'clicked';

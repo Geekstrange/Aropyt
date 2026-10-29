@@ -93,6 +93,16 @@ export interface ViewContribution {
   readonly icon?: string;
   readonly order?: number;
   readonly when?: string;
+  /**
+   * 只在这些语言下显示（language id，见 `detectLanguage`）。
+   *
+   * 缺省 = 不限语言。用数组而不是 `when` 表达式：当前宿主只需要
+   * "按语言切换"这一个维度，一个字符串表达式求值器会把"哪个视图该出现"
+   * 变成运行时才能知道的事，排障成本远高于收益。
+   *
+   * 未打开文件时按 Markdown 处理 —— 那是产品的默认形态。
+   */
+  readonly languages?: readonly string[];
 }
 
 export interface ConfigurationPropertySchema {

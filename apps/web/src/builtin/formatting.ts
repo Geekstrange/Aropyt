@@ -104,18 +104,18 @@ function activate(context: PluginContext): void {
   commands.register('aropyt.bulletList', () => editor.toggleLinePrefix('- '));
   commands.register('aropyt.orderedList', () => editor.toggleLinePrefix((index) => `${index + 1}. `));
 
-  commands.register('aropyt.taskList', () => {
-    // 任务列表不是纯前缀切换（要插入 [ ]），所以走插入语义。
-    const selection = editor.getSelection();
-    if (!selection) return;
-    for (let line = selection.startLine; line <= selection.endLine; line += 1) {
-      const text = editor.getLine(line);
-      if (text === null || text.trim() === '') continue;
-      if (/^\s*[-*+]\s\[[ xX]\]\s/.test(text)) continue;
-      editor.toggleLinePrefix('- [ ] ');
-      return;
-    }
-  });
+  /*
+   * 任务列表就是一个前缀，直接交给 `toggleLinePrefix`。
+   *
+   * 之前这里自己写了一个循环：跳过空行、跳过已存在的任务项、处理一行就
+   * return。三处叠加的结果是"点了没反应"——
+   *   · 空文档/空行被跳过（新开一章就点按钮，什么都不发生）
+   *   · 已经是任务项的行被跳过（再点一次没法取消）
+   *   · 循环里 return，多行选区只改第一行
+   * `toggleLinePrefix` 本身已经处理了"剥掉旧前缀再加新前缀"，
+   * 这里多写一层只会制造例外。
+   */
+  commands.register('aropyt.taskList', () => editor.toggleLinePrefix('- [ ] '));
 
   commands.register('aropyt.blockquote', () => editor.toggleLinePrefix('> '));
 

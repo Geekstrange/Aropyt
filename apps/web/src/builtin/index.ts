@@ -15,6 +15,8 @@ import type { LoadablePlugin } from '@aropyt/core';
 import { explorerPlugin } from './explorer.js';
 import { filePlugin } from './file.js';
 import { formattingPlugin } from './formatting.js';
+import { fountainPlugin } from './fountain.js';
+import { latexPlugin } from './latex.js';
 import { outlinePlugin } from './outline.js';
 
 export const builtinPlugins: readonly LoadablePlugin[] = [
@@ -22,4 +24,6 @@ export const builtinPlugins: readonly LoadablePlugin[] = [
   formattingPlugin,
   explorerPlugin,
   outlinePlugin,
+  fountainPlugin,
+  latexPlugin,
 ];

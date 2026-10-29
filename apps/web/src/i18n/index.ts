@@ -132,6 +132,8 @@ const COMMAND_TITLES: Record<string, TextKey> = {
   '打开文件夹…': 'toolbar.openFolder',
   文件: 'panel.files',
   大纲: 'panel.outline',
+  场景: 'view.scenes',
+  结构: 'view.structure',
   恢复上次工作区: 'toolbar.restoreWorkspace',
   关闭工作区: 'toolbar.closeWorkspace',
   恢复已移除的目录: 'view.restoreRemoved',

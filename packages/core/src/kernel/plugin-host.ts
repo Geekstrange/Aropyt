@@ -23,6 +23,7 @@ import type {
   Event,
   EditorApi,
   KeybindingContribution,
+  LanguageContribution,
   LanguagesApi,
   Memento,
   PlatformKind,
@@ -71,6 +72,13 @@ export interface AggregatedContributions {
   readonly commands: readonly (CommandContribution & { readonly pluginId: string | null; readonly source: 'builtin' | 'plugin' })[];
   readonly keybindings: readonly (KeybindingContribution & { readonly pluginId: string | null })[];
   readonly views: readonly (ViewContribution & { readonly pluginId: string | null })[];
+  /**
+   * 语言贡献：扩展名 / 文件名 → language id。
+   *
+   * 宿主把它交给 `detectLanguage`，插件因此可以接管某个扩展名
+   * （例如给 .fountain 一个专属 id），而不需要改内核。
+   */
+  readonly languages: readonly (LanguageContribution & { readonly pluginId: string | null })[];
   readonly menus: Readonly<Record<string, readonly { command: string; pluginId: string | null; group?: string; order?: number }[]>>;
 }
 
@@ -98,10 +106,13 @@ export class PluginHost {
   readonly #contexts = new Map<string, { context: PluginContext; store: DisposableStore }>();
   #configDisposables: readonly Disposable[] = [];
   readonly #stateListeners = new Set<(record: PluginRecord) => void>();
+  /** 正在激活中的插件，避免并发触发把 activate() 跑两遍。 */
+  readonly #activating = new Map<string, Promise<boolean>>();
   #contributions: AggregatedContributions = {
     commands: [],
     keybindings: [],
     views: [],
+    languages: [],
     menus: {},
   };
 
@@ -239,6 +250,26 @@ export class PluginHost {
   }
 
   async activate(pluginId: string): Promise<boolean> {
+    /*
+     * **并发去重**：同一个插件可能在同一帧里被两个激活事件同时命中
+     * （打开 .tex 时 `onLanguage:latex` 与 `onView:…structure` 几乎同时到达）。
+     *
+     * 没有这一层时，`record.state` 在 `await activate()` 完成前一直是
+     * declared，两次调用都会通过检查 —— 结果视图注册两次、编辑器扩展
+     * 注入两次。实测表现是行级装饰的 class 重复（`cm-tex-section
+     * cm-tex-section`），以及多一份无法回收的订阅。
+     */
+    const existing = this.#activating.get(pluginId);
+    if (existing) return existing;
+
+    const task = this.#activateOnce(pluginId).finally(() => {
+      this.#activating.delete(pluginId);
+    });
+    this.#activating.set(pluginId, task);
+    return task;
+  }
+
+  async #activateOnce(pluginId: string): Promise<boolean> {
     const record = this.#records.get(pluginId);
     if (!record || record.state !== 'declared') return false;
 
@@ -419,6 +450,7 @@ export class PluginHost {
     const commands: (AggregatedContributions['commands'][number])[] = [];
     const keybindings: (AggregatedContributions['keybindings'][number])[] = [];
     const views: (AggregatedContributions['views'][number])[] = [];
+    const languages: (AggregatedContributions['languages'][number])[] = [];
     const menus: Record<string, { command: string; pluginId: string | null; group?: string; order?: number }[]> = {};
     const configDisposables: Disposable[] = [];
 
@@ -451,6 +483,13 @@ export class PluginHost {
       for (const view of contributes.views ?? []) {
         views.push({ ...view, pluginId });
       }
+      /*
+       * 语言贡献必须在这里汇总，而不是等插件激活 —— 打开文件时
+       * 插件可能还没激活（onLanguage: 激活事件正是靠这份表派发的）。
+       */
+      for (const language of contributes.languages ?? []) {
+        languages.push({ ...language, pluginId });
+      }
       for (const [location, items] of Object.entries(contributes.menus ?? {})) {
         for (const item of items ?? []) {
           const bucket = (menus[location] ??= []);
@@ -482,7 +521,7 @@ export class PluginHost {
 
     for (const disposable of this.#configDisposables) disposable.dispose();
     this.#configDisposables = configDisposables;
-    this.#contributions = { commands, keybindings, views, menus };
+    this.#contributions = { commands, keybindings, views, languages, menus };
   }
 
   #notify(record: PluginRecord): void {
@@ -590,6 +629,9 @@ function createEditorFacade(adapter: EditorAdapter, pluginId: string): EditorApi
     },
     get onDidSaveDocument() {
       return adapter.onDidSaveDocument;
+    },
+    get sourceMode() {
+      return adapter.sourceMode;
     },
     getText: () => adapter.getText(),
     getLine: (lineNumber) => adapter.getLine(lineNumber),

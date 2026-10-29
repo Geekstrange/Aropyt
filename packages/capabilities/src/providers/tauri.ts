@@ -78,11 +78,13 @@ export function isNativeAvailable(): boolean {
  */
 export async function importImageNative(
   targetDir: string,
+  /** 导入到哪个工作区（`set_workspace` 返回的 id）。多工作区并存时必须显式指定。 */
+  rootId: string,
 ): Promise<{ path: string; name: string; bytes: number } | null> {
   const api = bridge();
   if (!api) return null;
   return invokeAs<{ path: string; name: string; bytes: number } | null>(api, 'import_image', {
-    args: { targetDir },
+    args: { rootId, targetDir },
   });
 }
 
@@ -171,7 +173,7 @@ class NativeWorkspace implements Workspace {
     if (!name) throw new Error(`无法 stat 工作区根目录：${path}`);
 
     const siblings = await invokeAs<NativeFileEntry[]>(this.#api, 'workspace_list', {
-      args: { path: parentPath(path) },
+      args: { rootId: this.id, path: parentPath(path) },
     });
     const found = siblings.find((entry) => entry.name === name);
 
@@ -189,7 +191,7 @@ class NativeWorkspace implements Workspace {
   async list(dirPath: string): Promise<readonly FileStat[]> {
     assertSafePath(dirPath);
     const entries = await invokeAs<NativeFileEntry[]>(this.#api, 'workspace_list', {
-      args: { path: dirPath },
+      args: { rootId: this.id, path: dirPath },
     });
     return entries.map((entry) => ({
       path: entry.path,
@@ -202,7 +204,7 @@ class NativeWorkspace implements Workspace {
 
   async read(path: string): Promise<string> {
     assertSafePath(path);
-    return invokeAs<string>(this.#api, 'workspace_read', { args: { path } });
+    return invokeAs<string>(this.#api, 'workspace_read', { args: { rootId: this.id, path } });
   }
 
   async readBytes(path: string): Promise<Uint8Array> {
@@ -216,14 +218,18 @@ class NativeWorkspace implements Workspace {
      * 只在真正搬运原始字节时才现形，而且表现为"图片显示不出来"，
      * 完全没有报错指向这里。
      */
-    const encoded = await invokeAs<string>(this.#api, 'workspace_read_base64', { args: { path } });
+    const encoded = await invokeAs<string>(this.#api, 'workspace_read_base64', {
+      args: { rootId: this.id, path },
+    });
     return base64ToBytes(encoded);
   }
 
   /** 原子写。Rust 侧做 write-tmp → fsync → rename。 */
   async write(path: string, content: string): Promise<void> {
     assertSafePath(path);
-    await invokeAs<void>(this.#api, 'workspace_write', { args: { path, content } });
+    await invokeAs<void>(this.#api, 'workspace_write', {
+      args: { rootId: this.id, path, content },
+    });
   }
 
   /**
@@ -236,7 +242,7 @@ class NativeWorkspace implements Workspace {
   async writeBytes(path: string, data: Uint8Array): Promise<void> {
     assertSafePath(path);
     await invokeAs<void>(this.#api, 'workspace_write_base64', {
-      args: { path, base64: bytesToBase64(data) },
+      args: { rootId: this.id, path, base64: bytesToBase64(data) },
     });
   }
 
@@ -276,8 +282,7 @@ export const tauriProvider = {
     const root = await invokeAs<string | null>(api, 'pick_folder');
     if (!root) return null;
 
-    await invokeAs<void>(api, 'set_workspace', { root });
-    return openNativeWorkspace(root);
+    return registerWorkspace(root);
   },
 
   /**
@@ -293,13 +298,12 @@ export const tauriProvider = {
 
     const root = rootFromHint(lastRoot);
     try {
-      await invokeAs<void>(api, 'set_workspace', { root });
+      return await registerWorkspace(root);
     } catch {
       // 目录可能已被删除或改名。静默失败即可 —— 上层会退回"未打开工作区"，
       // 不该弹错误打扰用户。
       return null;
     }
-    return openNativeWorkspace(root);
   },
 };
 
@@ -313,8 +317,7 @@ export const tauriProvider = {
 export async function openNativeFolderAsWorkspace(root: string): Promise<Workspace | null> {
   const api = bridge();
   if (!api) return null;
-  await invokeAs<void>(api, 'set_workspace', { root });
-  return openNativeWorkspace(root);
+  return registerWorkspace(root);
 }
 
 /** 选一个 Markdown 文件，返回它的绝对路径。宿主用它推导工作区。 */
@@ -341,10 +344,16 @@ export async function pickSavePathNative(suggested?: string): Promise<string | n
   });
 }
 
-async function openNativeWorkspace(root: string): Promise<Workspace> {
+/**
+ * 把目录注册成工作区。
+ *
+ * **id 由原生侧给**（规范化后的绝对路径），不能在前端自己拼 ——
+ * 原生侧的根表用同一个 id 寻址，两边算法一旦不同，之后的读写就会
+ * 报"工作区未注册"，或更糟：寻到一个前缀相同、实际是另一个目录的根。
+ */
+async function registerWorkspace(root: string): Promise<Workspace> {
   const api = bridge();
   if (!api) throw new Error('Tauri 运行时不可用');
-
-  const name = root.split(/[\\/]/).filter(Boolean).pop() ?? root;
-  return new NativeWorkspace(api, { id: tauriWorkspaceId(root), name, root });
+  const descriptor = await invokeAs<NativeWorkspaceDescriptor>(api, 'set_workspace', { root });
+  return new NativeWorkspace(api, descriptor);
 }

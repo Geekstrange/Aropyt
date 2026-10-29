@@ -42,12 +42,33 @@ const killBrowserTree = (child) => {
 };
 
 
-const [, , urlArg, outPath, waitMsArg, inject] = process.argv;
+const [, , urlArg, outPath, waitMsArg, inject, preInject] = process.argv;
 if (!urlArg || !outPath) {
-  console.error('用法: node scripts/cdp-shot.mjs <url|serve:目录> <输出png> [等待ms] [注入JS]');
+  console.error(
+    '用法: node scripts/cdp-shot.mjs <url|serve:目录> <输出png> [等待ms] [注入JS] [页面加载前注入JS]',
+  );
   process.exit(2);
 }
 const waitMs = Number(waitMsArg ?? 3500);
+
+/**
+ * 以 `@路径` 形式传入脚本时从文件读取。
+ *
+ * 为什么需要：Windows 的命令行传参无法可靠携带多行字符串 ——
+ * 一段几十行的注入脚本经过 PowerShell → node 会被截断，页面里报
+ * 一个毫无线索的 `SyntaxError`。文件传参绕开整个命令行编码问题。
+ */
+const inlineOrFile = (value) => {
+  if (!value || !value.startsWith('@')) return value;
+  try {
+    return readFileSync(value.slice(1), 'utf8').replace(/^\uFEFF/, '');
+  } catch {
+    return value;
+  }
+};
+
+const injectSource = inlineOrFile(inject);
+const preInjectSource = inlineOrFile(preInject);
 
 /*
  * 内置静态服务。
@@ -186,14 +207,21 @@ let exitCode = 0;
 try {
   await waitForCdp();
 
+  /*
+   * 需要"页面加载前注入"时先开一个空白页 —— 例如给 Tauri 桩注入
+   * `window.__TAURI_INTERNALS__`：能力探测在模块求值时就跑完，
+   * 页面加载后再补桩已经太晚，应用会把自己当成纯浏览器形态。
+   */
+  const initialUrl = preInjectSource ? 'about:blank' : url;
+
   // 开新标签页（新版 Chrome 要求 PUT；GET 在部分版本上直接 405）
   let target;
   try {
-    const res = await fetch(`${CDP}/json/new?${encodeURIComponent(url)}`, { method: 'PUT' });
+    const res = await fetch(`${CDP}/json/new?${encodeURIComponent(initialUrl)}`, { method: 'PUT' });
     if (!res.ok) throw new Error(String(res.status));
     target = await res.json();
   } catch {
-    const res = await fetch(`${CDP}/json/new?${encodeURIComponent(url)}`);
+    const res = await fetch(`${CDP}/json/new?${encodeURIComponent(initialUrl)}`);
     target = await res.json();
   }
 
@@ -228,11 +256,17 @@ try {
 
   await rpc('Page.enable');
   await rpc('Runtime.enable');
+
+  if (preInjectSource) {
+    await rpc('Page.addScriptToEvaluateOnNewDocument', { source: preInjectSource });
+    await rpc('Page.navigate', { url });
+  }
+
   await sleep(waitMs);
 
-  if (inject) {
+  if (injectSource) {
     const result = await rpc('Runtime.evaluate', {
-      expression: inject,
+      expression: injectSource,
       awaitPromise: true,
       returnByValue: true,
     });

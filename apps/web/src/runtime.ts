@@ -54,12 +54,16 @@ import {
   recordVersion,
   applyBackup,
   assembleBackup,
+  detectLanguage,
+  languageLabelOf,
 } from '@aropyt/core';
 
 import type { DocumentRef, ImportedFile, Memento, PluginManifest } from '@aropyt/plugin-api';
 
 import { LanguagesService, WindowService } from './services.js';
 import { createThemeService, type ResolvedTheme, type ThemePreference, type ThemeService } from './theme.js';
+import { trace } from './debug/timeline';
+import { setDebugContext } from './debug/debug-log';
 import { builtinPlugins } from './builtin/index.js';
 /** 配置补丁：允许只给嵌套对象的一部分。 */
 export type DeepPartial<T> = { [K in keyof T]?: T[K] extends object ? Partial<T[K]> : T[K] };
@@ -93,6 +97,14 @@ export interface ToolbarItem {
  * 这两个诉求本来是矛盾的，用两个状态区分开才是正解。
  */
 export interface EditorTab {
+  /**
+   * 所属工作区的 id。null = 不属于任何工作区（未命名文档、外部打开的文件）。
+   *
+   * 标签的唯一身份是 `(workspaceId, path)` 而不是 `path`：
+   * 两个工作区里都有 `notes.md` 是完全正常的情况，只按 path 比较会让
+   * 它们互相顶替 —— 点 A 的文件，切到的是 B 的内容。
+   */
+  readonly workspaceId: string | null;
   readonly path: string;
   /** 与 `activeLanguage` 同义：未知语言时是 null。 */
   readonly language: string | null;
@@ -109,10 +121,20 @@ export interface EditorTab {
   readonly dirty: boolean;
 }
 
+/** 已打开工作区的轻量视图（不含 provider 句柄）。 */
+export interface WorkspaceInfo {
+  readonly id: string;
+  readonly name: string;
+}
+
 export interface RuntimeState {
   readonly capabilities: CapabilityReport;
   readonly limitations: readonly string[];
+  /** 当前激活的工作区（标签所属、文件树显示的那个）。 */
   readonly workspace: Workspace | null;
+  /** 本次会话已打开的全部工作区。打开新工作区是追加，不顶替。 */
+  readonly workspaces: readonly WorkspaceInfo[];
+  readonly activeWorkspaceId: string | null;
   readonly activePath: string | null;
   readonly dirty: boolean;
   /** 打开着的标签页，按打开顺序。 */
@@ -131,6 +153,8 @@ export interface RuntimeState {
   readonly sidebarOpen: boolean;
   /** 恢复自草稿/崩溃日志的文件路径；null = 本次会话没有恢复过。状态栏黄点用它，且只在**当前激活**文件是它时才亮。 */
   readonly recoveredPath: string | null;
+  /** 恢复来源所在的工作区 —— 与 recoveredPath 一起判断黄点（同名文件跨工作区不能互相点亮）。 */
+  readonly recoveredWorkspaceId: string | null;
   readonly plugins: readonly PluginRecord[];
   readonly toolbar: readonly ToolbarItem[];
   /** 源码模式开启中：显示原始标记，关闭内联渲染。 */
@@ -146,10 +170,16 @@ export interface RuntimeState {
   readonly theme: ResolvedTheme;
   readonly lastInputLatencyMs: number;
   readonly budgetViolations: number;
-  /** 最近若干次超预算明细（最多 5 条，新的在前）。 */
+  /** 最近若干次超预算明细（最多 20 条，新的在前）。 */
   readonly budgetDetails: readonly BudgetViolation[];
   /** 安全模式（?safe）：全部插件禁用，对应 VS Code 的 --disable-extensions。 */
   readonly safeMode: boolean;
+  /** 当前文档的语言 id（markdown / latex / fountain / text…）。 */
+  readonly activeLanguage: string | null;
+  /** 语言显示名（Markdown / LaTeX / Fountain）—— 状态栏与标签用它。 */
+  readonly activeLanguageLabel: string | null;
+  /** 当前语言是否有渲染态。false 时编辑器恒为源码视图（fountain/tex/txt）。 */
+  readonly renderable: boolean;
 }
 
 export interface AropytRuntime {
@@ -167,13 +197,20 @@ export interface AropytRuntime {
   pickWorkspace(): Promise<Workspace | null>;
   regrantWorkspace(): Promise<boolean>;
   /**
-   * 关闭当前工作区：解绑目录，**不动磁盘上的任何文件**。
+   * 切换到另一个已打开的工作区。
    *
-   * 做三件事：清空文件树、关掉全部标签、把 `workspace.lastId` 从配置里抹掉
-   * （不抹掉的话下次启动又会自动恢复回来 —— 用户明确关掉的东西不该自己回来）。
+   * 三件事一起发生：激活工作区、文件树换根、编辑器打开该项目最近用的标签
+   * （没有标签就清空）。少了任何一件，用户都会看到"切了但没完全切"。
+   */
+  activateWorkspace(workspaceId: string): void;
+  /**
+   * 关闭一个工作区（缺省为当前激活那个）：解绑目录，**不动磁盘上的任何文件**。
+   *
+   * 做三件事：清空该项目的文件树与标签、把它从 `workspace.roots` 里移除
+   * （不移除的话下次启动又会自动恢复回来 —— 用户明确关掉的东西不该自己回来）。
    * 标签里有未保存改动时先问一次，返回 false 表示用户取消。
    */
-  closeWorkspace(): Promise<boolean>;
+  closeWorkspace(workspaceId?: string): Promise<boolean>;
   /**
    * 打开文件。
    *
@@ -182,10 +219,15 @@ export interface AropytRuntime {
    * 那是用户的明确选择，不该被下一次单击顶掉。
    */
   openFile(path: string, options?: { readonly preview?: boolean }): Promise<void>;
-  /** 激活一个已打开的标签。 */
-  activateTab(path: string): void;
+  /**
+   * 激活一个已打开的标签。
+   *
+   * 多工作区并存后同一个相对路径可能出现两次 —— 传 workspaceId 才能选到
+   * 正确那个；省略时按当前激活工作区查找。
+   */
+  activateTab(path: string, workspaceId?: string | null): void;
   /** 关闭一个标签；关的是当前标签时自动激活相邻的那个。 */
-  closeTab(path: string): void;
+  closeTab(path: string, workspaceId?: string | null): void;
   /** 新建一个空白未命名标签；若未命名标签已存在则直接激活它。 */
   createUntitledTab(): void;
   /** 按打开顺序循环切换标签（Ctrl+Tab / Ctrl+Shift+Tab）。 */
@@ -310,25 +352,33 @@ export function createRuntime(options: RuntimeOptions): AropytRuntime {
   };
 
   const state: {
+    /** 已打开的工作区（多工作区并存）。 */
+    workspaces: Workspace[];
+    activeWorkspaceId: string | null;
+    /** 激活工作区的投影，等于 workspaces 里 id 匹配的那一项。 */
     workspace: Workspace | null;
     activePath: string | null;
     dirty: boolean;
-    /** 打开着的标签页。 */
+    /** 打开着的标签页（可以分属不同工作区）。 */
     tabs: EditorTab[];
     /** vim 模式是否开启。 */
     vimMode: boolean;
     recoveredPath: string | null;
+    recoveredWorkspaceId: string | null;
     lastInputLatencyMs: number;
     budgetViolations: number;
     /** 最近若干次超预算的明细，供状态栏说明来源。 */
     budgetDetails: BudgetViolation[];
   } = {
+    workspaces: [],
+    activeWorkspaceId: null,
     workspace: null,
     activePath: null,
     dirty: false,
     tabs: [],
     vimMode: localStorage.getItem('aropyt.vimMode') === 'on',
     recoveredPath: null,
+    recoveredWorkspaceId: null,
     lastInputLatencyMs: 0,
     budgetViolations: 0,
     budgetDetails: [],
@@ -344,6 +394,8 @@ export function createRuntime(options: RuntimeOptions): AropytRuntime {
     capabilities,
     limitations,
     workspace: state.workspace,
+    workspaces: state.workspaces.map((workspace) => ({ id: workspace.id, name: workspace.name })),
+    activeWorkspaceId: state.activeWorkspaceId,
     activePath: state.activePath,
     dirty: state.dirty,
     tabs: state.tabs,
@@ -354,9 +406,13 @@ export function createRuntime(options: RuntimeOptions): AropytRuntime {
     historyInterval: currentSettings.history.autoSaveInterval,
     sidebarOpen: currentSettings.sidebar.open,
     recoveredPath: state.recoveredPath,
+    recoveredWorkspaceId: state.recoveredWorkspaceId,
     plugins: host.records,
     sourceMode: editor.sourceMode,
     preferredSourceMode: editor.preferredSourceMode,
+    activeLanguage: editor.activeLanguage,
+    activeLanguageLabel: languageLabelOf(editor.activeLanguage, host.contributions.languages),
+    renderable: editor.renderable,
     themePreference: theme.preference,
     /*
      * 必须读 currentSettings —— 不能读 configuration。
@@ -382,8 +438,71 @@ export function createRuntime(options: RuntimeOptions): AropytRuntime {
 
   const notify = () => {
     revision += 1;
+    /*
+     * 把"此刻的现场"投影给日志模块 —— 错误在 push 时会把这份上下文
+     * 一起记下。用户看到报错之后通常会切文件/关标签，等生成报告时
+     * 再读状态已经不是现场了。
+     *
+     * 纯字符串模板，O(1)，每次 notify 一次赋值；值没变时就是同一个字符串。
+     */
+    setDebugContext(
+      `${state.activePath ?? '(untitled)'} · dirty=${String(state.dirty)} · vim=${String(state.vimMode)} · tabs=${String(state.tabs.length)}`,
+    );
     for (const listener of listeners) listener();
   };
+
+  /*
+   * ── 多工作区的身份与键 ─────────────────────────────────────
+   *
+   * 三个东西必须同时成立，否则会静默写错项目：
+   *   1. 标签身份 = (workspaceId, path)，不是 path
+   *   2. 激活工作区跟随激活标签
+   *   3. 草稿/历史的存储键带工作区前缀
+   */
+  function setActiveWorkspace(id: string | null): void {
+    state.activeWorkspaceId = id;
+    state.workspace = id ? (state.workspaces.find((item) => item.id === id) ?? null) : null;
+  }
+
+  function findTab(
+    path: string,
+    workspaceId: string | null = state.activeWorkspaceId,
+  ): EditorTab | undefined {
+    return state.tabs.find((tab) => tab.path === path && tab.workspaceId === workspaceId);
+  }
+
+  function isActiveTab(tab: EditorTab): boolean {
+    return tab.path === state.activePath && tab.workspaceId === state.activeWorkspaceId;
+  }
+
+  /** 草稿与编辑历史的存储键。同一相对路径在不同工作区是两份独立记录。 */
+  function storageKey(workspaceId: string | null, path: string): string {
+    return workspaceId ? `${workspaceId}\u0000${path}` : path;
+  }
+
+  /**
+   * 把"本次会话打开了哪些工作区"写进配置，供下次启动逐个恢复。
+   *
+   * 存 id 而不是 name：id 就是规范化后的根路径，恢复时直接交给
+   * `set_workspace` 即可；name 只是目录名，同名目录在不同位置很常见。
+   *
+   * 写失败只影响下次启动的恢复范围，不该影响本次使用，所以只警告。
+   */
+  function persistWorkspaceRoots(): void {
+    void configuration
+      .update(
+        'workspace.roots',
+        state.workspaces.map((workspace) => workspace.id),
+      )
+      /*
+       * 同时记住"上次激活的是哪个"。只存列表的话，重启后激活项会退回
+       * 列表末尾 —— 用户切到 A、退出、再打开却停在 B，会觉得切换没生效。
+       */
+      .then(() => configuration.update('workspace.active', state.activeWorkspaceId))
+      .catch((error: unknown) => {
+        console.warn('[aropyt] 记录工作区列表失败', error);
+      });
+  }
   const workspaceListeners = new Set<(payload: { rootPath: string | null }) => void>();
   const emitWorkspaceChange = () => {
     for (const listener of workspaceListeners) {
@@ -496,12 +615,35 @@ export function createRuntime(options: RuntimeOptions): AropytRuntime {
    * 放在创建 runtime 的最开头：`openFile` 可能在任意时刻被调用，
    * 而它要用这个标记决定提示措辞。用 localStorage 就是为了能同步读到。
    */
-  // 关键动作打 [timeline]：issue 复现路径的第一手线索
-  function timeline(action: string, detail: string): void {
+  /*
+   * 关键动作同时写两处：
+   *   - 操作轨迹（独立缓冲，报告里单独成段，不会被日志挤掉）
+   *   - console.info（DevTools 里肉眼可见，排查时能直接看到时间线）
+   */
+  function timeline(action: string, detail: string, extra?: { readonly failed?: boolean }): void {
+    trace(action, detail, extra);
     console.info(`[timeline] ${action}`, detail);
   }
 
+  /*
+   * 命令执行轨迹。挂在唯一的执行咽喉上 —— 工具栏、命令面板、快捷键、
+   * vim、插件内部 execute 五条路径都会经过这里，不会漏。
+   */
+  commands.setObserver((record) => {
+    const failed = record.outcome === 'error';
+    trace(failed ? 'command-fail' : 'command', failed ? `${record.id} · ${record.error ?? ''}` : record.id, {
+      failed,
+      ms: record.durationMs,
+    });
+  });
+
   const lastExitWasClean = consumeCleanExitFlag();
+  /*
+   * 上次是否正常退出，是判断"崩溃类 issue"的第一条证据：
+   * 报告里同时出现"上次会话的错误"与"非正常退出"，基本就锁定了
+   * 崩溃现场。首次启动也会落在这里，所以措辞要包含这种可能。
+   */
+  trace('startup', lastExitWasClean ? '上次正常退出' : '上次非正常退出（或首次启动）');
 
   /*
    * 落下"正常退出"标记。
@@ -556,12 +698,14 @@ export function createRuntime(options: RuntimeOptions): AropytRuntime {
        * 否则"点开看看、顺手改了两个字、又点了另一个文件"就会静默丢内容。
        * VSCode 也是这么做的，理由相同。
        */
-      if (state.tabs.some((tab) => tab.path === state.activePath && tab.preview)) {
-        state.tabs = state.tabs.map((tab) =>
-          tab.path === state.activePath ? { ...tab, preview: false } : tab,
-        );
+      if (state.tabs.some((tab) => isActiveTab(tab) && tab.preview)) {
+        state.tabs = state.tabs.map((tab) => (isActiveTab(tab) ? { ...tab, preview: false } : tab));
       }
-      persistDraft(state.activePath ?? DRAFT_KEY, text);
+      /*
+       * 草稿键带工作区前缀：两个项目的 notes.md 是两份内容，
+       * 用裸路径当键会让崩溃恢复把 A 的草稿塞进 B 的文件 —— 那是数据损坏。
+       */
+      persistDraft(storageKey(state.activeWorkspaceId, state.activePath ?? DRAFT_KEY), text);
       notify();
     },
     // 返回 Promise —— vim 的 :wq 要等保存落盘后再关闭
@@ -612,10 +756,13 @@ export function createRuntime(options: RuntimeOptions): AropytRuntime {
   const monitor = new FrameBudgetMonitor({
     onViolation: (violation) => {
       state.budgetViolations += 1;
-      // 只留最近 5 条明细：状态栏要能说清"是哪一次、哪个来源、多长"，
-      // 只有一个计数的话用户看到"预算超支 3 次"完全无从判断。
+      /*
+       * 留最近 20 条明细。原来只留 5 条，理由是"状态栏要能说清是哪一次"，
+       * 但状态栏现在不显示它 —— 真正的消费者是 DEBUG 报告。用户跑了半小时
+       * 才来报"越来越卡"，5 条早就被后面的记录顶掉了。
+       */
       state.budgetDetails.push(violation);
-      if (state.budgetDetails.length > 5) state.budgetDetails.shift();
+      if (state.budgetDetails.length > 20) state.budgetDetails.shift();
       console.warn(
         `[预算超支] ${violation.label} 实际 ${violation.actualMs}ms > 预算 ${violation.budgetMs}ms`,
       );
@@ -653,6 +800,20 @@ export function createRuntime(options: RuntimeOptions): AropytRuntime {
   });
 
   /*
+   * `onLanguage:` 激活事件的派发点。
+   *
+   * 插件的 activationEvents 里一直写着 onLanguage，但从来没有人派发过 ——
+   * 于是"打开 .fountain 时激活剧本插件"这条约定只是一纸空文：插件只能
+   * 等用户手动点开侧栏（onView）才启动，渲染类扩展自然挂不上。
+   *
+   * 挂在 activeFile 事件上而不是 openFile 里：切标签、另存为、崩溃恢复
+   * 都会走到这里，漏一处就会出现"这个文件没有装饰"的诡异现象。
+   */
+  editor.onDidChangeActiveFile(({ language }) => {
+    if (language) void host.activateFor(`onLanguage:${language}`);
+  });
+
+  /*
    * 清单登记必须**同步**完成，不能塞进下面的异步启动块。
    *
    * load() 只读清单、不执行插件代码（真正昂贵的是 activate，那个仍然是异步的），
@@ -664,6 +825,29 @@ export function createRuntime(options: RuntimeOptions): AropytRuntime {
    * 只是登记得比第一帧晚。
    */
   host.load(options.plugins ?? builtinPlugins);
+
+  /*
+   * 插件清单的规模是"侧栏为什么一直显示正在激活"的第一手证据：
+   * views=0 说明贡献汇总失败（侧栏根本没有槽位），views>0 而插件停在
+   * declared 说明 onView 没有派发到。两种故障表现相似，根因完全不同。
+   */
+  trace(
+    'plugins',
+    `plugins=${String(host.records.length)} views=${String(host.contributions.views.length)} commands=${String(host.contributions.commands.length)}`,
+  );
+
+  /*
+   * 语言识别：内置表 + 插件贡献（插件优先，可接管某个扩展名）。
+   *
+   * 未命名文档与识别不出的扩展名一律按 markdown —— 那是产品默认形态
+   * （Typora 式编辑），不能因为"认不出"就让新文档退化成无高亮纯文本。
+   * 反过来，.fountain / .tex / .txt 现在会拿到自己的 language id，
+   * 编辑器据此换解析器、面板与状态栏据此显示类型。
+   */
+  const guessLanguage = (path: string | null): string => {
+    if (!path || path.startsWith('__untitled__')) return 'markdown';
+    return detectLanguage(path, host.contributions.languages)?.id ?? 'markdown';
+  };
 
 
   // 主题变化要触发一次状态通知，否则工具栏按钮的图标不会更新
@@ -712,6 +896,7 @@ export function createRuntime(options: RuntimeOptions): AropytRuntime {
 
     pickWorkspace,
     regrantWorkspace,
+    activateWorkspace,
     closeWorkspace,
     openFile,
     activateTab,
@@ -810,9 +995,24 @@ export function createRuntime(options: RuntimeOptions): AropytRuntime {
     const workspace = await provider.pick();
     if (!workspace) return null;
 
-    state.workspace = workspace;
+    /*
+     * **追加，不顶替**：旧工作区的标签留在标签栏里（带自己的颜色），
+     * 点它就会切回去。原来这里直接覆盖 state.workspace，旧标签随即
+     * 变成"没有根的孤儿"—— 再保存时写进的是新项目。
+     */
+    syncActiveTabBuffer();
+    state.workspaces = [...state.workspaces.filter((item) => item.id !== workspace.id), workspace];
+    setActiveWorkspace(workspace.id);
     resetAssetCache();
     state.activePath = null;
+    loadingDocument = true;
+    try {
+      editor.setActiveFile(null, null);
+      editor.replaceDocument('');
+    } finally {
+      loadingDocument = false;
+    }
+    state.dirty = false;
 
     /*
      * 先宣布状态变化，再落配置 —— 顺序很重要。
@@ -829,11 +1029,13 @@ export function createRuntime(options: RuntimeOptions): AropytRuntime {
     emitWorkspaceChange();
     notify();
 
+    persistWorkspaceRoots();
     void configuration
       .update('workspace.lastName', workspace.name)
       // 完整的 id 也要记 —— 原生侧恢复需要根路径，而根路径只存在于
       // Rust 的 managed state 里，进程一退就没了。只存 name（目录名）
-      // 不够：同名目录在不同位置很常见。
+      // 不够：同名目录在不同位置很常见。roots 是新契约，lastId 保留
+      // 是为了降级到旧版本时仍能恢复一个。
       .then(() => configuration.update('workspace.lastId', workspace.id))
       .catch((error: unknown) => {
         // 记不住只是下次启动不自动恢复，不该影响本次会话
@@ -868,12 +1070,15 @@ export function createRuntime(options: RuntimeOptions): AropytRuntime {
       return false;
     }
 
-    state.workspace = workspace;
+    syncActiveTabBuffer();
+    state.workspaces = [...state.workspaces.filter((item) => item.id !== workspace.id), workspace];
+    setActiveWorkspace(workspace.id);
     resetAssetCache();
     state.activePath = null;
     emitWorkspaceChange();
     notify();
 
+    persistWorkspaceRoots();
     void configuration
       .update('workspace.lastName', workspace.name)
       .then(() => configuration.update('workspace.lastId', workspace.id))
@@ -901,7 +1106,7 @@ export function createRuntime(options: RuntimeOptions): AropytRuntime {
       return null;
     }
 
-    const imported = await importImageNative(targetDir);
+    const imported = await importImageNative(targetDir, state.workspace.id);
     if (!imported) return null;
 
     // 图片落盘后必须让文件树刷新 —— 否则新出现的 assets/ 目录不会显示，
@@ -930,7 +1135,7 @@ export function createRuntime(options: RuntimeOptions): AropytRuntime {
      * 重读会把用户在这个标签里未保存的修改冲掉，那是数据丢失。
      * （VSCode 也是这个行为：切回一个已打开的标签不会重新加载。）
      */
-    const already = state.tabs.find((tab) => tab.path === path);
+    const already = findTab(path);
     if (already) {
       /*
        * 用"固定"的方式打开一个预览标签时，顺手把它转正 ——
@@ -984,7 +1189,21 @@ export function createRuntime(options: RuntimeOptions): AropytRuntime {
      * stat 失败时**不恢复**：宁可这次少救一份草稿，也不能拿一份来历
      * 不明的文本去覆盖磁盘 —— 前者是可恢复的遗憾，后者是数据损坏。
      */
-    const draft = await idbGet<DraftRecord>(STORE.drafts, path).catch(() => undefined);
+    const draftKey = storageKey(state.activeWorkspaceId, path);
+    let draft = await idbGet<DraftRecord>(STORE.drafts, draftKey).catch(() => undefined);
+    if (!draft && state.activeWorkspaceId) {
+      /*
+       * 兼容旧版本：草稿曾经以裸路径为键。升级后第一次崩溃恢复不该失效，
+       * 所以读一次旧键并**迁移**到复合键（写新、删旧），之后就只有一份。
+       */
+      const legacy = await idbGet<DraftRecord>(STORE.drafts, path).catch(() => undefined);
+      if (legacy) {
+        draft = legacy;
+        void idbSet(STORE.drafts, draftKey, legacy)
+          .then(() => idbDelete(STORE.drafts, path))
+          .catch(() => undefined);
+      }
+    }
     if (draft && draft.text !== content) {
       const stat = await workspace.stat(path).catch(() => undefined);
       if (stat && draft.at > stat.mtime) {
@@ -1009,6 +1228,7 @@ export function createRuntime(options: RuntimeOptions): AropytRuntime {
          * 保存成功后清掉。
          */
         state.recoveredPath = path;
+        state.recoveredWorkspaceId = state.activeWorkspaceId;
         notify();
         void windowService.showMessage(
           lastExitWasClean
@@ -1039,7 +1259,7 @@ export function createRuntime(options: RuntimeOptions): AropytRuntime {
                         loadingDocument = false;
                       }
                       persistDraft.cancel();
-                      await idbDelete(STORE.drafts, path).catch(() => undefined);
+                      await idbDelete(STORE.drafts, storageKey(state.activeWorkspaceId, path)).catch(() => undefined);
                       state.dirty = false;
                       notify();
                       await windowService.showMessage(t('rt.useDisk'), { level: 'info' });
@@ -1085,9 +1305,19 @@ export function createRuntime(options: RuntimeOptions): AropytRuntime {
      * 固定标签一律追加，因为它代表用户的明确选择，不能悄悄顶掉别人。
      */
     const language = guessLanguage(path);
-    const tab: EditorTab = { path, language, preview, text: content, dirty: false };
+    const tab: EditorTab = {
+      workspaceId: state.activeWorkspaceId,
+      path,
+      language,
+      preview,
+      text: content,
+      dirty: false,
+    };
     if (preview) {
-      const previewIndex = state.tabs.findIndex((item) => item.preview);
+      /* 预览标签的"顶掉"只发生在同一个工作区内 —— 别的项目不该被顶。 */
+      const previewIndex = state.tabs.findIndex(
+        (item) => item.preview && item.workspaceId === state.activeWorkspaceId,
+      );
       state.tabs =
         previewIndex >= 0
           ? state.tabs.map((item, index) => (index === previewIndex ? tab : item))
@@ -1107,13 +1337,10 @@ export function createRuntime(options: RuntimeOptions): AropytRuntime {
    * 切换点是唯一的"内容会离开编辑器"的时刻，守住它就够了。
    */
   function syncActiveTabBuffer(): void {
-    const path = state.activePath;
-    if (!path) return;
+    if (!state.activePath) return;
     const text = editor.getText();
     const dirty = state.dirty;
-    state.tabs = state.tabs.map((tab) =>
-      tab.path === path ? { ...tab, text, dirty } : tab,
-    );
+    state.tabs = state.tabs.map((tab) => (isActiveTab(tab) ? { ...tab, text, dirty } : tab));
   }
 
   /**
@@ -1122,12 +1349,20 @@ export function createRuntime(options: RuntimeOptions): AropytRuntime {
    * **从标签的缓冲区取内容，不重新读盘** —— 重读会把未保存的修改冲掉，
    * 也会让"切回来"这个动作凭空多一次磁盘 IO。
    */
-  function activateTab(path: string): void {
-    if (state.activePath === path) return;
-    const tab = state.tabs.find((item) => item.path === path);
-    if (!tab) return;
+  function activateTab(path: string, workspaceId?: string | null): void {
+    const tab = workspaceId === undefined ? findTab(path) : findTab(path, workspaceId);
+    if (!tab || isActiveTab(tab)) return;
 
     syncActiveTabBuffer();
+    /*
+     * 激活别的项目里的标签 = 切换激活工作区。
+     * 文件树、保存路由、插件看到的 `context.workspace` 都跟着它走 ——
+     * 少了这一步，点 A 项目的标签、保存却写进 B 项目。
+     */
+    if (tab.workspaceId && tab.workspaceId !== state.activeWorkspaceId) {
+      setActiveWorkspace(tab.workspaceId);
+      emitWorkspaceChange();
+    }
     state.activePath = path;
     editor.setActiveFile(path, tab.language);
     loadingDocument = true;
@@ -1141,13 +1376,54 @@ export function createRuntime(options: RuntimeOptions): AropytRuntime {
   }
 
   /**
+   * 切换激活工作区。
+   *
+   * 编辑器要跟着换：目标工作区里有标签就打开它最近的那个，没有就清空 ——
+   * 停在另一个项目的文档上而文件树已经换根，是最容易误保存的状态。
+   */
+  function activateWorkspace(workspaceId: string): void {
+    if (workspaceId === state.activeWorkspaceId) return;
+    const target = state.workspaces.find((item) => item.id === workspaceId);
+    if (!target) return;
+
+    syncActiveTabBuffer();
+    setActiveWorkspace(workspaceId);
+    resetAssetCache();
+
+    const tab = state.tabs.find((item) => item.workspaceId === workspaceId) ?? null;
+    state.activePath = null;
+    persistWorkspaceRoots();
+
+    if (tab) {
+      /*
+       * activateTab 内部只在"标签所属工作区 ≠ 激活工作区"时才派发事件，
+       * 而这里已经切完了 —— 所以文件树的刷新要自己发一次。
+       */
+      activateTab(tab.path, tab.workspaceId);
+      emitWorkspaceChange();
+      return;
+    }
+
+    loadingDocument = true;
+    try {
+      editor.setActiveFile(null, null);
+      editor.replaceDocument('');
+    } finally {
+      loadingDocument = false;
+    }
+    state.dirty = false;
+    emitWorkspaceChange();
+    notify();
+  }
+
+  /**
    * 关闭标签。
    *
    * 关掉当前标签时必须**挑一个邻居激活**，不能让编辑器停在"无文档但
    * 标签栏还有别的标签"的状态 —— 那种状态下用户点任何东西都像没反应。
    * 挑邻居而不是跳到第一个：靠得近的通常就是他接下来想看的那个。
    */
-  async function closeTab(path: string): Promise<void> {
+  async function closeTab(path: string, workspaceId?: string | null): Promise<void> {
     timeline('close', String(path ?? ''));
     /*
      * 先把激活标签的缓冲区（文本 + dirty）写回 tab —— tab.dirty 平时
@@ -1156,7 +1432,11 @@ export function createRuntime(options: RuntimeOptions): AropytRuntime {
      * 会静默丢内容（闸门用例实测暴露）。
      */
     syncActiveTabBuffer();
-    const index = state.tabs.findIndex((item) => item.path === path);
+    /* 同名文件可能同时开在两个工作区里 —— 只按 path 找会关错那个。 */
+    const targetWorkspace = workspaceId === undefined ? state.activeWorkspaceId : workspaceId;
+    const index = state.tabs.findIndex(
+      (item) => item.path === path && item.workspaceId === targetWorkspace,
+    );
     if (index < 0) return;
 
     /*
@@ -1175,7 +1455,7 @@ export function createRuntime(options: RuntimeOptions): AropytRuntime {
           },
         },
       ];
-      const isCurrent = state.activePath === path;
+      const isCurrent = state.activePath === path && state.activeWorkspaceId === targetWorkspace;
       if (isCurrent && !path.startsWith('__untitled__')) {
         actions.push({ label: t('rt.saveAndClose'), run: () => {} });
       }
@@ -1187,13 +1467,15 @@ export function createRuntime(options: RuntimeOptions): AropytRuntime {
       if (choice === t('rt.saveAndClose')) await saveActiveFile();
     }
 
-    const closingActive = state.activePath === path;
+    const closingActive = state.activePath === path && state.activeWorkspaceId === targetWorkspace;
     // 关掉当前标签之前先把它缓冲区的修改存回来 ——
     // 虽然它马上要走了，但用户在它里面的修改不该凭空消失
     // （万一他反悔，草稿与缓冲区仍然是可用的证据）。
     if (closingActive) syncActiveTabBuffer();
 
-    const next = state.tabs.filter((item) => item.path !== path);
+    const next = state.tabs.filter(
+      (item) => !(item.path === path && item.workspaceId === targetWorkspace),
+    );
     state.tabs = next;
 
     if (!closingActive) {
@@ -1227,7 +1509,7 @@ export function createRuntime(options: RuntimeOptions): AropytRuntime {
      * "已经在这个标签上了"，于是什么都不做，编辑器停在已关闭文档的内容上。
      */
     state.activePath = null;
-    activateTab(neighbour.path);
+    activateTab(neighbour.path, neighbour.workspaceId);
   }
 
   /**
@@ -1251,6 +1533,8 @@ export function createRuntime(options: RuntimeOptions): AropytRuntime {
     }
     const path = `__untitled__-${maxN + 1}`;
     const tab: EditorTab = {
+      /* 未命名文档不属于任何工作区：它没有磁盘身份，也不该被算进某个项目。 */
+      workspaceId: null,
       path,
       language: 'markdown',
       preview: false,
@@ -1664,10 +1948,22 @@ function validateContributions(manifest: PluginManifest): void {
    * 保存即版本；恢复前先把当前内容存成新版本，所以任何操作都不丢内容。
    * 未命名文档没有稳定标识，不记录历史（__untitled__ 每次序号都不同）。
    */
+  /**
+   * 编辑历史的键。
+   *
+   * 工作区文件用复合键；外部文件（绝对路径）不属于任何工作区，保持原键。
+   * 不隔离的后果：两个项目里都叫 notes.md 的文件会看到对方的历史版本，
+   * 而"恢复"按钮会把对方的内容写进当前文件。
+   */
+  function historyStorageKey(path: string): string {
+    if (/^[a-zA-Z]:[\\/]|^\//.test(path)) return path;
+    return storageKey(state.activeWorkspaceId, path);
+  }
+
   function historyKey(): string | null {
     const path = state.activePath;
     if (!path || path.startsWith('__untitled__')) return null;
-    return path;
+    return historyStorageKey(path);
   }
 
   async function recordCurrentVersion(label?: string): Promise<void> {
@@ -1678,7 +1974,7 @@ function validateContributions(manifest: PluginManifest): void {
   }
 
   async function listHistory(path: string) {
-    return listVersions(path).catch(() => []);
+    return listVersions(historyStorageKey(path)).catch(() => []);
   }
 
   async function restoreHistory(id: string): Promise<void> {
@@ -1793,6 +2089,8 @@ function validateContributions(manifest: PluginManifest): void {
       const text = await invokeNative<string>('read_external_file', { path });
       if (!state.tabs.some((tab) => tab.path === path)) {
         state.tabs.push({
+          /* 文件关联打开的文件在工作区之外，不属于任何项目。 */
+          workspaceId: null,
           path,
           language: guessLanguage(path),
           preview: false,
@@ -1810,10 +2108,10 @@ function validateContributions(manifest: PluginManifest): void {
 
   function activateRelativeTab(delta: number): void {
     if (state.tabs.length < 2) return;
-    const index = state.tabs.findIndex((tab) => tab.path === state.activePath);
+    const index = state.tabs.findIndex((tab) => isActiveTab(tab));
     if (index < 0) return;
     const next = state.tabs[(index + delta + state.tabs.length) % state.tabs.length];
-    if (next) void activateTab(next.path);
+    if (next) activateTab(next.path, next.workspaceId);
   }
 
   function toggleVimMode(): void {
@@ -1848,6 +2146,7 @@ function validateContributions(manifest: PluginManifest): void {
      * 此刻编辑器里的文本 —— 与后续走哪条分支（工作区/外部/另存为）无关。
      */
     void recordCurrentVersion();
+    timeline('save', String(state.activePath ?? '(untitled)'));
     let workspace = state.workspace;
     let path = state.activePath;
 
@@ -1869,6 +2168,7 @@ function validateContributions(manifest: PluginManifest): void {
       } catch (error: unknown) {
         const detail =
           error instanceof Error ? error.message : typeof error === 'string' ? error : JSON.stringify(error);
+        timeline('save-fail', `${path} · ${detail}`, { failed: true });
         await windowService.showMessage(t('rt.saveFailedDetail', { detail }), { level: 'error' });
       }
       notify();
@@ -1889,7 +2189,7 @@ function validateContributions(manifest: PluginManifest): void {
      * 就永远留在库里，下次启动会被当成"上次未保存的内容"再恢复一遍。
      * 落盘之后它的使命就结束了，两个键都得清。
      */
-    const draftKeyBeforeSave = path ?? DRAFT_KEY;
+    const draftKeyBeforeSave = storageKey(state.activeWorkspaceId, path ?? DRAFT_KEY);
 
     /*
      * 没有关联路径 = 未命名文档（刚启动的应用就是这个状态）。
@@ -1906,7 +2206,11 @@ function validateContributions(manifest: PluginManifest): void {
      */
     if (!path) {
       const picked = await pickSavePathNative(suggestedFileName());
-      if (!picked) return; // 用户取消：不是一个错误，静默返回
+      if (!picked) {
+        // 用户取消：不是一个错误，但要留痕 —— "点了保存没反应"常是这一步
+        timeline('save-cancel', '用户在保存对话框取消');
+        return;
+      }
 
       const segments = picked.split(/[\\/]/).filter(Boolean);
       const fileName = segments.pop();
@@ -1922,7 +2226,8 @@ function validateContributions(manifest: PluginManifest): void {
       }
 
       workspace = opened;
-      state.workspace = opened;
+      state.workspaces = [...state.workspaces.filter((item) => item.id !== opened.id), opened];
+      setActiveWorkspace(opened.id);
       resetAssetCache();
       path = fileName;
       state.activePath = path;
@@ -1937,6 +2242,7 @@ function validateContributions(manifest: PluginManifest): void {
       state.tabs = [
         ...state.tabs,
         {
+          workspaceId: state.activeWorkspaceId,
           path,
           language: guessLanguage(picked),
           preview: false,
@@ -1958,6 +2264,8 @@ function validateContributions(manifest: PluginManifest): void {
       // 这是 Web 侧唯一能拿到的原子性保证，且是浏览器给的，不是我实现的。
       await workspace.write(path, editor.getText());
     } catch (error) {
+      const detail = error instanceof Error ? error.message : String(error);
+      timeline('save-fail', `${path} · ${detail}`, { failed: true });
       await windowService.showMessage(t('rt.saveFailedPath', { path }), { level: 'error' });
       console.error(error);
       return;
@@ -1975,8 +2283,9 @@ function validateContributions(manifest: PluginManifest): void {
      * 这份草稿就会被判定成"未保存的修改"而覆盖磁盘。
      */
     persistDraft.cancel();
-    await idbDelete(STORE.drafts, path).catch(() => undefined);
-    if (draftKeyBeforeSave !== path) {
+    const savedDraftKey = storageKey(state.activeWorkspaceId, path);
+    await idbDelete(STORE.drafts, savedDraftKey).catch(() => undefined);
+    if (draftKeyBeforeSave !== savedDraftKey) {
       // 另存为：把"未命名"那个槽也清掉（见上面 draftKeyBeforeSave 的说明）
       await idbDelete(STORE.drafts, draftKeyBeforeSave).catch(() => undefined);
     }
@@ -1986,6 +2295,7 @@ function validateContributions(manifest: PluginManifest): void {
     // 否则切走再切回来时它还以为这份是脏的。
     syncActiveTabBuffer();
     notify();
+    timeline('saved', path);
 
     /*
      * 保存成功也必须有反馈。
@@ -2008,10 +2318,17 @@ function validateContributions(manifest: PluginManifest): void {
    * （保存、图片解析、历史全要拼绝对路径），留着它们只会让后续操作
    * 报一串"文件不存在"。
    */
-  async function closeWorkspace(): Promise<boolean> {
-    if (!state.workspace) return false;
+  async function closeWorkspace(workspaceId?: string): Promise<boolean> {
+    const workspace = workspaceId
+      ? (state.workspaces.find((item) => item.id === workspaceId) ?? null)
+      : state.workspace;
+    if (!workspace) return false;
 
-    const dirtyCount = state.tabs.filter((tab) => tab.dirty).length;
+    /* 先同步激活标签的脏状态，再统计 —— tab.dirty 平时不随编辑实时更新。 */
+    syncActiveTabBuffer();
+    const dirtyCount = state.tabs.filter(
+      (tab) => tab.workspaceId === workspace.id && tab.dirty,
+    ).length;
     if (dirtyCount > 0) {
       const choice = await windowService.showMessage(
         t('rt.closeWorkspaceDirty', { n: String(dirtyCount) }),
@@ -2024,27 +2341,45 @@ function validateContributions(manifest: PluginManifest): void {
       if (choice === undefined) return false;
     }
 
-    state.workspace = null;
-    state.tabs = [];
-    state.activePath = null;
-    state.dirty = false;
+    /*
+     * 只关这一个工作区：它的标签一起关，别的项目原样留着。
+     * 关掉激活工作区时优先激活同项目里的邻居，其次任意一个剩余标签，
+     * 都没有就清空编辑器 —— 停在已关闭项目的内容上是最容易误保存的状态。
+     */
+    const closingActive = state.activeWorkspaceId === workspace.id;
+    const remainingTabs = state.tabs.filter((tab) => tab.workspaceId !== workspace.id);
+    state.tabs = remainingTabs;
+    state.workspaces = state.workspaces.filter((item) => item.id !== workspace.id);
     resetAssetCache();
 
-    // 编辑器要显式清空：停在上一篇文档上会让"工作区已关闭"看起来像没生效。
-    loadingDocument = true;
-    try {
-      editor.setActiveFile(null, null);
-      editor.replaceDocument('');
-    } finally {
-      loadingDocument = false;
+    if (closingActive) {
+      const fallback = state.workspaces[state.workspaces.length - 1] ?? null;
+      setActiveWorkspace(fallback?.id ?? null);
+      const neighbour =
+        remainingTabs.find((tab) => tab.workspaceId === fallback?.id) ?? remainingTabs[0] ?? null;
+      state.activePath = null;
+      if (neighbour) {
+        activateTab(neighbour.path, neighbour.workspaceId);
+      } else {
+        loadingDocument = true;
+        try {
+          editor.setActiveFile(null, null);
+          editor.replaceDocument('');
+        } finally {
+          loadingDocument = false;
+        }
+        state.dirty = false;
+      }
     }
 
     emitWorkspaceChange();
     notify();
 
+    persistWorkspaceRoots();
+    const active = state.activeWorkspaceId;
     void configuration
-      .update('workspace.lastId', undefined)
-      .then(() => configuration.update('workspace.lastName', undefined))
+      .update('workspace.lastId', active)
+      .then(() => configuration.update('workspace.lastName', state.workspace?.name))
       .catch((error: unknown) => {
         // 抹不掉只是下次启动自动恢复，不该把"关闭"这个动作也弄失败
         console.warn('[aropyt] 清除上次工作区失败', error);
@@ -2071,8 +2406,10 @@ function validateContributions(manifest: PluginManifest): void {
       await windowService.showMessage(t('rt.noRestorable'), { level: 'warning' });
       return false;
     }
-    state.workspace = workspace;
+    state.workspaces = [...state.workspaces.filter((item) => item.id !== workspace.id), workspace];
+    setActiveWorkspace(workspace.id);
     resetAssetCache();
+    persistWorkspaceRoots();
     state.activePath = null;
     emitWorkspaceChange();
     notify();
@@ -2100,13 +2437,44 @@ function validateContributions(manifest: PluginManifest): void {
      * 但原生侧没有可恢复的"句柄"，只有路径，无参恢复必然返回 none。
      * 于是 Tauri 下每次启动都是"未打开工作区"。
      */
-    const lastId = configuration.get<string | null>('workspace.lastId', null);
-    const restored = await restoreWorkspace(lastId);
-    if (restored.status === 'restored') {
-      state.workspace = restored.workspace;
+    /*
+     * 逐个恢复上次会话打开的工作区。
+     *
+     * 旧版本只存单个 `workspace.lastId`；roots 为空时退回它 ——
+     * 升级后不该突然"什么都没恢复"。
+     */
+    const savedRoots = configuration.get<string[]>('workspace.roots', []);
+    const legacyId = configuration.get<string | null>('workspace.lastId', null);
+    const roots = savedRoots.length > 0 ? savedRoots : legacyId ? [legacyId] : [];
+
+    let needsRegrant = false;
+    for (const rootId of roots) {
+      if (typeof rootId !== 'string' || rootId.length === 0) continue;
+      const restored = await restoreWorkspace(rootId);
+      if (restored.status === 'restored') {
+        state.workspaces = [
+          ...state.workspaces.filter((item) => item.id !== restored.workspace.id),
+          restored.workspace,
+        ];
+      } else if (restored.status === 'needs-regrant') {
+        needsRegrant = true;
+      }
+    }
+
+    /*
+     * 激活项优先用上次记住的那个；它没恢复成功时退回最后恢复的一个
+     * （至少有一个工作区是活的，而不是停在"未打开工作区"）。
+     */
+    const savedActive = configuration.get<string | null>('workspace.active', null);
+    const preferred = savedActive
+      ? (state.workspaces.find((item) => item.id === savedActive) ?? null)
+      : null;
+    const restoredActive = preferred ?? state.workspaces[state.workspaces.length - 1] ?? null;
+    if (restoredActive) {
+      setActiveWorkspace(restoredActive.id);
       resetAssetCache();
       emitWorkspaceChange();
-    } else if (restored.status === 'needs-regrant') {
+    } else if (needsRegrant) {
       // 不静默弹权限框。等用户点击"恢复上次工作区"。
       notify();
     }
@@ -2186,8 +2554,16 @@ function validateContributions(manifest: PluginManifest): void {
         .filter(([, record]) => record && typeof record.text === 'string' && record.text.length > 0)
         .sort((a, b) => b[1].at - a[1].at);
       if (drafts.length > 0) {
-        const [rawPath, record] = drafts[0];
-        const path = String(rawPath);
+        const [rawKey, record] = drafts[0];
+        const key = String(rawKey);
+        /*
+         * 草稿键可能带工作区前缀（`workspaceId\0path`）。
+         * 不拆开的话，提示里会显示一长串内部键，而且"打开"会拿它当路径 ——
+         * 直接把恢复入口变成坏的。
+         */
+        const separator = key.indexOf('\u0000');
+        const workspaceId = separator >= 0 ? key.slice(0, separator) : null;
+        const path = separator >= 0 ? key.slice(separator + 1) : key;
         const name = path.split(/[\\/]/).pop() ?? path;
         const when = new Date(record.at).toLocaleString();
         void windowService.showMessage(
@@ -2198,7 +2574,16 @@ function validateContributions(manifest: PluginManifest): void {
               {
                 label: t('rt.openRecent'),
                 run: () => {
-                  void openExternalPath(path);
+                  const owner = workspaceId
+                    ? state.workspaces.find((item) => item.id === workspaceId)
+                    : undefined;
+                  if (owner && workspaceId) {
+                    setActiveWorkspace(workspaceId);
+                    emitWorkspaceChange();
+                    void openFile(path);
+                    return;
+                  }
+                  void openFile(path);
                 },
               },
             ],
@@ -2213,13 +2598,6 @@ function validateContributions(manifest: PluginManifest): void {
   })();
 
   return runtime;
-}
-
-function guessLanguage(path: string): string | null {
-  const extension = path.slice(path.lastIndexOf('.') + 1).toLowerCase();
-  if (extension === 'md' || extension === 'markdown') return 'markdown';
-  if (extension === 'txt') return 'text';
-  return null;
 }
 
 /**

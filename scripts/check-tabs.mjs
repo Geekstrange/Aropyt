@@ -126,7 +126,19 @@ try {
     window.__TAURI_INTERNALS__ = {
       invoke: function (command, args) {
         if (command === 'pick_folder') return Promise.resolve('E:/demo');
-        if (command === 'set_workspace') return Promise.resolve(null);
+        /*
+         * 多工作区后 set_workspace 必须返回描述符（id/name/root）——
+         * 前端拿它的 id 作为标签归属与保存路由。只返回 null 会让
+         * 打开工作区直接失败。
+         */
+        if (command === 'set_workspace') {
+          var root = (args && args.root) || '';
+          return Promise.resolve({
+            id: root,
+            name: String(root).split(String.fromCharCode(92)).pop().split('/').pop(),
+            root: root,
+          });
+        }
         if (command === 'workspace_list') {
           var dir = (args && args.args && args.args.path) || '';
           if (dir === '' || dir === 'E:/demo') {

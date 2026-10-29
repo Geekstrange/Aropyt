@@ -20,7 +20,9 @@ const manifest: PluginManifest = {
   engines: { aropyt: '^0.1.0' },
   activationEvents: ['onView:aropyt.outline'],
   contributes: {
-    views: [{ id: 'aropyt.outline', title: '大纲', location: 'sidebar', order: 2 }],
+    /* 大纲只对 markdown 有意义：`extractOutline` 解析的就是 markdown 标题。
+     * 剧本/LaTeX 下显示"当前文档还没有标题"是在报告一个不存在的问题。 */
+    views: [{ id: 'aropyt.outline', title: '大纲', location: 'sidebar', order: 2, languages: ['markdown'] }],
   },
 };
 
@@ -81,7 +83,7 @@ function computeSubtreeEnds(items: readonly OutlineEntry[]): readonly number[] {
 function activate(context: PluginContext): void {
   context.subscriptions.push(
     context.window.registerView(
-      { id: 'aropyt.outline', title: '大纲', location: 'sidebar', order: 2 },
+      { id: 'aropyt.outline', title: '大纲', location: 'sidebar', order: 2, languages: ['markdown'] },
       {
         render(container, viewContext) {
           const body = document.createElement('div');

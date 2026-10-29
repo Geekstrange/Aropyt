@@ -101,6 +101,8 @@ function mathPlugin(md: MarkdownIt): void {
 function taskListPlugin(md: MarkdownIt): void {
   md.core.ruler.after('inline', 'aropyt-task-list', (state) => {
     const { tokens } = state;
+    /* 本块内第几个任务项 —— 与 BlockWidget 里 `[ ]` 的出现顺序对应 */
+    let checkboxIndex = 0;
     for (let i = 2; i < tokens.length; i += 1) {
       if (tokens[i].type !== 'inline') continue;
       if (tokens[i - 1].type !== 'paragraph_open') continue;
@@ -119,9 +121,15 @@ function taskListPlugin(md: MarkdownIt): void {
 
       tokens[i - 2].attrJoin('class', 'task-list-item');
       const checkbox = new state.Token('html_inline', '', 0);
-      checkbox.content = `<input class="task-checkbox" type="checkbox" disabled${
-        checked ? ' checked' : ''
-      }> `;
+      /*
+       * **不要 disabled**：禁用的 input 既点不动、又只能渲染成灰色，
+       * 用户只能把光标挪进这一行手打 `x`。序号（data-task）用于把点击
+       * 映射回文档里对应的那一个 `[ ]`（见 BlockWidget 的绑定）。
+       */
+      checkbox.content = `<input class="task-checkbox" type="checkbox" data-task="${String(
+        checkboxIndex,
+      )}"${checked ? ' checked' : ''}> `;
+      checkboxIndex += 1;
       tokens[i].children = [checkbox, ...(tokens[i].children ?? [])];
     }
   });
@@ -203,8 +211,16 @@ md.renderer.rules.link_open = (tokens, idx, options, env, self) => {
   return defaultLinkOpen(tokens, idx, options, env, self);
 };
 
-export function renderMarkdown(source: string): string {
-  return md.render(source);
+/**
+ * 渲染一段 markdown。
+ *
+ * `env` 用来在**逐块渲染**时共享文档级上下文（引用式链接/图片的定义表）。
+ * markdown-it 会把 `[label]: url` 收进 `env.references`，而编辑区的块级
+ * 渲染是一块一块调用的 —— 不共享 env 时，`![logo][img-ref]` 所在块看不到
+ * 另一个块里的定义，整条图片就退化成纯文本。
+ */
+export function renderMarkdown(source: string, env?: Record<string, unknown>): string {
+  return md.render(source, env);
 }
 
 export interface OutlineItem {

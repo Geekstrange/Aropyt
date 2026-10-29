@@ -162,7 +162,15 @@ try {
           window.__SAVE_DIALOGS__.push(args && args.suggested ? args.suggested : null);
           return Promise.resolve(window.__SAVE_TARGET__ || 'E:/demo/Untitled.md');
         }
-        if (command === 'set_workspace') return Promise.resolve(null);
+        /* 多工作区后必须返回描述符，见 check-tabs.mjs 的说明。 */
+        if (command === 'set_workspace') {
+          var root = (args && args.root) || '';
+          return Promise.resolve({
+            id: root,
+            name: String(root).split(String.fromCharCode(92)).pop().split('/').pop(),
+            root: root,
+          });
+        }
         if (command === 'workspace_list') {
           var dir = (args && args.args && args.args.path) || '';
           if (dir === '' || dir === 'E:/demo') {
@@ -233,7 +241,8 @@ try {
   /** 直接操作应用的 IndexedDB（草稿就在这个库里）。 */
   const withDb = (body) => ev(`(async () => {
     const db = await new Promise((res, rej) => {
-      const r = indexedDB.open('aropyt', 1);
+      /* 不带版本：应用建库时已是 v2，写死 1 会在第二次打开时抛 VersionError */
+      const r = indexedDB.open('aropyt');
       r.onsuccess = () => res(r.result);
       r.onerror = () => rej(r.error);
     });
@@ -417,7 +426,14 @@ try {
   // 拿旧草稿覆盖它就是"货不对板"。
   await dismissToasts();
   await ev(`window.__DISK__.text = '磁盘上的较新内容。'; window.__DISK__.mtime = ${FILE_MTIME + 60_000}; window.__saveDisk__(); 'set'`);
-  await putDraft('guide.md', '过期的草稿内容（绝不该出现）', FILE_MTIME - 60_000);
+  /*
+   * 草稿键带工作区前缀（多工作区隔离），直接塞裸路径是读不到的。
+   * 前缀必须与运行时拿到的 workspace.id 完全一致：`pick_markdown_file`
+   * 返回的是正斜杠路径，而 openMarkdownFile 用反斜杠拼父目录 ——
+   * Tauri 下两者一致，桩里必须模拟成反斜杠。
+   */
+  const DRAFT_PREFIX = 'E:\\demo' + String.fromCharCode(0);
+  await putDraft(`${DRAFT_PREFIX}guide.md`, '过期的草稿内容（绝不该出现）', FILE_MTIME - 60_000);
   /*
    * 用 reload + 重新打开，而不是"再点一次打开文件"。
    *
@@ -450,7 +466,7 @@ try {
   // ── 5) 而**确实更新**的草稿必须照常恢复（别把功能修坏了）──
   await dismissToasts();
   await ev(`window.__DISK__.text = '磁盘上的旧内容。'; window.__DISK__.mtime = ${FILE_MTIME}; window.__saveDisk__(); 'set'`);
-  await putDraft('guide.md', '崩溃前未保存的内容。', FILE_MTIME + 60_000);
+  await putDraft(`${DRAFT_PREFIX}guide.md`, '崩溃前未保存的内容。', FILE_MTIME + 60_000);
   await reloadAndOpen('新草稿');
   await sleep(400);
 

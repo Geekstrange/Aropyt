@@ -37,16 +37,69 @@ type CommandHandler = (...args: unknown[]) => unknown;
 /** 命令没有被实现时，向宿主请求激活。返回是否成功补上了 handler。 */
 export type CommandActivator = (commandId: string) => Promise<boolean>;
 
+/**
+ * 一次命令执行的结果快照，供宿主记录"用户到底点了什么"。
+ *
+ * 为什么要在注册表内部上报、而不是由 UI 各入口自己打点：
+ * 命令有五个以上触发路径（工具栏、命令面板、快捷键、vim、插件内部
+ * `execute`）。任何一处漏打，恰恰是出问题时的那一处。只在唯一的
+ * 执行咽喉 `execute()` 上报，才不会有盲区。
+ */
+export interface CommandTrace {
+  readonly id: string;
+  readonly at: number;
+  readonly durationMs: number;
+  readonly outcome: 'ok' | 'error';
+  readonly error?: string;
+}
+
+export type CommandObserver = (trace: CommandTrace) => void;
+
 export class CommandRegistry implements CommandsApi {
   readonly #declared = new Map<string, DeclaredCommand>();
   readonly #handlers = new Map<string, CommandHandler>();
   readonly #registerListeners = new Set<(descriptor: CommandDescriptor) => void>();
   #activator: CommandActivator | null = null;
+  #observer: CommandObserver | null = null;
   /** 正在激活中的命令，避免并发触发把插件激活跑两遍。 */
   readonly #activating = new Map<string, Promise<boolean>>();
 
   setActivator(activator: CommandActivator): void {
     this.#activator = activator;
+  }
+
+  /** 观测命令执行（诊断用）。传 null 取消观察。 */
+  setObserver(observer: CommandObserver | null): void {
+    this.#observer = observer;
+  }
+
+  #report(id: string, startedAt: number, outcome: 'ok' | 'error', error?: unknown): void {
+    if (!this.#observer) return;
+    const message =
+      error === undefined
+        ? undefined
+        : error instanceof Error
+          ? error.message
+          : typeof error === 'string'
+            ? error
+            : (() => {
+                try {
+                  return JSON.stringify(error);
+                } catch {
+                  return String(error);
+                }
+              })();
+    try {
+      this.#observer({
+        id,
+        at: Date.now(),
+        durationMs: performance.now() - startedAt,
+        outcome,
+        ...(message === undefined ? {} : { error: message }),
+      });
+    } catch {
+      // 观察者（诊断）出错不能影响命令本身。
+    }
   }
 
   /** 由宿主在解析插件清单时调用。此时插件的代码还不存在。 */
@@ -103,6 +156,12 @@ export class CommandRegistry implements CommandsApi {
   }
 
   async execute<T = unknown>(id: string, ...args: unknown[]): Promise<T> {
+    /*
+     * 计时从**调用那一刻**开始，包含惰性激活（插件首次激活可能要几百毫秒）。
+     * "点了个按钮 800ms 没反应"与"命令跑了 800ms"在用户侧无法区分，
+     * 报告里也不该区分 —— 用户感知的就是整段时间。
+     */
+    const startedAt = performance.now();
     let handler = this.#handlers.get(id);
 
     if (!handler && this.#activator) {
@@ -125,13 +184,22 @@ export class CommandRegistry implements CommandsApi {
        * vs 注册后被清（有过又没了）vs 注册进了别的实例。
        */
       const registered = [...this.#handlers.keys()].slice(0, 8).join(', ');
-      throw new Error(
+      const error = new Error(
         `命令未注册或所属插件未激活：${id}` +
           `（声明:${declared ? `是,owner=${declared.pluginId ?? 'null'}` : '否'}）` +
           `（已注册处理器:${registered || '空'}）`,
       );
+      this.#report(id, startedAt, 'error', error);
+      throw error;
     }
-    return (await handler(...args)) as T;
+    try {
+      const result = (await handler(...args)) as T;
+      this.#report(id, startedAt, 'ok');
+      return result;
+    } catch (error) {
+      this.#report(id, startedAt, 'error', error);
+      throw error;
+    }
   }
 
   async #requestActivation(id: string): Promise<boolean> {

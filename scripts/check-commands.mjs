@@ -158,7 +158,15 @@ try {
         window.__TAURI_CALLS__.push({ command: command, args: args });
         if (command === 'pick_folder') return Promise.resolve(window.__PICK_FOLDER__);
         if (command === 'pick_markdown_file') return Promise.resolve(window.__PICK_FILE__);
-        if (command === 'set_workspace') return Promise.resolve(null);
+        /* 多工作区后必须返回描述符，见 check-tabs.mjs 的说明。 */
+        if (command === 'set_workspace') {
+          var root = (args && args.root) || '';
+          return Promise.resolve({
+            id: root,
+            name: String(root).split(String.fromCharCode(92)).pop().split('/').pop(),
+            root: root,
+          });
+        }
         if (command === 'workspace_list') {
           var dir = (args && args.args && args.args.path) || '';
           if (dir === '') {

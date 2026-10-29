@@ -124,7 +124,7 @@ export function SettingsDialog({
                   aria-pressed={localePreference === 'en'}
                   aria-label="English"
                   onClick={() => { runtime.updateSettings({ locale: 'en' }); setLocale('en'); }}
-                ><svg viewBox='0 0 60 30' className='settings-flag' aria-hidden='true'><clipPath id="f-en-a"><path d="M0 0v30h60V0z"/></clipPath><clipPath id="f-en-b"><path d="M30 15h30v15zv15H0zH0V0zV0h30z"/></clipPath><g clip-path="url(#a)"><path d="M0 0v30h60V0z" fill="#012169"/><path d="m0 0 60 30m0-30L0 30" stroke="#fff" stroke-width="6"/><path d="m0 0 60 30m0-30L0 30" clip-path="url(#b)" stroke="#C8102E" stroke-width="4"/><path d="M30 0v30M0 15h60" stroke="#fff" stroke-width="10"/><path d="M30 0v30M0 15h60" stroke="#C8102E" stroke-width="6"/></g></svg></button>
+                ><svg viewBox='0 0 60 30' className='settings-flag' aria-hidden='true'><clipPath id="f-en-a"><path d="M0 0v30h60V0z"/></clipPath><clipPath id="f-en-b"><path d="M30 15h30v15zv15H0zH0V0zV0h30z"/></clipPath><g clipPath="url(#f-en-a)"><path d="M0 0v30h60V0z" fill="#012169"/><path d="m0 0 60 30m0-30L0 30" stroke="#fff" strokeWidth="6"/><path d="m0 0 60 30m0-30L0 30" clipPath="url(#f-en-b)" stroke="#C8102E" strokeWidth="4"/><path d="M30 0v30M0 15h60" stroke="#fff" strokeWidth="10"/><path d="M30 0v30M0 15h60" stroke="#C8102E" strokeWidth="6"/></g></svg></button>
                 <button
                   key="de"
                   type="button"
@@ -156,7 +156,7 @@ export function SettingsDialog({
                   aria-pressed={localePreference === 'ko'}
                   aria-label="한국어"
                   onClick={() => { runtime.updateSettings({ locale: 'ko' }); setLocale('ko'); }}
-                ><svg viewBox='-72 -48 144 96' className='settings-flag' aria-hidden='true'><path fill="#fff" d="M-72-48v96H72v-96z"/><g stroke="#000" stroke-width="4"><path d="M-34.946-37.72-48.26-17.75m4.992 3.328 13.313-19.97m4.992 3.329-13.312 19.969m63.236 42.157 6.101-9.152m1.11-1.664 6.101-9.153m4.993 3.328-6.102 9.153m-1.11 1.664-6.101 9.152m4.992 3.329 6.102-9.153m1.11-1.664 6.1-9.153M-48.259 17.75l13.313 19.97m4.992-3.329-6.102-9.152m-1.109-1.664-6.102-9.153m4.993-3.328 13.312 19.97m63.236-42.158-6.101-9.153m-1.11-1.664-6.101-9.152m4.992-3.328 13.313 19.969m4.992-3.328-6.102-9.153m-1.11-1.664-6.1-9.153"/></g><path fill="#cd2e3a" d="M9.985 6.656A18 18 0 1 1-19.97-13.313a24 24 0 1 1 39.938 26.626"/><path fill="#0047a0" d="M0 0a12 12 0 1 1 19.97 13.313 24 24 0 1 1-39.94-26.626A12 12 0 1 0 0 0"/></svg></button>
+                ><svg viewBox='-72 -48 144 96' className='settings-flag' aria-hidden='true'><path fill="#fff" d="M-72-48v96H72v-96z"/><g stroke="#000" strokeWidth="4"><path d="M-34.946-37.72-48.26-17.75m4.992 3.328 13.313-19.97m4.992 3.329-13.312 19.969m63.236 42.157 6.101-9.152m1.11-1.664 6.101-9.153m4.993 3.328-6.102 9.153m-1.11 1.664-6.101 9.152m4.992 3.329 6.102-9.153m1.11-1.664 6.1-9.153M-48.259 17.75l13.313 19.97m4.992-3.329-6.102-9.152m-1.109-1.664-6.102-9.153m4.993-3.328 13.312 19.97m63.236-42.158-6.101-9.153m-1.11-1.664-6.101-9.152m4.992-3.328 13.313 19.969m4.992-3.328-6.102-9.153m-1.11-1.664-6.1-9.153"/></g><path fill="#cd2e3a" d="M9.985 6.656A18 18 0 1 1-19.97-13.313a24 24 0 1 1 39.938 26.626"/><path fill="#0047a0" d="M0 0a12 12 0 1 1 19.97 13.313 24 24 0 1 1-39.94-26.626A12 12 0 1 0 0 0"/></svg></button>
                 <button
                   key="it"
                   type="button"

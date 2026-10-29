@@ -13,7 +13,7 @@
 
 import { createRoot } from 'react-dom/client';
 import { t } from './i18n';
-import { installDebugLog } from './debug/debug-log';
+import { installDebugLog, loadPreviousSession } from './debug/debug-log';
 
 import { App } from './App.js';
 import './styles.css';
@@ -25,8 +25,18 @@ if (!container) throw new Error(t('app.missingRoot'));
  * 日志拦截在启动时就安装 —— 否则 F12 打开之前发生的日志（启动、
  * 插件加载、首个文件的打开）全部丢失，面板看起来是空的（实测）。
  * 拦截只是往 500 条环形缓冲里塞，开销可忽略。
+ *
+ * 拦截**永不卸载**：关闭面板之后发生的错误同样要能交出来。
  */
 installDebugLog();
+
+/*
+ * 把上一次会话落盘的错误注回日志（异步，不阻塞首屏）。
+ *
+ * 覆盖的是"崩溃时用户根本打不开面板"这一类 —— 进程被杀 / 断电 /
+ * 白屏之后，内存里的日志已经不存在了，只有落盘的那份能说明问题。
+ */
+void loadPreviousSession();
 
 /*
  * WebView2 的浏览器查找栏在浏览器 UI 层消费 Ctrl+F，比 DOM 更早 ——

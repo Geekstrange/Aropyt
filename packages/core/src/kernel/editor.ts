@@ -66,7 +66,13 @@ import {
   type ViewUpdate,
 } from '@codemirror/view';
 import { defaultKeymap, history, historyKeymap, indentWithTab } from '@codemirror/commands';
-import { bracketMatching, foldGutter, foldKeymap, indentOnInput } from '@codemirror/language';
+import {
+  LanguageDescription,
+  bracketMatching,
+  foldGutter,
+  foldKeymap,
+  indentOnInput,
+} from '@codemirror/language';
 import { markdown, markdownLanguage } from '@codemirror/lang-markdown';
 import { languages } from '@codemirror/language-data';
 import { autocompletion, closeBrackets, closeBracketsKeymap, completionKeymap } from '@codemirror/autocomplete';
@@ -84,6 +90,7 @@ import type {
 } from '@aropyt/plugin-api';
 
 import { toggleLinePrefix as applyLinePrefix, toggleWrap as applyWrap } from '../commands.js';
+import { MARKDOWN_LANGUAGE, isRenderableLanguage } from '../languages.js';
 import { inlineRender } from '../wysiwyg/inline-render.js';
 import { guardSync } from '../safety.js';
 import { aropytEditorTheme, aropytHighlightStyle } from '../theme.js';
@@ -144,6 +151,16 @@ export class EditorAdapter implements EditorApi {
   readonly #slot = new Compartment();
   /** 渲染层的装载槽。同上：切模式绝不能重建编辑器。 */
   readonly #renderSlot = new Compartment();
+  /**
+   * 语言解析器槽（v0.1.6）。
+   *
+   * 之前这里直接塞了 `markdown(...)`，等于假设"所有文档都是 markdown"——
+   * 打开 .fountain / .tex 时也会套上 markdown 解析器：既拿不到正确的高亮，
+   * 又会让 markdown 的原地渲染误判它们的语法（例如 `#` 开头的动作行
+   * 被当成标题）。改成槽之后，换文件只重配解析器，不重建编辑器
+   * （重建会丢撤销历史、光标、滚动位置）。
+   */
+  readonly #languageSlot = new Compartment();
   /**
    * 模式类名槽。
    *
@@ -215,10 +232,23 @@ export class EditorAdapter implements EditorApi {
    */
   /** 已经同步给视图的模式。用于避免重复 dispatch（重复会白白触发一次重绘）。 */
   #appliedSource = false;
+  /**
+   * 已经同步给视图的语言。
+   *
+   * 渲染层的内容取决于语言（markdown 有内联渲染器，其它语言没有），
+   * 所以"模式没变但语言变了"也必须重配 —— 否则打开 .tex 后仍然挂着
+   * markdown 渲染器，正文被整段替换成 `cm-md-block` widget，
+   * 插件自己的装饰再也显示不出来。
+   */
+  #appliedLanguage: string | null = null;
   #pluginExtensions: Extension[] = [];
 
   #activeFile: string | null = null;
   #language: string | null = null;
+  /** 当前语言是否有"渲染态"（只有 markdown 有）。非渲染语言恒为源码视图。 */
+  #languageRenderable = true;
+  /** 视图已销毁：语言包是异步加载的，回来时可能已经没有视图了。 */
+  #disposed = false;
   #document: DocumentRef | null = null;
   #opener: ((path: string, options?: { readonly preview?: boolean }) => Promise<void>) | null = null;
   #documentVersion = 0;
@@ -342,7 +372,7 @@ export class EditorAdapter implements EditorApi {
             'Go to line': '跳转到行',
             go: '跳转',
           }),
-          markdown({ base: markdownLanguage, codeLanguages: languages }),
+          this.#languageSlot.of(this.#markdownSupport()),
           // Typora 式原地渲染。必须在 markdown 解析器之后 —— 它依赖 syntaxTree。
           //
           // 走 Compartment：切模式时重配这个槽，而不是重建视图。
@@ -385,6 +415,8 @@ export class EditorAdapter implements EditorApi {
                  * j/k 又会跳块（用户实测）。
                  */
                 if (this.#vimOn) return true;
+                /* 纯文本语言没有渲染态可切：吞掉，避免"按了没反应"。 */
+                if (!this.#languageRenderable) return true;
                 this.setSourceMode(!this.#sourceMode);
                 return true;
               },
@@ -465,6 +497,54 @@ export class EditorAdapter implements EditorApi {
     return this.#view;
   }
 
+  #markdownSupport(): Extension {
+    return markdown({ base: markdownLanguage, codeLanguages: languages });
+  }
+
+  /**
+   * 按当前语言重配解析器。
+   *
+   * 两条路径：
+   *   - markdown（或无语言）→ 内置包装，同步挂上
+   *   - 其他 → 先从 language-data 里找同名语言包（latex 等）懒加载，
+   *     找不到就保持空解析器（纯文本）。fountain 没有官方 CM 包，
+   *     这里落到纯文本，等渲染插件自己提供扩展。
+   *
+   * 先卸旧解析器再加载新的：否则上一份文档的语法树会继续装饰新内容，
+   * 表现是"切到 .fountain 后还是 markdown 的样式"。
+   */
+  #applyLanguage(): void {
+    const language = this.#language;
+    const renderable = isRenderableLanguage(language);
+    this.#languageRenderable = renderable;
+
+    if (renderable) {
+      this.#dispatchLanguage(this.#markdownSupport());
+    } else {
+      this.#dispatchLanguage([]);
+      const description = language ? LanguageDescription.matchLanguageName(languages, language) : null;
+      if (description) {
+        const wanted = language;
+        void description
+          .load()
+          .then((support) => {
+            /* 加载是异步的：用户可能已经切到别的文件了 */
+            if (this.#disposed || this.#language !== wanted) return;
+            this.#dispatchLanguage(support);
+          })
+          .catch(() => undefined);
+      }
+    }
+
+    /* 语言变了，"生效模式"可能跟着变（非 markdown 没有渲染态）。 */
+    this.#applyMode();
+  }
+
+  #dispatchLanguage(extension: Extension): void {
+    if (this.#disposed) return;
+    this.#view.dispatch({ effects: this.#languageSlot.reconfigure(extension) });
+  }
+
   /**
    * 渲染模式下的扩展集合。
    *
@@ -493,7 +573,17 @@ export class EditorAdapter implements EditorApi {
         showWhitespace(),
       ];
     }
-    // 渲染态：行号是纯噪音。Typora 就没有行号，
+    /*
+     * 渲染态：**只有 markdown 有内联渲染器**。
+     *
+     * tex / fountain 的渲染由各自插件的装饰提供。在这里挂 markdown
+     * 渲染器的后果不是"多渲染一点"，而是把正文整段替换成 `cm-md-block`
+     * widget —— 插件装饰作用在被替换掉的文本上，用户看到的是一片
+     * 按 markdown 解析的、完全错误的排版（实测：tex 正文被当成一个大段落）。
+     */
+    if (this.#language !== null && this.#language !== MARKDOWN_LANGUAGE) return [];
+
+    // 行号是纯噪音。Typora 就没有行号，
     // 而且标记隐藏后行内不再有等宽符号，一列数字贴在正文左边
     // 反而让人进不了"读文档"的状态。
     return inlineRender({ resolveAsset: this.options.resolveAsset });
@@ -608,9 +698,17 @@ export class EditorAdapter implements EditorApi {
   }
 
   #applyMode(): void {
-    const source = this.#sourceMode;
-    if (source === this.#appliedSource) return;
+    /*
+     * "生效模式"= 用户偏好 **或** 当前语言没有渲染态。
+     *
+     * 非 markdown 文档（fountain/tex/txt）不存在 Typora 式渲染，
+     * 必须按源码视图处理：否则行号不会出现、`aropyt-render-mode`
+     * 类还会让排版按 markdown 走。用户偏好不动，切回 .md 时恢复。
+     */
+    const source = this.#sourceMode || !this.#languageRenderable;
+    if (source === this.#appliedSource && this.#language === this.#appliedLanguage) return;
     this.#appliedSource = source;
+    this.#appliedLanguage = this.#language;
     this.#view.dispatch({
       effects: [
         this.#renderSlot.reconfigure(this.#renderModeExtensions(source)),
@@ -651,7 +749,13 @@ export class EditorAdapter implements EditorApi {
   }
 
   get sourceMode(): boolean {
-    return this.#sourceMode;
+    /* 实际生效模式：非 markdown 文档恒为源码视图。 */
+    return this.#sourceMode || !this.#languageRenderable;
+  }
+
+  /** 当前语言是否存在渲染态。UI 据此决定要不要显示源码/渲染切换按钮。 */
+  get renderable(): boolean {
+    return this.#languageRenderable;
   }
 
   /** 用户自己选定的模式，**不含**外部强制。持久化偏好该用这个。 */
@@ -668,12 +772,22 @@ export class EditorAdapter implements EditorApi {
   }
 
   destroy(): void {
+    this.#disposed = true;
     this.#view.destroy();
   }
 
   setActiveFile(path: string | null, language: string | null): void {
     this.#activeFile = path;
+    const changed = this.#language !== language;
     this.#language = language;
+    /*
+     * 只在语言真的变了时重配解析器。
+     *
+     * 切换标签会反复调用 setActiveFile（同一文件、同一语言），
+     * 无条件重配等于每次点标签都重建一次语法树 —— 正是这一版
+     * 想避免的那种"看不见的开销"。
+     */
+    if (changed) this.#applyLanguage();
     this.#emitActiveFile();
   }
 

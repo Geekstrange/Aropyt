@@ -11,7 +11,7 @@
 
 import type { PluginContext, PluginManifest, ViewContext, ViewProvider } from '@aropyt/plugin-api';
 import { t } from '../i18n';
-import type { LoadablePlugin } from '@aropyt/core';
+import { detectLanguage, type LoadablePlugin } from '@aropyt/core';
 
 const manifest: PluginManifest = {
   id: 'aropyt.explorer',
@@ -37,7 +37,7 @@ interface Entry {
   readonly kind: 'file' | 'directory';
 }
 
-const MARKDOWN = /\.(md|markdown|txt)$/i;
+
 
 /**
  * 折叠状态在 memento 里的键。
@@ -154,37 +154,6 @@ function mount(container: HTMLElement, context: PluginContext, viewContext: View
     body.append(node);
   };
 
-  /**
-   * 工作区抬头：目录名 + 关闭按钮。
-   *
-   * 树本身只渲染根目录的**子项**，根目录叫什么一直无处可见；而"关闭工作区"
-   * 如果只挂在命令面板里，等于没入口（用户不会去搜一个自己不知道存在的命令）。
-   */
-  const buildHeader = (rootName: string): HTMLElement => {
-    const header = document.createElement('div');
-    header.className = 'explorer-header';
-
-    const name = document.createElement('span');
-    name.className = 'explorer-header__name';
-    name.textContent = rootName;
-    // 长目录名会被省略号截断，悬停要能看到全名
-    name.title = rootName;
-    header.append(name);
-
-    const close = document.createElement('button');
-    close.type = 'button';
-    close.className = 'explorer-header__close';
-    close.textContent = '×';
-    close.title = t('toolbar.closeWorkspace');
-    close.setAttribute('aria-label', t('toolbar.closeWorkspace'));
-    close.addEventListener('click', () => {
-      void context.window.closeWorkspace();
-    });
-    header.append(close);
-
-    return header;
-  };
-
   const removeFromWorkspace = (path: string): void => {
     removed.add(path);
     persistRemoved();
@@ -195,9 +164,18 @@ function mount(container: HTMLElement, context: PluginContext, viewContext: View
     entry: Entry,
     depth: number,
     activePath: string | null,
+    target: HTMLElement,
     forcedOpen = false,
   ) => {
-    if (entry.kind === 'file' && !MARKDOWN.test(entry.name)) return;
+    /*
+     * 文件树里"能点"的判定交给内核的语言表（`detectLanguage`），
+     * 不再写死 `.md/.markdown/.txt`。
+     *
+     * 写死的后果是：`.tex` / `.fountain` 明明已经注册了文件关联、内核也认得
+     * 它们的语言，却在文件树里**根本不出现** —— 用户只能靠双击文件关联打开，
+     * 工作区里有几个剧本完全看不见。判定标准只该有一份，就是语言表。
+     */
+    if (entry.kind === 'file' && !detectLanguage(entry.name)) return;
 
     const isDir = entry.kind === 'directory';
     /*
@@ -302,10 +280,15 @@ function mount(container: HTMLElement, context: PluginContext, viewContext: View
       void viewContext.executeCommand('aropyt.explorer.open', entry.path, { preview: false });
     });
 
-    body.append(row);
+    target.append(row);
   };
 
-  const renderTree = async (dirPath: string, depth: number, activePath: string | null) => {
+  const renderTree = async (
+    dirPath: string,
+    depth: number,
+    activePath: string | null,
+    target: HTMLElement,
+  ) => {
     const entries = await context.workspace.list(dirPath);
     for (const entry of entries) {
       /*
@@ -326,16 +309,19 @@ function mount(container: HTMLElement, context: PluginContext, viewContext: View
        */
       const forcedOpen =
         typed.kind === 'directory' && typed.path + '/' === parentOf(activePath);
-      renderEntry(typed, depth, activePath, forcedOpen);
+      renderEntry(typed, depth, activePath, target, forcedOpen);
       if (typed.kind === 'directory' && (forcedOpen || !collapsed.has(typed.path))) {
-        await renderTree(typed.path, depth + 1, activePath);
+        await renderTree(typed.path, depth + 1, activePath, target);
       }
     }
   };
 
+  /** 每次刷新一个序号：只有最后一次的结果允许落到 DOM 上。 */
+  let refreshSeq = 0;
+
   const refresh = async () => {
     if (disposed) return;
-    body.replaceChildren();
+    const ticket = ++refreshSeq;
 
     const root = context.workspace.rootPath;
     if (!root) {
@@ -343,25 +329,44 @@ function mount(container: HTMLElement, context: PluginContext, viewContext: View
        * 先指向「打开文件」，理由同 file.ts：
        * 文件夹选择器只列子目录，只装着 .md 的目录在它眼里是空的。
        */
+      body.replaceChildren();
       empty(t('view.noWorkspace'));
       return;
     }
 
-    body.append(buildHeader(root));
+    /*
+     * 先在离屏节点里把整棵树建好，完成后再一次性替换。
+     *
+     * 直接往 body 里 append 会有并发问题：切换工作区会连着触发两次
+     * refresh，两次都 `body.replaceChildren()` 之后各自 await 列表，
+     * 后完成的那次把行追加到已经清空的 body 上 —— 文件树里会出现
+     * 两套同名文件（多工作区实测）。序号用于丢弃过期的那一次。
+     */
+    /*
+     * 抬头不在这里画了：工作区名与切换入口已经提到侧栏顶部（WorkspaceBar），
+     * 且层级在所有视图之上。文件树内部再画一遍等于同一句话出现两次，
+     * 而且它会被折叠进 Files 视图、看起来只是一个分组标题。
+     */
+    const staging = document.createElement('div');
 
     try {
       const activePath = context.editor.activeFile;
-      await renderTree('', 0, activePath);
+      await renderTree('', 0, activePath, staging);
+      if (ticket !== refreshSeq || disposed) return;
+
+      body.replaceChildren(...staging.childNodes);
       if (!body.querySelector('.tree-item')) {
         /*
          * 区分两种"空"。
          *
-         * 全都移除光了却提示"工作区里还没有 markdown 文件"，会把人引向
+         * 全都移除光了却提示"工作区里还没有可编辑文件"，会把人引向
          * "是不是文件丢了" —— 而真相是目录被自己藏起来了，一条命令就能找回来。
          */
-        empty(removed.size > 0 ? t('view.allRemoved') : t('view.noMarkdown'));
+        empty(removed.size > 0 ? t('view.allRemoved') : t('view.noEditableFiles'));
       }
     } catch (error) {
+      if (ticket !== refreshSeq || disposed) return;
+      body.replaceChildren();
       console.error(error);
       /*
        * 要把**真实错误**显示出来。

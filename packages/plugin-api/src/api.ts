@@ -121,6 +121,13 @@ export interface DocumentRef {
 export interface EditorApi {
   readonly activeFile: string | null;
   readonly activeLanguage: string | null;
+  /**
+   * 当前是否处于源码模式。
+   *
+   * 渲染类扩展必须据此让路：源码模式的语义是"看到原始标记"，
+   * 插件这时再替换/隐藏字符，等于把用户明确要求的源码视图又盖住。
+   */
+  readonly sourceMode: boolean;
   /** 当前文档。宿主在打开文件后 bindDocument。 */
   readonly activeDocument: DocumentRef | null;
 

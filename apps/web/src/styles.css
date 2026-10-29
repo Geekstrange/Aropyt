@@ -138,20 +138,20 @@
   --md-selection: rgba(43, 111, 212, 0.18);
   --md-active-line: rgba(0, 0, 0, 0.03);
 
-  --md-link: #0d7259;
+  --md-link: #4aa63d;
   --md-code: #b4460f;
   --md-marker: #8f8e88;
   --md-danger: #b91c1c;
 
   --md-h1: #1f5c9e;
-  --md-h2: #0d7259;
+  --md-h2: #4aa63d;
   --md-h3: #96650b;
   --md-h4: #b4460f;
   --md-h5: #8d1c94;
   --md-h6: #6b6a66;
 
   --md-syntax-keyword: #8d1c94;
-  --md-syntax-string: #0d7259;
+  --md-syntax-string: #4aa63d;
   --md-syntax-number: #96650b;
   --md-syntax-type: #1f5c9e;
 }
@@ -231,12 +231,7 @@ button {
  * 下一个人会以为头部本来该有 logo，于是又把它加回来。
  */
 
-.app-workspace {
-  color: var(--md-muted);
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-}
+
 
 .app-header-spacer {
   flex: 1;
@@ -553,6 +548,7 @@ button {
 
 .tab {
   display: flex;
+  position: relative;
   align-items: center;
   gap: 6px;
   flex: 0 0 auto;
@@ -577,8 +573,31 @@ button {
 .tab--active {
   background: var(--md-surface-0);
   color: var(--md-text);
-  /* 顶边一条强调色：这是"当前标签"最不抢眼但仍一眼可见的画法 */
-  box-shadow: inset 0 2px 0 var(--md-accent);
+}
+
+/*
+ * 标签顶部的色条 = **工作区标识**（颜色由 TabBar 上的 --tab-accent 提供）。
+ *
+ * 原来这条颜色是"当前标签"的强调色。改成工作区色之后，同一个工作区的
+ * 每个标签都带同一条颜色，激活标签只是更实（.tab--active 里提到 1）。
+ * 这样标签栏同时回答两个问题："现在在哪个工作区"和"哪个是当前标签"
+ * （后者靠背景色差已经足够，不再需要第二条强调色）。
+ *
+ * 外部文件（没有工作区）拿不到变量，回退成透明 —— 不画一条来路不明的色条。
+ */
+.tab::before {
+  content: '';
+  position: absolute;
+  top: 0;
+  left: 0;
+  right: 0;
+  height: 2px;
+  background: var(--tab-accent, transparent);
+  opacity: 0.5;
+}
+
+.tab--active::before {
+  opacity: 1;
 }
 
 /*
@@ -597,6 +616,25 @@ button {
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
+}
+
+/*
+ * 非 markdown 标签的类型徽标（Fountain / LaTeX / Plain Text）。
+ *
+ * 只在"不是默认语言"时出现 —— markdown 标签占绝大多数，给每个都挂一个
+ * "MD" 只是纯噪声。这里的目的是让 .fountain 打开后**看起来被认出来了**。
+ */
+.tab__lang {
+  flex: 0 0 auto;
+  margin-left: 6px;
+  padding: 0 4px;
+  border: 1px solid var(--md-border);
+  border-radius: 2px;
+  font-size: 9px;
+  font-style: normal;
+  letter-spacing: 0.04em;
+  color: var(--md-muted);
+  text-transform: uppercase;
 }
 
 .tab__dirty {
@@ -764,28 +802,63 @@ button {
 }
 
 /*
- * 工作区抬头（目录名 + 关闭）。
+ * 侧栏顶部的工作区条。
  *
- * 树只渲染根目录的子项，根目录自己叫什么原本无处可见；而"关闭工作区"
- * 如果只存在于命令面板，等于没有入口 —— 用户不会去搜一个自己不知道
- * 存在的命令。这一行把两件事都补上了。
+ * 一行一个工作区：色点 + 名字 + 关闭。色点与标签顶部色条同源
+ * （workspaceAccent），用户能把"这个标签"与"那个项目"对上。
+ * 激活项用底色强调；关闭按钮只在悬停/激活时出现，避免每行都挂一个叉。
  *
  * 用 border-bottom 而不是 margin 分隔：.tree-item 上不能有 margin
  * （见 CM6 坐标那几条），这里虽然不在编辑器里，也统一按这条来。
  */
-.explorer-header {
+.workspace-bar {
+  flex: 0 0 auto;
+  display: flex;
+  flex-direction: column;
+  gap: 1px;
+  padding: 4px;
+  border-bottom: 1px solid var(--md-border);
+}
+
+.workspace-bar__item {
+  display: flex;
+  align-items: center;
+  border-radius: 3px;
+}
+
+.workspace-bar__item:hover,
+.workspace-bar__item--active {
+  background: var(--md-surface-1);
+}
+
+.workspace-bar__switch {
+  flex: 1 1 auto;
   display: flex;
   align-items: center;
   gap: 6px;
-  padding: 4px 10px 6px;
-  border-bottom: 1px solid var(--md-border);
-  margin-bottom: 2px;
-  color: var(--md-faint);
-  font-size: 11px;
-  letter-spacing: 0.02em;
+  min-width: 0;
+  padding: 3px 6px;
+  border: 0;
+  background: transparent;
+  color: var(--md-muted);
+  font-family: inherit;
+  font-size: 12px;
+  text-align: left;
+  cursor: pointer;
 }
 
-.explorer-header__name {
+.workspace-bar__item--active .workspace-bar__switch {
+  color: var(--md-text);
+}
+
+.workspace-bar__dot {
+  flex: 0 0 auto;
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+}
+
+.workspace-bar__name {
   /* min-width: 0 是 flex item 能收缩的前提，缺了它省略号永远不出现 */
   flex: 1 1 auto;
   min-width: 0;
@@ -794,25 +867,25 @@ button {
   white-space: nowrap;
 }
 
-.explorer-header__close {
+.workspace-bar__close {
   flex: 0 0 auto;
-  display: grid;
-  place-items: center;
-  width: 18px;
-  height: 18px;
-  padding: 0;
+  padding: 0 6px;
   border: 0;
-  border-radius: 4px;
   background: transparent;
-  color: var(--md-faint);
+  color: var(--md-muted);
   font-size: 14px;
   line-height: 1;
   cursor: pointer;
+  opacity: 0;
 }
 
-.explorer-header__close:hover {
-  background: var(--md-surface-3);
-  color: var(--md-text);
+.workspace-bar__item:hover .workspace-bar__close,
+.workspace-bar__item--active .workspace-bar__close {
+  opacity: 1;
+}
+
+.workspace-bar__close:hover {
+  color: var(--md-danger);
 }
 
 .tree-item {
@@ -1044,6 +1117,8 @@ button {
 .status-bar__spacer {
   flex: 1;
 }
+
+
 
 .dot {
   width: 6px;
@@ -1740,6 +1815,148 @@ button {
 }
 
 /*
+ * ── 块级渲染内容（markdown-it 输出的 HTML）────────────────────
+ *
+ * 这些标签（ul / blockquote / pre / table）由 markdown-it 生成，
+ * 此前**一条专门样式都没有**：浏览器默认的 `ul { padding-left: 40px }`、
+ * `blockquote { margin: 1em 40px }`、`pre { 无边框无底色 }` 直接生效。
+ * 于是列表比正文多缩进一大截、引用只是"缩进的一段"、代码块是一片
+ * 没有边界的等宽文本 —— 这正是"demo 页比软件里渲染得强"的三个点。
+ *
+ * 数值对齐 website/demo.html：列表下 12px、li 之间 5px、
+ * 引用左边框 3px + 内边距 14px、代码块内边距 12/14。
+ * 代码块额外给了 6px 圆角（demo 是直角）——卡片贴在行距里，
+ * 直角会显得生硬。
+ */
+/*
+ * ⚠️ 必须把 `white-space` 改回 normal。
+ *
+ * `.cm-md-block` 挂在 `.cm-content` 里，而 CodeMirror 的内容层是
+ * `white-space: pre-wrap`（源码要保留换行）。这个值会被 widget 里的
+ * HTML **继承**，于是 markdown-it 输出中元素之间的换行（`</li>\n<li>`、
+ * `</p>\n</blockquote>`）全部变成真实换行：
+ *
+ *   · 列表项之间多出一整行 —— 实测 li 高 18px、项间距 41px（多出的 18 是换行）
+ *   · 引用末尾多出一整行 —— 竖线比最后一行文字长 20px
+ *
+ * 块级 HTML 是排版结果，不是源码：换行应该按 HTML 规则折叠。
+ */
+.cm-md-block {
+  white-space: normal;
+}
+
+/*
+ * 任务列表项不再显示圆点。
+ *
+ * markdown-it 输出的是 `<li class="task-list-item"><input type=checkbox>`，
+ * 浏览器同时画了列表圆点 —— 行首出现"• ☐ 内容"，两个标记说的是同一件事。
+ * 复选框已经承担了标记的职责。
+ */
+.cm-md-block .task-list-item {
+  list-style: none;
+}
+
+.cm-md-block > :first-child {
+  margin-top: 0;
+}
+
+.cm-md-block > :last-child {
+  margin-bottom: 0;
+}
+
+.cm-md-block p {
+  margin: 0 0 11px;
+}
+
+.cm-md-block ul,
+.cm-md-block ol {
+  margin: 0 0 12px;
+  padding-left: 1.4em;
+}
+
+.cm-md-block li {
+  margin-bottom: 5px;
+}
+
+/* 紧凑列表里 markdown-it 会包一层 <p>，那层外边距必须清掉 */
+.cm-md-block li > p {
+  margin: 0;
+}
+
+.cm-md-block blockquote {
+  margin: 0 0 12px;
+  padding: 2px 0 2px 14px;
+  border-left: 3px solid var(--md-accent);
+  color: var(--md-muted);
+}
+
+/* 引用内的段落间距比正文（11px）紧，但两段不能贴在一起 */
+.cm-md-block blockquote p {
+  margin: 0 0 8px;
+}
+
+.cm-md-block blockquote > :last-child {
+  margin-bottom: 0;
+}
+
+.cm-md-block pre {
+  margin: 0 0 12px;
+  padding: 12px 14px;
+  border: 1px solid var(--md-border);
+  border-radius: 6px;
+  background: var(--md-surface-2);
+  overflow-x: auto;
+  /* 代码块是唯一需要保留原始空白的地方（上面的 normal 会被继承进来） */
+  white-space: pre;
+}
+
+.cm-md-block pre code {
+  padding: 0;
+  border: 0;
+  border-radius: 0;
+  background: none;
+  color: var(--md-code);
+  font-family: var(--font-mono);
+  font-size: 12.5px;
+}
+
+/* 行内代码：与代码块区分开，不要也变成一块卡片 */
+.cm-md-block :not(pre) > code {
+  padding: 1px 5px;
+  border-radius: 4px;
+  background: var(--md-surface-1);
+  font-family: var(--font-mono);
+  font-size: 0.9em;
+}
+
+.cm-md-block table {
+  margin: 0 0 12px;
+  border-collapse: collapse;
+}
+
+.cm-md-block th,
+.cm-md-block td {
+  padding: 4px 10px;
+  border: 1px solid var(--md-border);
+}
+
+.cm-md-block th {
+  background: var(--md-surface-1);
+  font-weight: 600;
+}
+
+.cm-md-block hr {
+  margin: 14px 0;
+  border: 0;
+  border-top: 1px solid var(--md-border);
+}
+
+.cm-md-block img {
+  max-width: 100%;
+  height: auto;
+}
+
+/*
  * 空行压缩（v0.0.9）：段落之间的空行不再是"一整行的空白"。
  * 只压 line-height（空行没有文字，压缩不影响任何内容），
  * 光标所在的空行不加这个 class（见 addEmptyLineCollapse）。
@@ -2032,6 +2249,7 @@ button {
   flex: 1 1 0;
   align-items: center;
   justify-content: flex-end;
+  gap: 8px;
   min-width: 0;
 }
 
@@ -2106,9 +2324,357 @@ button {
   color: var(--md-danger);
 }
 
+/* debug 级别是插件调试输出（logger.debug），压低存在感但不隐藏 */
+.debug-logs__row--debug .debug-logs__text {
+  color: var(--md-faint);
+}
+
 .tree-item--focused {
   outline: 1px solid var(--md-accent);
   outline-offset: -1px;
+}
+
+/* ── Fountain 剧本 ───────────────────────────────────────────
+ *
+ * 样式只改排版，不改字符： decoration 只往行上挂 class，
+ * 文本本身一个字节都不动 —— 光标、选择、撤销、保存全走原生路径。
+ *
+ * 缩进用 padding 而不是 margin：margin 在 .cm-line 上会参与
+ * 块布局计算，滚动时容易出现行高抖动。
+ */
+.cm-fountain-scene {
+  font-weight: 700;
+}
+
+/* 标题页元数据（Title: … / Author: …）—— 是剧本的封面信息，不是正文 */
+.cm-fountain-title {
+  font-style: italic;
+  opacity: 0.7;
+}
+
+.cm-fountain-lyrics {
+  font-style: italic;
+}
+
+/* 笔记 `[[ … ]]` 与注释块 boneyard：淡化但不隐藏（它们仍是可编辑文本） */
+.cm-fountain-note {
+  font-style: italic;
+  opacity: 0.55;
+}
+
+.cm-fountain-boneyard {
+  font-style: italic;
+  opacity: 0.45;
+}
+
+/* 分页线：剧本交付时按页估算，这一行就是作者自己打的页边界 */
+.cm-fountain-pagebreak {
+  border-top: 1px dashed var(--md-border);
+}
+
+.cm-fountain-section {
+  font-weight: 700;
+  opacity: 0.75;
+}
+
+/* 剧本惯例：角色名居中，对白左右缩进，括注贴着对白右侧 */
+.cm-fountain-character {
+  font-weight: 600;
+  letter-spacing: 0.06em;
+  text-align: center;
+}
+
+/*
+ * 对白缩进 / 括注右对齐。
+ *
+ * 这里用 `.cm-content` 前缀提高特异性：主题里 `.cm-line` 的 padding
+ * 也是单类选择器，谁后插入谁生效 —— 我们的规则在 styles.css，
+ * 而主题是运行时注入的，单类选择器会被它盖掉（实测括注跑到了最右边）。
+ */
+.cm-content .cm-fountain-dialogue {
+  padding-left: 2.2em;
+  padding-right: 2.2em;
+}
+
+.cm-content .cm-fountain-paren {
+  padding-right: 2.2em;
+  font-style: italic;
+  text-align: right;
+}
+
+.cm-fountain-transition {
+  font-weight: 600;
+  letter-spacing: 0.08em;
+  text-align: right;
+  text-transform: uppercase;
+}
+
+.cm-fountain-center {
+  text-align: center;
+}
+
+.fountain-scenes__header {
+  flex: 0 0 auto;
+  padding: 6px 10px;
+  font-size: 11px;
+  color: var(--md-muted);
+  border-bottom: 1px solid var(--md-border);
+}
+
+.fountain-scenes__list {
+  flex: 1 1 auto;
+  min-height: 0;
+  overflow: auto;
+}
+
+.fountain-scene {
+  display: flex;
+  align-items: baseline;
+  gap: 8px;
+  width: 100%;
+}
+
+.fountain-scene__line {
+  flex: 0 0 auto;
+  width: 2.4em;
+  font-size: 10px;
+  color: var(--md-faint);
+  text-align: right;
+  font-variant-numeric: tabular-nums;
+}
+
+.fountain-scene__text {
+  flex: 1 1 auto;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  text-align: left;
+}
+
+.fountain-scene--section .fountain-scene__text {
+  font-weight: 700;
+  opacity: 0.8;
+}
+
+/* ── LaTeX ─────────────────────────────────────────────────
+ *
+ * 公式由 KaTeX 输出（.katex 自带样式，CSS 在 styles.css 顶部 import）。
+ * 这里只负责"放在哪、多大"：块级居中并允许横向滚动（长公式不能撑破编辑器），
+ * 行内保持基线对齐。
+ */
+/* 章节标题：按层级给字号，命令本身已被装饰隐藏 */
+.cm-tex-h1 {
+  font-size: 1.5em;
+  font-weight: 700;
+}
+
+.cm-tex-h2 {
+  font-size: 1.25em;
+  font-weight: 700;
+}
+
+.cm-tex-h3 {
+  font-size: 1.1em;
+  font-weight: 600;
+}
+
+.cm-tex-h4 {
+  font-weight: 600;
+}
+
+.cm-tex-h5 {
+  font-size: 0.95em;
+  font-weight: 600;
+  font-style: italic;
+}
+
+/* 行内排版命令（\textbf / \emph / \texttt …）对应的样式 */
+.cm-tex-bold {
+  font-weight: 700;
+}
+
+.cm-tex-italic {
+  font-style: italic;
+}
+
+.cm-tex-mono {
+  font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+}
+
+.cm-tex-underline {
+  text-decoration: underline;
+}
+
+.cm-tex-sans {
+  font-family: system-ui, -apple-system, sans-serif;
+}
+
+.cm-tex-serif {
+  font-family: Georgia, 'Times New Roman', serif;
+}
+
+/* 列表项：符号由 widget 画，行内只留缩进 */
+.cm-tex-item {
+  padding-left: 1.2em;
+}
+
+.cm-tex-bullet {
+  display: inline-block;
+  min-width: 1.2em;
+  color: var(--md-muted);
+}
+
+/* 标题页：\title / \author / \date 三行 */
+.cm-tex-title {
+  font-size: 1.8em;
+  font-weight: 700;
+  text-align: center;
+}
+
+.cm-tex-author {
+  text-align: center;
+}
+
+.cm-tex-date {
+  text-align: center;
+  color: var(--md-muted);
+}
+
+/* 摘要：比正文小一号、两侧留白 */
+.cm-tex-abstract {
+  padding: 0 2em;
+  font-size: 0.95em;
+  color: var(--md-muted);
+}
+
+/* 引用块：左侧竖线（与 markdown 的引用视觉一致） */
+.cm-tex-quote {
+  padding-left: 1em;
+  border-left: 3px solid var(--md-border);
+  color: var(--md-muted);
+}
+
+/* verbatim / lstlisting / minted：等宽 + 底色，字符一个都不动 */
+.cm-tex-code {
+  background: var(--md-surface-1);
+  font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+  font-size: 0.92em;
+}
+
+.cm-tex-figure {
+  font-size: 0.95em;
+}
+
+/* 表格：整块由 widget 绘制，横向可滚动（长表格不能撑破编辑器） */
+.cm-tex-table {
+  display: block;
+  margin: 8px 0;
+  overflow-x: auto;
+}
+
+.cm-tex-table table {
+  border-collapse: collapse;
+  font-size: 0.95em;
+}
+
+.cm-tex-table td {
+  padding: 3px 16px 3px 0;
+  white-space: nowrap;
+}
+
+.cm-tex-table tr.cm-tex-rule td {
+  border-top: 1px solid var(--md-border);
+}
+
+.cm-tex-table tr.cm-tex-rule-bottom td {
+  border-bottom: 1px solid var(--md-border);
+}
+
+.cm-tex-caption {
+  margin-top: 6px;
+  font-size: 0.85em;
+  color: var(--md-muted);
+  text-align: center;
+}
+
+/* 交叉引用与图片占位：淡化，表明"这里原本是一个引用" */
+.cm-tex-ref,
+.cm-tex-image {
+  color: var(--md-muted);
+  font-style: italic;
+}
+
+.cm-tex-smallcaps {
+  font-variant: small-caps;
+}
+
+/* \newpage 等：一条虚线，表示分页边界 */
+.cm-tex-pagebreak {
+  display: block;
+  height: 0;
+  margin: 10px 0;
+  border-top: 1px dashed var(--md-border);
+}
+
+.cm-tex-comment {
+  color: var(--md-faint);
+  font-style: italic;
+}
+
+.cm-tex-environment,
+.cm-tex-preamble {
+  color: var(--md-muted);
+}
+
+.cm-tex-math-block {
+  display: block;
+  padding: 6px 0;
+  overflow-x: auto;
+  text-align: center;
+}
+
+.cm-tex-math-inline {
+  padding: 0 2px;
+}
+
+.tex-structure__header {
+  flex: 0 0 auto;
+  padding: 6px 10px;
+  font-size: 11px;
+  color: var(--md-muted);
+  border-bottom: 1px solid var(--md-border);
+}
+
+.tex-structure__list {
+  flex: 1 1 auto;
+  min-height: 0;
+  overflow: auto;
+}
+
+.tex-section {
+  display: flex;
+  align-items: baseline;
+  gap: 8px;
+  width: 100%;
+}
+
+.tex-section__line {
+  flex: 0 0 auto;
+  width: 2.4em;
+  font-size: 10px;
+  color: var(--md-faint);
+  text-align: right;
+  font-variant-numeric: tabular-nums;
+}
+
+.tex-section__title {
+  flex: 1 1 auto;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  text-align: left;
 }
 
 .debug-dock__tab {
@@ -2135,9 +2701,16 @@ button {
   gap: 8px;
 }
 
+/*
+ * 卡片按可用宽度自动排布，而不是写死 2 列。
+ *
+ * 状态页现在有 5 张卡（文档 / 标签 / 模式 / 插件 / 运行时），而面板
+ * 高度固定 210px —— 写死 2 列意味着必须滚动才能看到插件失败原因，
+ * 那恰恰是排查时第一眼要找的。宽屏一行放下，窄屏自动退成单列。
+ */
 .debug-grid {
   display: grid;
-  grid-template-columns: repeat(2, 1fr);
+  grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
   gap: 8px;
 }
 
@@ -2176,6 +2749,39 @@ button {
   overflow-wrap: anywhere;
 }
 
+/*
+ * 性能指标网格。
+ *
+ * 用 dl/dt/dd 是语义正确的做法（每项是"名称 + 值"），
+ * 但 dl 默认是块级堆叠 —— 一行一项会把 210px 的面板撑爆，
+ * 所以这里排成可换行的行内组。
+ */
+.debug-metrics {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px 16px;
+  margin: 0;
+}
+
+.debug-metrics div {
+  display: flex;
+  align-items: baseline;
+  gap: 6px;
+}
+
+.debug-metrics dt {
+  margin: 0;
+  font-size: 11px;
+  color: var(--md-muted);
+}
+
+.debug-metrics dd {
+  margin: 0;
+  font-size: 11px;
+  color: var(--md-text);
+  font-variant-numeric: tabular-nums;
+}
+
 .debug-perf h4 {
   margin: 8px 0 4px;
   font-size: 11px;
@@ -2185,6 +2791,7 @@ button {
 /* 日志工具栏：搜索框与操作按钮全部靠右（spacer 在最前） */
 .debug-toolbar {
   display: flex;
+  flex-wrap: wrap;
   align-items: center;
   gap: 8px;
 }

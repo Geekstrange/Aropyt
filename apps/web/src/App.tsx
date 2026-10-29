@@ -18,6 +18,7 @@ import {
   useRef,
   useState,
   useSyncExternalStore,
+  type CSSProperties,
   type JSX,
   type RefObject,
 } from 'react';
@@ -33,6 +34,9 @@ import { DebugPanel } from './components/DebugPanel';
 import { ViewColumn } from './components/ViewHost.js';
 import { SettingsDialog } from './components/SettingsDialog.js';
 import { HistoryDialog } from './components/HistoryDialog.js';
+import { trace } from './debug/timeline';
+import { workspaceAccent } from './lib/workspace-color';
+import { languageLabelOf } from '@aropyt/core';
 
 export function App(): JSX.Element {
   const t = useT();
@@ -76,10 +80,12 @@ export function App(): JSX.Element {
      * 用它判断永远匹配不上（实测 Ctrl+Shift+, 无效的原因）。
      */
     const onKeyDown = (event: KeyboardEvent): void => {
-      // 诊断：所有带修饰键或功能键的按键都记录（不只 Ctrl+Shift+B）
-      if (event.ctrlKey || event.metaKey || event.altKey || event.key.length > 1) {
-        console.log('[kd]', event.code, 'key=', event.key, 'shift=', event.shiftKey, 'alt=', event.altKey, 'ctrl=', event.ctrlKey);
-      }
+      /*
+       * 这里曾有一段 `[kd]` 按键诊断日志：每次带修饰键或功能键按下都
+       * console.log 一行。它把方向键、退格、Ctrl+S 全部塞进日志缓冲，
+       * 面板打开时每按一次键就触发一次全量重渲染 —— 一个测卡顿的面板
+       * 不该自己制造卡顿。已删除；需要按键轨迹时用操作轨迹（timeline）。
+       */
       /*
        * Ctrl+Shift+B：侧栏开合 + 焦点。
        * **必须在 capture handler 最前** —— 后面各分支都会 stopPropagation，
@@ -89,20 +95,28 @@ export function App(): JSX.Element {
         event.preventDefault();
         event.stopPropagation();
         const next = !runtime.getState().sidebarOpen;
-        console.log('[focus] KeyB →', next ? 'open' : 'close');
+        trace('sidebar', next ? 'open' : 'close');
         void runtime.updateSettings({ sidebar: { open: next } });
         if (next) {
           requestAnimationFrame(() =>
             requestAnimationFrame(() => {
               const panel = document.querySelector<HTMLElement>('.view-column--left .explorer-tree');
               if (!panel) {
-                console.warn('[focus] panel NOT FOUND');
+                // 焦点链路失败是真实存在过的问题，降为 debug：保留可查，但不制造噪声
+                console.debug('[focus] panel NOT FOUND');
+                trace('focus-fail', 'explorer-tree 节点不存在', { failed: true });
                 return;
               }
               const style = getComputedStyle(panel);
-              console.log('[focus] display=', style.display, 'visibility=', style.visibility, 'tabindex=', panel.getAttribute('tabindex'));
+              console.debug(
+                '[focus] display=', style.display,
+                'visibility=', style.visibility,
+                'tabindex=', panel.getAttribute('tabindex'),
+              );
               panel.focus();
-              console.log('[focus] activeElement=', document.activeElement?.className || 'NONE', 'same=', document.activeElement === panel);
+              const landed = document.activeElement === panel;
+              console.debug('[focus] activeElement=', document.activeElement?.className || 'NONE', 'same=', landed);
+              if (!landed) trace('focus-fail', `activeElement=${document.activeElement?.className || 'NONE'}`, { failed: true });
             }),
           );
         }
@@ -112,6 +126,8 @@ export function App(): JSX.Element {
       if (event.code === 'F12' && !event.ctrlKey && !event.metaKey && !event.shiftKey && !event.altKey) {
         event.preventDefault();
         event.stopPropagation();
+        // 记一笔：用户是在什么时刻开/关面板的，便于把日志与问题对齐
+        trace('debug-toggle', 'F12');
         setDebugOpen((value) => !value);
         return;
       }
@@ -465,22 +481,16 @@ function Header({ runtime }: { readonly runtime: AropytRuntime }): JSX.Element {
 
   return (
     <>
-      <span className="app-workspace">
-        {state.workspace ? state.workspace.name : t('app.workspace.none')}
-        {/*
-         * 当前文件名不再显示 —— 标签栏就在旁边，激活标签上写着它，
-         * 这里再重复一遍是同一句话。
-         *
-         * 脏点（●）保留：标签上的脏点只标"那个标签"是否未保存，
-         * 这里的 ● 是未命名文档（它没有标签）唯一的未保存提示 ——
-         * 去掉它，未命名文档改了字就再也看不到任何脏标记了。
-         */}
-        {state.dirty ? ' ●' : ''}
-      </span>
       {/*
-       * 标签栏就在**工作目录名这一行**里，紧跟着目录名、吃掉中间的剩余宽度 ——
-       * 这正是用户要的布局：打开的是哪个目录、现在开着哪些文件，一眼同排。
-       * 它在 spacer 之前，所以右侧的「能力说明 / 主题」按钮仍靠最右。
+       * 工作区名不再显示：标签顶部的色条已经承担"这些文件属于哪个工作区"
+       * 的标识（见 TabBar），再写一遍名字是同一句话。
+       *
+       * 未保存提示也不再需要：未命名文档现在有标签（Untitled.md），
+       * 脏点由标签自己显示 —— 原来这里是"未命名文档没有标签"时代的遗留。
+       */}
+      {/*
+       * 标签栏占据整个 header 中部，吃掉剩余宽度。
+       * 它在 spacer 之前，所以右侧的「能力说明」按钮仍靠最右。
        */}
       {runtime && <TabBar runtime={runtime} />}
       <span className="app-header-spacer" />
@@ -601,7 +611,12 @@ function Toolbar({ runtime, onOpenSettings, onOpenHistory, onOpenPlugins }: Tool
        * 行级光标本质冲突），按钮留着只会让人以为能切、点不动又困惑。
        * 需要源码/渲染切换时先关掉 vim。
        */}
-      {!state.vimMode && (
+      {/*
+       * 只有存在"渲染态"的语言（markdown）才显示这个开关。
+       * .fountain / .tex / .txt 是纯文本视图，没有可切的第二形态 ——
+       * 留着按钮只会让人点了没反应。
+       */}
+      {!state.vimMode && state.renderable && (
         <button
           type="button"
           className={`tool-button${state.sourceMode ? ' tool-button--on' : ''}`}
@@ -704,13 +719,19 @@ function StatusBar({ runtime }: { readonly runtime: AropytRuntime }): JSX.Elemen
             style={{
               background: state.dirty
                 ? 'var(--md-state-red)'
-                : state.recoveredPath === state.activePath && state.recoveredPath !== null
+                : state.recoveredPath === state.activePath &&
+                    state.recoveredWorkspaceId === state.activeWorkspaceId &&
+                    state.recoveredPath !== null
                   ? 'var(--md-state-yellow)'
                   : 'var(--md-brand-green)',
             }}
           />
         )}
       </button>
+      {/*
+       * 语言不再在这里显示：标签上的类型徽标已经说明了格式，
+       * 状态栏再写一遍是同一句话（用户反馈）。
+       */}
       {/*
        * 「插件 4/4」已移除。
        *
@@ -784,9 +805,14 @@ function TabBar({ runtime }: { readonly runtime: AropytRuntime }): JSX.Element |
   if (!runtime) return null;
 
   return (
-    <div className="tab-bar" role="tablist" aria-label={t('tabs.openFiles')}>
+    <div
+      className="tab-bar"
+      role="tablist"
+      aria-label={t('tabs.openFiles')}
+    >
       {state.tabs.map((tab) => {
-        const active = tab.path === state.activePath;
+        const active =
+          tab.path === state.activePath && tab.workspaceId === state.activeWorkspaceId;
         const dirty = active && state.dirty;
         // 未命名标签：__untitled__-1 → Untitled.md，-2 → Untitled 2.md（同 VSCode 习惯）
         const untitledMatch = /^__untitled__-(\d+)$/.exec(tab.path);
@@ -795,7 +821,8 @@ function TabBar({ runtime }: { readonly runtime: AropytRuntime }): JSX.Element |
           : baseName(tab.path);
         return (
           <div
-            key={tab.path}
+            /* 同名文件可能同时开在两个工作区里，key 必须带上工作区 */
+            key={`${tab.workspaceId ?? ''}\u0000${tab.path}`}
             role="tab"
             aria-selected={active}
             className={
@@ -803,8 +830,13 @@ function TabBar({ runtime }: { readonly runtime: AropytRuntime }): JSX.Element |
               (active ? ' tab--active' : '') +
               (tab.preview ? ' tab--preview' : '')
             }
+            /*
+             * 每个标签按**自己的工作区**着色，而不是整条标签栏一个颜色 ——
+             * 并存之后同一排标签会分属不同项目，那正是这条色条要回答的问题。
+             */
+            style={{ '--tab-accent': workspaceAccent(tab.workspaceId) } as CSSProperties}
             title={tab.preview ? t('tabs.preview', { path: tab.path }) : tab.path}
-            onClick={() => runtime.activateTab(tab.path)}
+            onClick={() => runtime.activateTab(tab.path, tab.workspaceId)}
           >
             <span
               className="tab__label"
@@ -817,11 +849,19 @@ function TabBar({ runtime }: { readonly runtime: AropytRuntime }): JSX.Element |
                 if (event.button !== 1) return;
                 event.preventDefault();
                 event.stopPropagation();
-                runtime.closeTab(tab.path);
+                runtime.closeTab(tab.path, tab.workspaceId);
               }}
             >
               {name}
             </span>
+            {/*
+             * 徽标必须放在 .tab__label **外面**：label 带 overflow/ellipsis，
+             * 放进去会被文件名一起截成 "FOUNTA…"（实测）。
+             * markdown 是默认语言，标出来只会制造噪声；其余类型才有信息量。
+             */}
+            {tab.language && tab.language !== 'markdown' ? (
+              <span className="tab__lang">{languageLabelOf(tab.language)}</span>
+            ) : null}
             {dirty && (
               <span className="tab__dirty" aria-label={t('tabs.unsaved')}>
                 ●
@@ -841,7 +881,7 @@ function TabBar({ runtime }: { readonly runtime: AropytRuntime }): JSX.Element |
                 if (event.button !== 1) return;
                 event.preventDefault();
                 event.stopPropagation();
-                runtime.closeTab(tab.path);
+                runtime.closeTab(tab.path, tab.workspaceId);
               }}
             >
               ×
