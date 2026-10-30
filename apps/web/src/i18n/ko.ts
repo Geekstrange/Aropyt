@@ -136,6 +136,7 @@ export const ko: Record<keyof typeof import('./zh').zh, string> = {
   'settings.version': '버전',
   'settings.license': '라이선스',
   'settings.vim': 'Vim 모드',
+  'settings.toolbar': '도구 모음 표시',
   'settings.backup': '데이터 백업',
   'settings.export': '데이터 내보내기',
   'settings.import': '데이터 가져오기',

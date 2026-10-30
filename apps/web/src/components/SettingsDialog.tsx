@@ -241,6 +241,21 @@ export function SettingsDialog({
                 <span className="settings-switch__knob" />
               </button>
             </div>
+            {/*
+             * 工具栏开关。这里必须是"关掉之后还能打开"的入口之一 ——
+             * 另一个是 Ctrl/Cmd+Shift+H（工具栏隐藏后它自身的按钮全没了）。
+             */}
+            <div className="settings-row">
+              <span className="settings-row__label">{t('settings.toolbar')}</span>
+              <button
+                type="button"
+                className={`settings-switch${state.toolbarOpen ? ' is-on' : ''}`}
+                aria-pressed={state.toolbarOpen}
+                onClick={() => runtime.toggleToolbar()}
+              >
+                <span className="settings-switch__knob" />
+              </button>
+            </div>
           </section>
 
           <section className="settings-section">

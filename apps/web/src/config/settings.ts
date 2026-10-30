@@ -20,6 +20,8 @@ export interface AppSettings {
   editor: { fontSize: number };
   vim: { enabled: boolean };
   sidebar: { open: boolean };
+  /** 工具栏是否显示。隐藏后靠 Ctrl+Shift+H 或设置页开关唤回。 */
+  toolbar: { open: boolean };
   plugins: { disabled: string[] };
   /** 编辑历史。 */
   history: { limit: number; /** 自动保存版本（按间隔）。 */ autoSave: boolean; /** 间隔秒数。 */ autoSaveInterval: number };
@@ -35,6 +37,7 @@ export const DEFAULT_SETTINGS: AppSettings = {
   editor: { fontSize: 15 },
   vim: { enabled: false },
   sidebar: { open: true },
+  toolbar: { open: true },
   plugins: { disabled: [] },
   history: { limit: 50, autoSave: true, autoSaveInterval: 60 },
 };
@@ -173,6 +176,11 @@ export function normalizeSettings(raw: unknown): {
   if (sidebar?.open !== undefined) {
     if (typeof sidebar.open === 'boolean') settings.sidebar.open = sidebar.open;
     else invalidValues.push('sidebar.open');
+  }
+  const toolbar = obj.toolbar as Record<string, unknown> | undefined;
+  if (toolbar?.open !== undefined) {
+    if (typeof toolbar.open === 'boolean') settings.toolbar.open = toolbar.open;
+    else invalidValues.push('toolbar.open');
   }
   const plugins = obj.plugins as Record<string, unknown> | undefined;
   if (plugins?.disabled !== undefined) {

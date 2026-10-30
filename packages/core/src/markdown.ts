@@ -191,7 +191,22 @@ export const md: MarkdownIt = new MarkdownIt({
   html: true,
   linkify: true,
   typographer: true,
-  breaks: false,
+  /*
+   * 段落内的单个换行也渲染为 `<br>`。
+   *
+   * CommonMark 的默认（`breaks: false`）要求行尾**两个空格**或 `\` 才算
+   * 硬换行，但这两个约定在这个编辑器里都不可靠：
+   *
+   *  · 行尾空格极易在保存、`git commit`、复制粘贴时被 trim 掉 ——
+   *    实测 `test/basic.md` 里"这一行末尾有两个空格，应当渲染为软换行"
+   *    那一行，磁盘上一个空格都没有（字符码确认末尾是 `。`）。于是渲染
+   *    成一整行，看起来就是"软换行失效"。
+   *  · 反斜杠换行对普通用户来说完全不是常识。
+   *
+   * 这是所见即所得编辑器：用户敲回车就是要换行。GFM 的 issue 正文同样
+   * 默认按换行渲染（`breaks: true`），对齐 GitHub 的观感也更自然。
+   */
+  breaks: true,
   highlight: highlightCode,
 }).use(taskListPlugin)
   .use(mathPlugin)

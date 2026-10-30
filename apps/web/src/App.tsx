@@ -154,6 +154,34 @@ export function App(): JSX.Element {
         event.preventDefault();
         event.stopPropagation();
         runtime.editor.focus();
+        return;
+      }
+      /*
+       * Ctrl/Cmd+Shift+H：工具栏显隐。
+       *
+       * H = hide（Ctrl+B 被侧栏占了，Ctrl+Shift+B 也是）。隐藏后工具栏上
+       * 所有按钮都没了，所以这个键位 + 设置页开关是仅有的两个回归入口，
+       * 不能顺手改掉。
+       */
+      if (code === 'KeyH') {
+        event.preventDefault();
+        event.stopPropagation();
+        trace('toolbar', runtime.getState().toolbarOpen ? 'hide' : 'show');
+        runtime.toggleToolbar();
+        return;
+      }
+      /*
+       * Ctrl/Cmd+Shift+O：打开工作区（选一个文件夹）。
+       *
+       * O = open。走 `runCommand` 而不是直接 `commands.execute`，
+       * 是为了复用里面那层"把真实错误信息带出来"的处理 —— 选目录失败
+       * （权限、路径、原生侧异常）时用户能看到原因，而不是静默无反应。
+       */
+      if (code === 'KeyO') {
+        event.preventDefault();
+        event.stopPropagation();
+        trace('workspace', 'pick');
+        runCommand(runtime, 'aropyt.file.pickWorkspace');
       }
     };
     window.addEventListener('keydown', onKeyDown, true);
@@ -183,6 +211,14 @@ export function App(): JSX.Element {
     if (wide) void runtime?.updateSettings({ sidebar: { open: !sidebarOpen } });
     else setNarrowSidebarOpen((value) => !value);
   }, [wide, sidebarOpen, runtime]);
+
+  /*
+   * 工具栏显隐：配置是唯一真源（settings.toolbar.open）。
+   *
+   * 没有侧栏那种"窄屏默认收起"的特例 —— 工具栏本来就窄，小窗口里更需要
+   * 它让位给正文，所以两种宽度用同一个值。
+   */
+  const toolbarOpen = liveState?.toolbarOpen ?? true;
 
   /*
    * 界面语言：配置（settings.jsonc 的 locale）是唯一真源。
@@ -337,12 +373,13 @@ export function App(): JSX.Element {
       </header>
 
       <Shell
-            onOpenPlugins={() => setPluginsOpen(true)}
         runtime={runtime}
         editorHostRef={editorHostRef}
         sidebarOpen={sidebarOpen}
+        toolbarOpen={toolbarOpen}
         onOpenSettings={() => setSettingsOpen(true)}
         onOpenHistory={() => setHistoryOpen(true)}
+        onOpenPlugins={() => setPluginsOpen(true)}
       />
       {historyOpen && runtime && runtime.getState().activePath && (
         <HistoryDialog
@@ -406,6 +443,7 @@ function Shell({
   runtime,
   editorHostRef,
   sidebarOpen,
+  toolbarOpen,
   onOpenSettings,
   onOpenHistory,
   onOpenPlugins,
@@ -413,6 +451,7 @@ function Shell({
   readonly runtime: AropytRuntime | null;
   readonly editorHostRef: RefObject<HTMLDivElement>;
   readonly sidebarOpen: boolean;
+  readonly toolbarOpen: boolean;
   readonly onOpenSettings: () => void;
   readonly onOpenHistory: () => void;
   readonly onOpenPlugins: () => void;
@@ -422,7 +461,21 @@ function Shell({
       {runtime && <ViewColumn runtime={runtime} location="sidebar" side="left" open={sidebarOpen} />}
 
       <main className="app-main">
-        {runtime ? <Toolbar runtime={runtime} onOpenSettings={onOpenSettings} onOpenHistory={onOpenHistory} onOpenPlugins={onOpenPlugins} /> : <div className="toolbar" />}
+        {/*
+         * 工具栏可整体隐藏（Ctrl+Shift+H / 设置页开关）。
+         * 隐藏时不必留占位：`.app-main` 是纵向 flex，编辑区自然顶到顶部。
+         */}
+        {toolbarOpen &&
+          (runtime ? (
+            <Toolbar
+              runtime={runtime}
+              onOpenSettings={onOpenSettings}
+              onOpenHistory={onOpenHistory}
+              onOpenPlugins={onOpenPlugins}
+            />
+          ) : (
+            <div className="toolbar" />
+          ))}
         <div className="app-editor" ref={editorHostRef} />
       </main>
 
@@ -811,8 +864,12 @@ function TabBar({ runtime }: { readonly runtime: AropytRuntime }): JSX.Element |
       aria-label={t('tabs.openFiles')}
     >
       {state.tabs.map((tab) => {
-        const active =
-          tab.path === state.activePath && tab.workspaceId === state.activeWorkspaceId;
+        /*
+         * 用 runtime 的判定，不要在这里重算 —— 两份逻辑迟早分叉，而且
+         * "单独打开的文件"（workspaceId 为 null）在这里永远不算激活：
+         * 不高亮、脏标记也不亮。
+         */
+        const active = runtime.isTabActive(tab);
         const dirty = active && state.dirty;
         // 未命名标签：__untitled__-1 → Untitled.md，-2 → Untitled 2.md（同 VSCode 习惯）
         const untitledMatch = /^__untitled__-(\d+)$/.exec(tab.path);
@@ -874,7 +931,12 @@ function TabBar({ runtime }: { readonly runtime: AropytRuntime }): JSX.Element |
               onClick={(event) => {
                 // 不冒泡：否则关标签会顺手把它激活一下，看起来像"点两次"
                 event.stopPropagation();
-                runtime.closeTab(tab.path);
+                /*
+                 * 必须带上 workspaceId：省略它 `closeTab` 会按**当前激活
+                 * 工作区**去找标签，而"单独打开的文件"workspaceId 是 null
+                 * —— 永远匹配不上，× 点了没反应（中键却能关，因为它传了）。
+                 */
+                runtime.closeTab(tab.path, tab.workspaceId);
               }}
               onAuxClick={(event) => {
                 // 中键关闭（浏览器/VSCode 的通用手势）

@@ -136,6 +136,7 @@ export const fr: Record<keyof typeof import('./zh').zh, string> = {
   'settings.version': 'Version',
   'settings.license': 'Licence',
   'settings.vim': 'Mode Vim',
+  'settings.toolbar': 'Afficher la barre d’outils',
   'settings.backup': 'Sauvegarde des données',
   'settings.export': 'Exporter les données',
   'settings.import': 'Importer les données',

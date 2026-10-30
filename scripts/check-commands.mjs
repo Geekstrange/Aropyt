@@ -186,6 +186,12 @@ try {
         }
         if (command === 'workspace_read') return Promise.resolve('');
         if (command === 'workspace_write') return Promise.resolve(null);
+        /*
+         * 「打开文件」走的是外部文件通道（不注册工作区）：
+         * read_external_file 读、write_external_file 写回原位置。
+         */
+        if (command === 'read_external_file') return Promise.resolve('');
+        if (command === 'write_external_file') return Promise.resolve(null);
         if (command === 'import_image') {
           return Promise.resolve({
             path: ${JSON.stringify(IMPORTED_IMAGE)},
@@ -389,17 +395,22 @@ try {
     problems.push(`打开文件夹后工作区根应为 ${DEMO_ROOT}，实际 ${JSON.stringify(folderRoot)}`);
   }
 
-  // 「打开文件」：工作区 = 文件所在目录，并真的读取了它
+  /*
+   * 「打开文件」：以**外部文件**身份打开，**不**注册工作区。
+   *
+   * 这条以前断言"工作区 = 文件所在目录" —— 那正是用户要求改掉的行为：
+   * 顺手把父目录变成项目，文件树会多出一堆没要求打开的兄弟文件，
+   * 目录还会被持久化、下次启动自动恢复。
+   */
   if (!has('打开文件…', 'pick_markdown_file')) {
     problems.push('「打开文件」没有调用原生的 pick_markdown_file');
   }
-  const fileRoot = argsOf('打开文件…', 'set_workspace')?.root;
-  if (fileRoot !== DEMO_ROOT) {
-    problems.push(`打开文件后工作区根应为文件所在目录 ${DEMO_ROOT}，实际 ${JSON.stringify(fileRoot)}`);
+  if (has('打开文件…', 'set_workspace')) {
+    problems.push('「打开文件」不应该把父目录注册成工作区');
   }
-  const readPath = argsOf('打开文件…', 'workspace_read')?.args?.path;
-  if (readPath !== DEMO_FILE_REL) {
-    problems.push(`打开文件后应读取 ${DEMO_FILE_REL}，实际 ${JSON.stringify(readPath)}`);
+  const extRead = argsOf('打开文件…', 'read_external_file')?.path;
+  if (extRead !== DEMO_FILE_ABS) {
+    problems.push(`打开文件应以绝对路径读取 ${DEMO_FILE_ABS}，实际 ${JSON.stringify(extRead)}`);
   }
 
   // 「插入图像」
@@ -422,16 +433,17 @@ try {
    * 不检查"有没有提示"就够了 —— 写出去的内容不对时同样不报错，
    * 用户要等下次打开才发现东西没了。
    */
-  const writeArgs = argsOf('保存', 'workspace_write')?.args;
+  /* 打开的是外部文件 → 保存走 write_external_file，写回原绝对路径 */
+  const writeArgs = argsOf('保存', 'write_external_file');
   if (!writeArgs) {
-    problems.push('「保存」没有调用原生的 workspace_write —— 点了保存但没落盘');
+    problems.push('「保存」没有调用原生的 write_external_file —— 点了保存但没落盘');
   } else {
-    if (writeArgs.path !== DEMO_FILE_REL) {
-      problems.push(`保存应写回 ${DEMO_FILE_REL}，实际写向 ${JSON.stringify(writeArgs.path)}`);
+    if (writeArgs.path !== DEMO_FILE_ABS) {
+      problems.push(`保存应写回 ${DEMO_FILE_ABS}，实际写向 ${JSON.stringify(writeArgs.path)}`);
     }
-    if (typeof writeArgs.content !== 'string' || !writeArgs.content.includes(`](${IMPORTED_IMAGE})`)) {
+    if (typeof writeArgs.text !== 'string' || !writeArgs.text.includes(`](${IMPORTED_IMAGE})`)) {
       problems.push(
-        `保存的内容应与编辑器一致（含刚插入的图片），实际「${JSON.stringify(writeArgs.content)}」`,
+        `保存的内容应与编辑器一致（含刚插入的图片），实际「${JSON.stringify(writeArgs.text)}」`,
       );
     }
   }

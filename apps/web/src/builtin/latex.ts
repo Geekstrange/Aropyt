@@ -154,6 +154,17 @@ async function fillMath(target: HTMLElement, tex: string, display: boolean): Pro
     }
   }
   target.innerHTML = html;
+
+  /*
+   * 高度变了，必须让 CM6 重新测量。
+   *
+   * KaTeX 是异步加载的：widget 先以源码文本占位（大约一行高），排版结果
+   * 填进来之后高度往往差好几行。CM6 的高度图只在插入时测量一次，不重测
+   * 的话——它以为内容比实际短——之后每一次点击都会按旧坐标换算位置，
+   * 表现就是"点这一行、插入符出现在下一行"（实测：点击 `Table~\\ref…`
+   * 那一行，光标落到下面的空行）。
+   */
+  EditorView.findFromDOM(target)?.requestMeasure();
 }
 
 class MathWidget extends WidgetType {

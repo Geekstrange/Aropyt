@@ -146,6 +146,7 @@ export const zh = {
   'settings.version': '版本',
   'settings.license': '许可',
   'settings.vim': 'Vim 模式',
+  'settings.toolbar': '显示工具栏',
   'settings.backup': '数据备份',
   'settings.export': '导出数据',
   'settings.import': '导入数据',

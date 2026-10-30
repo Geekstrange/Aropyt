@@ -151,6 +151,13 @@ export interface RuntimeState {
   readonly historyInterval: number;
   /** 侧栏是否展开（真源：settings.sidebar.open）。 */
   readonly sidebarOpen: boolean;
+  /**
+   * 工具栏是否显示（真源：settings.toolbar.open）。
+   *
+   * 不要和下面的 `toolbar`（命令项列表）混淆：那个是"工具栏里放哪些按钮"，
+   * 这个是"工具栏这块区域显不显示"。
+   */
+  readonly toolbarOpen: boolean;
   /** 恢复自草稿/崩溃日志的文件路径；null = 本次会话没有恢复过。状态栏黄点用它，且只在**当前激活**文件是它时才亮。 */
   readonly recoveredPath: string | null;
   /** 恢复来源所在的工作区 —— 与 recoveredPath 一起判断黄点（同名文件跨工作区不能互相点亮）。 */
@@ -225,9 +232,28 @@ export interface AropytRuntime {
    * 多工作区并存后同一个相对路径可能出现两次 —— 传 workspaceId 才能选到
    * 正确那个；省略时按当前激活工作区查找。
    */
-  activateTab(path: string, workspaceId?: string | null): void;
-  /** 关闭一个标签；关的是当前标签时自动激活相邻的那个。 */
-  closeTab(path: string, workspaceId?: string | null): void;
+  /**
+   * 激活一个标签。
+   *
+   * `workspaceId` **必填**：见 `closeTab` 的说明 —— 外部文件的归属是
+   * `null`，省略参数就会按当前工作区去找，永远找不到。
+   */
+  activateTab(path: string, workspaceId: string | null): void;
+  /**
+   * 关闭一个标签；关的是当前标签时自动激活相邻的那个。
+   *
+   * `workspaceId` **必填**：省略时按当前激活工作区查，会把归属为 `null`
+   * 的外部文件漏掉（表现为"点 × 没反应，只能用中键"）。
+   */
+  closeTab(path: string, workspaceId: string | null): void;
+  /**
+   * 某个标签是否为当前激活标签。
+   *
+   * 渲染层必须用它，而不是自己比较 `path + workspaceId`：单独打开的
+   * 文件 `workspaceId` 是 `null`，而 `activeWorkspaceId` 这时仍指向某个
+   * 项目（文件树要显示它），严格比较会让那个标签永远不高亮。
+   */
+  isTabActive(tab: EditorTab): boolean;
   /** 新建一个空白未命名标签；若未命名标签已存在则直接激活它。 */
   createUntitledTab(): void;
   /** 按打开顺序循环切换标签（Ctrl+Tab / Ctrl+Shift+Tab）。 */
@@ -256,6 +282,13 @@ export interface AropytRuntime {
   importBackup(): Promise<void>;
   /** vim 模式开关（normal/insert/visual 操作方式）。持久化在 localStorage。 */
   toggleVimMode(): void;
+  /**
+   * 工具栏显隐（真源：settings.toolbar.open）。
+   *
+   * 隐藏后工具栏上所有按钮都没了 —— 回得来的入口只有快捷键
+   * （Ctrl+Shift+H）与设置页开关，别再删掉这两个中的一个。
+   */
+  toggleToolbar(): void;
   /**
    * 插件启用/禁用。
    * 禁用**立即生效**（撤销该插件的命令/视图声明）并写入 localStorage；
@@ -405,6 +438,7 @@ export function createRuntime(options: RuntimeOptions): AropytRuntime {
     historyAutoSave: currentSettings.history.autoSave,
     historyInterval: currentSettings.history.autoSaveInterval,
     sidebarOpen: currentSettings.sidebar.open,
+    toolbarOpen: currentSettings.toolbar.open,
     recoveredPath: state.recoveredPath,
     recoveredWorkspaceId: state.recoveredWorkspaceId,
     plugins: host.records,
@@ -464,15 +498,28 @@ export function createRuntime(options: RuntimeOptions): AropytRuntime {
     state.workspace = id ? (state.workspaces.find((item) => item.id === id) ?? null) : null;
   }
 
-  function findTab(
-    path: string,
-    workspaceId: string | null = state.activeWorkspaceId,
-  ): EditorTab | undefined {
+  /**
+   * 按 (workspaceId, path) 定位标签。
+   *
+   * `workspaceId` 不给默认值：默认成"当前激活工作区"看起来方便，实际
+   * 会把"归属为 null 的外部文件"静默漏掉 —— 这类漏传没有任何报错，
+   * 只表现为"点了没反应"。
+   */
+  function findTab(path: string, workspaceId: string | null): EditorTab | undefined {
     return state.tabs.find((tab) => tab.path === path && tab.workspaceId === workspaceId);
   }
 
   function isActiveTab(tab: EditorTab): boolean {
-    return tab.path === state.activePath && tab.workspaceId === state.activeWorkspaceId;
+    if (tab.path !== state.activePath) return false;
+    /*
+     * 外部文件（单独打开 / 文件关联）不属于任何工作区。
+     *
+     * 它的 path 是绝对路径、天然唯一，不需要再用 workspaceId 消歧 ——
+     * 而 `state.activeWorkspaceId` 这时仍然指向某个项目（文件树要显示它），
+     * 严格比较会让这个标签永远不算"激活"：不高亮、关闭时也找不到它。
+     */
+    if (tab.workspaceId === null) return true;
+    return tab.workspaceId === state.activeWorkspaceId;
   }
 
   /** 草稿与编辑历史的存储键。同一相对路径在不同工作区是两份独立记录。 */
@@ -719,8 +766,9 @@ export function createRuntime(options: RuntimeOptions): AropytRuntime {
         }),
     // vim 的 :q / :wq —— 关闭当前标签（closeTab 自带未保存确认）
     onCloseRequest: () => {
-      const active = state.activePath;
-      if (active) closeTab(active);
+      /* 按激活标签自己的 workspaceId 关：外部文件的归属是 null */
+      const tab = state.tabs.find((item) => isActiveTab(item));
+      if (tab) closeTab(tab.path, tab.workspaceId);
     },
     // 渲染态要把 `![](相对路径)` 画成真图，而相对路径在 WebView 里取不到，
     // 只能由宿主把字节读出来转成 data URL。内核不知道工作区在哪。
@@ -901,8 +949,11 @@ export function createRuntime(options: RuntimeOptions): AropytRuntime {
     openFile,
     activateTab,
     closeTab,
+    /* 内部叫 isActiveTab，对外用更明确的名字 */
+    isTabActive: (tab) => isActiveTab(tab),
     createUntitledTab,
     toggleVimMode,
+    toggleToolbar,
     activateRelativeTab,
     openSettingsFile,
     getSettings() {
@@ -1046,48 +1097,24 @@ export function createRuntime(options: RuntimeOptions): AropytRuntime {
   }
 
   /**
-   * 选一个 Markdown 文件并打开：工作区 = 它所在的目录。
+   * 选一个 Markdown 文件并打开。
    *
-   * 为什么需要这条而不只有"打开文件夹"：Windows 的文件夹选择器
-   * 只显示子文件夹，用户在一个只装着 .md 文件的目录里看到的是空列表，
-   * 很自然地会以为"没有匹配项"然后取消 —— 日志里三次"用户取消"
-   * 正是这个模式。文件选择器恰好相反：显示文件、不显示目录。
-   * 两条路互补，按直觉走哪条都能到。
+   * **不注册工作区**：打开一个文件只是"读这个文件"，不该顺手把它的父目录
+   * 变成项目 —— 那样文件树会突然多出一堆用户没要求打开的兄弟文件，
+   * 这个目录还会被写进 `workspace.roots`，下次启动自动恢复。
+   *
+   * 文件以**外部文件**身份打开（`workspaceId: null`），保存走
+   * `write_external_file`，与"文件关联 / 命令行传入"是同一条路径。
+   * 想让某个目录成为工作区，用「打开文件夹」。
+   *
+   * 保留这条命令而不只有「打开文件夹」的理由：Windows 的文件夹选择器
+   * 只列子目录，一个只装着 `.md` 的目录在它眼里是空的，用户会以为
+   * "没有匹配项"然后取消。
    */
   async function openMarkdownFile(): Promise<boolean> {
     const picked = await pickMarkdownFileNative();
     if (!picked) return false;
-
-    // 路径分隔符两种都处理：原生侧给的是反斜杠，但历史配置里可能是正斜杠。
-    const segments = picked.split(/[\\/]/).filter(Boolean);
-    const fileName = segments.pop();
-    if (!fileName) return false;
-    const parent = segments.join('\\');
-
-    const workspace = await openNativeFolderAsWorkspace(parent);
-    if (!workspace) {
-      await windowService.showMessage(t('rt.openDirFailed'), { level: 'error' });
-      return false;
-    }
-
-    syncActiveTabBuffer();
-    state.workspaces = [...state.workspaces.filter((item) => item.id !== workspace.id), workspace];
-    setActiveWorkspace(workspace.id);
-    resetAssetCache();
-    state.activePath = null;
-    emitWorkspaceChange();
-    notify();
-
-    persistWorkspaceRoots();
-    void configuration
-      .update('workspace.lastName', workspace.name)
-      .then(() => configuration.update('workspace.lastId', workspace.id))
-      .catch((error: unknown) => {
-        console.warn('[aropyt] 记录上次工作区失败', error);
-      });
-
-    // 打开用户选的那个文件（而不是停在"未打开文件"状态）
-    await openFile(fileName);
+    await openExternalPath(picked);
     return true;
   }
 
@@ -1135,7 +1162,7 @@ export function createRuntime(options: RuntimeOptions): AropytRuntime {
      * 重读会把用户在这个标签里未保存的修改冲掉，那是数据丢失。
      * （VSCode 也是这个行为：切回一个已打开的标签不会重新加载。）
      */
-    const already = findTab(path);
+    const already = findTab(path, workspace.id);
     if (already) {
       /*
        * 用"固定"的方式打开一个预览标签时，顺手把它转正 ——
@@ -1143,7 +1170,9 @@ export function createRuntime(options: RuntimeOptions): AropytRuntime {
        */
       if (!preview && already.preview) {
         state.tabs = state.tabs.map((tab) =>
-          tab.path === path ? { ...tab, preview: false } : tab,
+          tab.path === path && tab.workspaceId === workspace.id
+            ? { ...tab, preview: false }
+            : tab,
         );
         /*
          * ⚠️ 转正之后必须 notify。
@@ -1155,7 +1184,7 @@ export function createRuntime(options: RuntimeOptions): AropytRuntime {
          */
         notify();
       }
-      activateTab(path);
+      activateTab(path, workspace.id);
       return;
     }
 
@@ -1349,8 +1378,16 @@ export function createRuntime(options: RuntimeOptions): AropytRuntime {
    * **从标签的缓冲区取内容，不重新读盘** —— 重读会把未保存的修改冲掉，
    * 也会让"切回来"这个动作凭空多一次磁盘 IO。
    */
-  function activateTab(path: string, workspaceId?: string | null): void {
-    const tab = workspaceId === undefined ? findTab(path) : findTab(path, workspaceId);
+  /**
+   * 激活一个标签。
+   *
+   * `workspaceId` **必填**：多工作区下同一个相对路径可能出现在两个项目里，
+   * 只给 path 会激活错的那个；而"单独打开的文件"归属是 `null` ——
+   * 省略参数时按当前工作区去找，必然落空（`×` 关不掉、标签不高亮都是
+   * 这个漏传引起的）。改成必填后由编译器盯着。
+   */
+  function activateTab(path: string, workspaceId: string | null): void {
+    const tab = findTab(path, workspaceId);
     if (!tab || isActiveTab(tab)) return;
 
     syncActiveTabBuffer();
@@ -1423,7 +1460,7 @@ export function createRuntime(options: RuntimeOptions): AropytRuntime {
    * 标签栏还有别的标签"的状态 —— 那种状态下用户点任何东西都像没反应。
    * 挑邻居而不是跳到第一个：靠得近的通常就是他接下来想看的那个。
    */
-  async function closeTab(path: string, workspaceId?: string | null): Promise<void> {
+  async function closeTab(path: string, workspaceId: string | null): Promise<void> {
     timeline('close', String(path ?? ''));
     /*
      * 先把激活标签的缓冲区（文本 + dirty）写回 tab —— tab.dirty 平时
@@ -1433,11 +1470,23 @@ export function createRuntime(options: RuntimeOptions): AropytRuntime {
      */
     syncActiveTabBuffer();
     /* 同名文件可能同时开在两个工作区里 —— 只按 path 找会关错那个。 */
-    const targetWorkspace = workspaceId === undefined ? state.activeWorkspaceId : workspaceId;
-    const index = state.tabs.findIndex(
-      (item) => item.path === path && item.workspaceId === targetWorkspace,
+    let index = state.tabs.findIndex(
+      (item) => item.path === path && item.workspaceId === workspaceId,
     );
-    if (index < 0) return;
+    if (index < 0) {
+      /*
+       * 运行期兜底：路径在标签里**唯一**时还是关掉它。
+       *
+       * `workspaceId` 现在是必填参数，编译期不会再漏传；这条只处理
+       * "传进来的归属与标签实际归属对不上"（标签在别处被重建过之类）。
+       * 有同名文件开在两个项目里时不猜 —— 猜错会关掉用户的另一个文档。
+       */
+      const matches = state.tabs
+        .map((item, at) => ({ item, at }))
+        .filter((entry) => entry.item.path === path);
+      if (matches.length !== 1) return;
+      index = matches[0]!.at;
+    }
 
     /*
      * 未保存确认：标签带脏标记时先问，防误关丢改动。
@@ -1455,7 +1504,7 @@ export function createRuntime(options: RuntimeOptions): AropytRuntime {
           },
         },
       ];
-      const isCurrent = state.activePath === path && state.activeWorkspaceId === targetWorkspace;
+      const isCurrent = state.activePath === path && state.activeWorkspaceId === workspaceId;
       if (isCurrent && !path.startsWith('__untitled__')) {
         actions.push({ label: t('rt.saveAndClose'), run: () => {} });
       }
@@ -1467,14 +1516,14 @@ export function createRuntime(options: RuntimeOptions): AropytRuntime {
       if (choice === t('rt.saveAndClose')) await saveActiveFile();
     }
 
-    const closingActive = state.activePath === path && state.activeWorkspaceId === targetWorkspace;
+    const closingActive = state.activePath === path && state.activeWorkspaceId === workspaceId;
     // 关掉当前标签之前先把它缓冲区的修改存回来 ——
     // 虽然它马上要走了，但用户在它里面的修改不该凭空消失
     // （万一他反悔，草稿与缓冲区仍然是可用的证据）。
     if (closingActive) syncActiveTabBuffer();
 
     const next = state.tabs.filter(
-      (item) => !(item.path === path && item.workspaceId === targetWorkspace),
+      (item) => !(item.path === path && item.workspaceId === workspaceId),
     );
     state.tabs = next;
 
@@ -1900,6 +1949,7 @@ function validateContributions(manifest: PluginManifest): void {
       editor: { ...currentSettings.editor, ...(patch.editor ?? {}) },
       vim: { ...currentSettings.vim, ...(patch.vim ?? {}) },
       sidebar: { ...currentSettings.sidebar, ...(patch.sidebar ?? {}) },
+      toolbar: { ...currentSettings.toolbar, ...(patch.toolbar ?? {}) },
       plugins: { ...currentSettings.plugins, ...(patch.plugins ?? {}) },
       history: { ...currentSettings.history, ...(patch.history ?? {}) },
     };
@@ -2098,7 +2148,12 @@ function validateContributions(manifest: PluginManifest): void {
           dirty: false,
         });
       }
-      activateTab(path);
+      /*
+       * 显式传 `null`：这个标签不属于任何工作区。
+       * 省略第二个参数会按"当前激活工作区"查找 —— 用户先开了文件夹再打开
+       * 单个文件时，就找不到刚加进去的那个标签（它的 workspaceId 是 null）。
+       */
+      activateTab(path, null);
     } catch (error: unknown) {
       const detail =
         error instanceof Error ? error.message : typeof error === 'string' ? error : JSON.stringify(error);
@@ -2117,6 +2172,16 @@ function validateContributions(manifest: PluginManifest): void {
   function toggleVimMode(): void {
     // 走配置系统：settings.jsonc 才是真源（不再单独写 localStorage）
     updateSettings({ vim: { enabled: !state.vimMode } });
+  }
+
+  /**
+   * 工具栏显隐。
+   *
+   * 状态存在配置里而不是组件 state：工具栏本身就承载着"切主题、切源码模式"
+   * 这些入口，隐藏后如果只是会话内生效，重启又冒出来会让人以为没记住。
+   */
+  function toggleToolbar(): void {
+    updateSettings({ toolbar: { open: !currentSettings.toolbar.open } });
   }
 
   /**
@@ -2165,6 +2230,14 @@ function validateContributions(manifest: PluginManifest): void {
           item.path === path ? { ...item, text, dirty: false } : item,
         );
         state.dirty = false;
+        /*
+         * 外部文件保存同样要有反馈。
+         *
+         * 这条分支此前只处理失败提示，成功时静默返回 —— 而"打开单个文件"
+         * 现在固定走这条路（不再把父目录变成工作区），于是每次 Ctrl+S
+         * 都变成"点了没反应"，用户分不清存没存进去。
+         */
+        await windowService.showMessage(t('rt.saved', { path }), { level: 'info' });
       } catch (error: unknown) {
         const detail =
           error instanceof Error ? error.message : typeof error === 'string' ? error : JSON.stringify(error);

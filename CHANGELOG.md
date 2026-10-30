@@ -8,8 +8,38 @@
 
 ## [Unreleased]
 
+### Planned
+
+- 编辑历史的版本间 diff（v0.1.2 已完成单版本对比，尚缺版本间对比）
+- 工具栏在触屏上的点按目标（当前约 26px，低于 44px 建议值）
+- 文件导出（docx / html / epub）：首选 pandoc，PDF 需另配 typst 之类引擎
+
+## [0.1.7] - 2026-10-30
+
+> 发布公告见 `docs/releases/v0.1.7.md`。
+
 ### Added
 
+- **`Ctrl/Cmd+Shift+O` 打开工作区**：与工具栏「打开文件夹」走同一个命令
+  （`aropyt.file.pickWorkspace`），并经 `runCommand` 复用那层"把真实错误
+  带出来"的处理 —— 选目录失败时用户能看到原因，而不是静默无反应。
+- **工具栏可整体隐藏**：`Ctrl/Cmd+Shift+H` 切换，或设置页「显示工具栏」开关。
+  隐藏后工具栏上的全部按钮（打开文件、主题、源码模式…）一并消失，
+  `.app-main` 是纵向 flex，编辑区自动顶到标签栏下沿（实测 +35px，无空位）。
+  状态存进 `settings.toolbar.open`，重启保持。
+  恢复入口**只有两个**：这个快捷键与设置页开关 —— 工具栏自己没了，
+  别再顺手删掉其中一个。
+- **围栏块点击就地编辑（代码块与 mermaid）**：渲染态里点一下代码块或图表，
+  它自己变成编辑框（预填源码、自动全选）。**失焦即提交**，`Esc` 放弃，
+  `Ctrl/Cmd+Enter` 也可提交，`Tab` 插入两个空格。没有确定/取消按钮 ——
+  点走就是接受，不必先扫过一排按钮；内容没改动时不会产生空的撤销步。
+  原来的交互是"点一下整块变回源码"：为了改一行要先看满屏的反引号与
+  fence 语言标记。插入符落在**文末**而不是全选 —— 全选意味着"点一下、
+  敲第一个字符，原有内容整段消失"。
+- **mermaid 编辑时带实时预览**：编辑区比代码块更高（9 行起）并撑满宽度，
+  下方一块预览区随输入更新（260ms 防抖）。渲染串行化 + 序号丢弃过期结果，
+  快速输入时不会被先返回的旧图覆盖；语法错误直接把 mermaid 的报错显示在
+  预览区，而不是留一块空白。
 - **文档里手写的 HTML 控件有了样式**：`<kbd>` 画成按键帽（等宽、描边、
   底边加粗、圆角）、`<details>` 的 summary 有手型光标与悬停反馈、
   `<input type="checkbox">` 用品牌绿 `accent-color`，与 GFM 任务列表的
@@ -31,15 +61,90 @@
   **站点**主题（组件的 `auto` 读系统偏好，站内切主题不生效）；语言 / 主题
   切换时重建元素（自定义元素不保证响应属性变化）；脚本 6 秒内未注册
   （离线或被拦）则显示纯文本兜底链接。
-- 徽章尺寸：组件的 `size` 只认 `large` / `small`，而 `large` 在内部样式里
-  硬编码 `img { height: 104px }`，放在首屏里过大。改为 `size="small"` +
-  `ms-store-badge::part(img) { height: 48px }` —— 与原来的静态图同高，
-  也是商店指南建议的可读尺寸。
+- 徽章尺寸：组件的 `size` 只认 `large` / `small`，没有"中号"——`large` 在
+  内部样式里硬编码 `img { height: 104px }`（首屏里过大），`small` 又不带
+  尺寸规则、素材本身偏小（想放到 48px 得靠放大，位图放大会糊）。
+  现在**保留 `size="large"`**（素材是最大份的），只用
+  `ms-store-badge::part(img) { height: 48px }` 把高度压到与原来的静态图
+  同高 —— 缩小永远比放大清晰，48px 也是商店指南建议的可读尺寸。
 
-### Planned
-
-- 编辑历史的版本间 diff（v0.1.2 已完成单版本对比，尚缺版本间对比）
-- 工具栏在触屏上的点按目标（当前约 26px，低于 44px 建议值）
+- **LaTeX 渲染态点击后插入符跳到下一行**：两个原因叠加。一是
+  `.cm-tex-table` / `.cm-tex-pagebreak` 这类 block widget 用 `margin`
+  表达间距，而 CM6 用 `offsetHeight` 测量 widget 高度（不含 margin）——
+  实际布局比高度图高，之后每一行的点击坐标都往下偏一行。二是 KaTeX
+  异步渲染完成后没有通知 CM6 重测：公式块从"一行源码占位"变成多行排版
+  结果，同样造成累积偏移。现在 widget 间距一律用 padding 表达，KaTeX
+  填充后调用 `view.requestMeasure()`。
+- **段落内的换行不生效**：markdown-it 默认 `breaks: false` —— 只有行尾
+  两个空格或反斜杠才算硬换行。实测示例文档 `test/basic.md` 里写着"这一行
+  末尾有两个空格，应当渲染为软换行"的那行，磁盘上一个空格都没有（字符码
+  确认末尾直接是 `。`）：行尾空格在保存、`git commit`、复制粘贴时太容易
+  被 trim。现在改为 `breaks: true`：段落内单个换行即渲染为 `<br>`，
+  与 GitHub issue 正文一致；列表项内的续行同样生效。
+- **GitHub 警告块此前只是"GitHub 风味"**：整块铺着淡底色，竖线用的是通用
+  引用色而不是类型色，正文还被引用块规则淡化。原因是 `.markdown-alert`
+  自己声明了 `background`，而 CM6 baseTheme 编译出的
+  `.ͼ1 .cm-md-block blockquote`（0,2,1）压过了
+  `.cm-md-block .markdown-alert`（0,2,0），把类型色换成 `--md-border-strong`
+  又把正文染成 `--md-muted` —— 同一批属性在两处各写一份，谁赢只取决于
+  生成顺序。现在删掉 baseTheme 里的 blockquote 声明（样式只在 styles.css
+  定义一处），警告块去掉底色，竖线与标题按类型着色，正文保持正常文字色。
+- 引用与警告块的颜色、竖线宽度改为可独立调节的令牌，且**深浅主题共用**：
+  `--quote-border`（引用竖线，中性浅灰 `#dfe2e5`）、`--alert-note` /
+  `--alert-tip` / `--alert-important` / `--alert-warning` / `--alert-caution`
+  （取 GitHub 亮色主题的实际值），宽度是 `--quote-width` / `--alert-width`。
+  此前它们借用 `--md-h1` / `--md-link` / `--md-h3` / `--md-h5` / `--md-danger`
+  / `--md-accent` —— 那些是文档语义色，全项目 60+ 处在用，调一处会连带改标题、
+  链接与焦点环。
+  ⚠️ 两个主题块（`:root[data-theme='light']` 与 `[data-theme='dark']`）里
+  要**各写一份、值保持一致**：只写在浅色那处时，深色主题下这些变量整体
+  消失，`border-left: var(--alert-width) solid …` 整条失效、竖线不见
+  （实测深色下宽度变 0）。
+- **警告块竖线宽度调不动**：规则里写的是字面量
+  `border-left: 3px solid var(--alert-color)`，`--alert-width` 从未被引用 ——
+  改 3.5px、8px 都没有任何反应。现在改成 `var(--alert-width)`，与普通引用的
+  `var(--quote-width)` 对称。另注：`border-width` 会被 UA 取整到整数设备
+  像素，1x 屏上 `3.5px` 实际渲染为 `3px`，调粗细请用整数。
+- **单独打开的文件关不掉**：标签上的 `×` 调 `closeTab(path)` 时省略了
+  `workspaceId`，而 `closeTab` 在找不到就退回"当前激活工作区"来查 ——
+  外部文件的 `workspaceId` 是 `null`，永远匹配不上，只能靠中键关闭
+  （中键那条调用传了 `workspaceId`，所以有效）。现在 `×` 带上标签自己的
+  `workspaceId`；`activateTab` / `closeTab` / `findTab` 的 `workspaceId`
+  一律从**可选改成必填**（可选时漏传不报错、只表现为"点了没反应"），
+  由编译器保证每个调用点传全；`closeTab` 另保留"路径在标签里唯一就直接关"
+  的运行期兜底，同名文件开在两个项目里时不猜。
+  顺带修好：单独打开的文件**标签不高亮**（渲染层自己重算了一份
+  `path + workspaceId` 判定，与 runtime 分叉了）。判定统一收敛到
+  `runtime.isTabActive()`；vim 的 `:q` / `:wq` 也改为按激活标签关。
+- **打开单个文件不再把它的目录变成工作区**：打开一个文件只是"读这个文件"，
+  顺手把父目录注册成项目，会让文件树突然多出一堆用户没要求打开的兄弟
+  文件，这个目录还会写进 `workspace.roots`、下次启动自动恢复。现在文件
+  以**外部文件**身份打开（`workspaceId: null`，标签不带工作区色条），
+  保存走 `write_external_file` 写回原位置；想让某个目录成为工作区，
+  用「打开文件夹」。
+- 顺带修好：已经打开过工作区时，"打开文件"加入的标签**不会被激活**
+  （`activateTab` 少了显式的 `null`，按当前激活工作区去查，永远找不到
+  这个不属于任何项目的新标签）。
+- 外部文件的保存此前**没有任何成功反馈**：那条分支只处理失败提示，而
+  "打开单个文件"现在固定走它，于是每次 `Ctrl+S` 都像"点了没反应"。
+  现在与工作区文件一致地显示已保存。
+- **输入中文时整个编辑区卡死**：诊断报告里的第一条错误是根因 ——
+  `RangeError: Decorations that replace line breaks may not be specified
+  via plugins`。它的上游是 ViewPlugin `update` 里那句
+  `if (update.view.composing) return`：IME 组合期间文档在变，装饰却被
+  冻结在旧坐标系上，CM6 拿它们切 tile 时位置越界或跨了换行 —— 抛错之后
+  tile 索引全乱，之后每一次测量、点击、滚动都报 `TilePointer.advance` /
+  `No tile at position <n>`，编辑区彻底不动（报告里剩下十几条全是连锁）。
+  现在文档一变就先把已有装饰 `map` 到新坐标（只改位置、不动 DOM，不会
+  打断候选词），映射后仍非法（越界 / 跨行 replace）的单项丢弃并记一条
+  warn；组合结束后照常完整重建。装饰构建完也统一过一遍同样的合法性检查。
+  复现与回归都用 CDP 的 `Input.imeSetComposition`：两行任务列表、在行内
+  敲第二个组合字符，修复前必抛 RangeError，修复后零错误。
+- **任务列表可能渲染成「☐ ] 未完」**：复选框的替换范围直接取了 lezer
+  `TaskMarker` 节点的 `from`/`to`，而该边界在某些输入状态下会落在 `]`
+  之前 —— `[ ` 被替换、`]` 孤零零留在行首。现在按行内文本定位：只认
+  "节点起点附近一格内的 `[`，且恰好隔一个字符就是 `]`"，形状对不上就
+  整行保持源码，绝不做半截替换（错位比不渲染更难解释）。
 
 ## [0.1.6] - 2026-10-29
 
@@ -655,7 +760,8 @@ Edit History Diff, plus a batch of fixes accumulated since v0.1.1.
 - 编辑器内核、命令注册表、键位解析、主题系统
 - 深浅色板与首屏包体预算闸门
 
-[Unreleased]: https://github.com/Geekstrange/Aropyt/compare/v0.1.6...HEAD
+[Unreleased]: https://github.com/Geekstrange/Aropyt/compare/v0.1.7...HEAD
+[0.1.7]: https://github.com/Geekstrange/Aropyt/compare/v0.1.6...v0.1.7
 [0.1.6]: https://github.com/Geekstrange/Aropyt/compare/v0.1.5...v0.1.6
 [0.1.5]: https://github.com/Geekstrange/Aropyt/compare/v0.1.4...v0.1.5
 [0.1.4]: https://github.com/Geekstrange/Aropyt/compare/v0.1.3...v0.1.4
