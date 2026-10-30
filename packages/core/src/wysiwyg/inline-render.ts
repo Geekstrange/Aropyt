@@ -543,15 +543,25 @@ class BlockWidget extends WidgetType {
 
   override ignoreEvent(event: Event): boolean {
     /*
-     * 点在任务复选框上时**不能**交给 CM6。
+     * 交互元素自己处理事件。
      *
      * CM6 处理 widget 上的 mousedown 时会 preventDefault（为了把光标落到
-     * 替换范围边界），而复选框的勾选依赖这次点击的默认行为 —— 结果就是
-     * "框点不动、没有任何反应"。返回 true 表示"这次事件我自己处理"，
-     * CM6 不再拦截，click 才能到达 input 上的监听器。
+     * 替换范围的边界），于是文档里的 HTML 控件全部失效：`<input
+     * type="checkbox">` 点不动、`<details><summary>` 展不开、按钮按不下。
+     *
+     * 返回 true 表示"这次事件我自己处理"，CM6 不再拦截，浏览器默认行为
+     * 照常发生（checkbox 切换、details 展开、label 关联触发）。
+     *
+     * `<a>` 刻意不在列：桌面壳里点击链接会让 WebView 导航，那需要单独的
+     * 处理策略（拦截并交给系统浏览器），不能顺手放开。
      */
     const target = event.target;
-    if (target instanceof Element && target.closest('input.task-checkbox')) return true;
+    if (
+      target instanceof Element &&
+      target.closest('input, button, select, textarea, label, details, summary')
+    ) {
+      return true;
+    }
 
     // 其余情况交给 CM6：光标会落到替换范围的边界（块首），
     // 块随即切回源码态 —— 与 Typora"点进段落开始编辑"一致。

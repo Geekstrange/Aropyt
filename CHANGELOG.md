@@ -8,6 +8,34 @@
 
 ## [Unreleased]
 
+### Added
+
+- **文档里手写的 HTML 控件有了样式**：`<kbd>` 画成按键帽（等宽、描边、
+  底边加粗、圆角）、`<details>` 的 summary 有手型光标与悬停反馈、
+  `<input type="checkbox">` 用品牌绿 `accent-color`，与 GFM 任务列表的
+  复选框观感一致。
+
+### Fixed
+
+- **手写 HTML 控件在渲染态点不动**：`<input type="checkbox">` 切不了、
+  `<details>` 展不开。CM6 处理 widget 上的 mousedown 时会 `preventDefault`
+  （为了把光标落到替换范围的边界），浏览器默认行为被吃掉 —— 上一轮只给
+  `.task-checkbox` 开了例外，文档里其它控件的标签不是那个类。现在
+  `input` / `button` / `select` / `textarea` / `label` / `details` / `summary`
+  统一告诉 CM6"这次事件我自己处理"。`<a>` 不在列：桌面壳里点击链接会让
+  WebView 导航，需要单独的处理策略。
+- **官网的 Microsoft Store 徽章只显示英语 / 简中 / 繁中**：静态图
+  `get.microsoft.com/images/<locale>%20<variant>.svg` 只提供少数语言，
+  其余 locale 请求到 404，徽章位置直接空掉。改用官方 web component
+  （`ms-store-badge`），九种语言都有官方美术。三个细节：`theme` 显式跟随
+  **站点**主题（组件的 `auto` 读系统偏好，站内切主题不生效）；语言 / 主题
+  切换时重建元素（自定义元素不保证响应属性变化）；脚本 6 秒内未注册
+  （离线或被拦）则显示纯文本兜底链接。
+- 徽章尺寸：组件的 `size` 只认 `large` / `small`，而 `large` 在内部样式里
+  硬编码 `img { height: 104px }`，放在首屏里过大。改为 `size="small"` +
+  `ms-store-badge::part(img) { height: 48px }` —— 与原来的静态图同高，
+  也是商店指南建议的可读尺寸。
+
 ### Planned
 
 - 编辑历史的版本间 diff（v0.1.2 已完成单版本对比，尚缺版本间对比）

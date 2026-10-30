@@ -1957,6 +1957,53 @@ button {
 }
 
 /*
+ * 文档里手写的 HTML 控件。
+ *
+ * 这一组不是 markdown 语法，是用户直接写在正文里的标签（`<kbd>`、
+ * `<details>`、`<input type="checkbox">`）。markdown-it 以 html:true
+ * 原样输出，此前没有任何样式：`<kbd>` 就是一段等宽字，`<details>` 的
+ * 三角标也没有手型光标 —— 看起来像"没渲染"。
+ */
+.cm-md-block kbd {
+  display: inline-block;
+  padding: 1px 5px;
+  border: 1px solid var(--md-border-strong);
+  /* 底边加粗一格：按键帽的立体感几乎全靠这条 */
+  border-bottom-width: 2px;
+  border-radius: 4px;
+  background: var(--md-surface-1);
+  font-family: var(--font-mono);
+  font-size: 0.88em;
+  line-height: 1.4;
+}
+
+.cm-md-block details {
+  margin: 0 0 12px;
+}
+
+.cm-md-block summary {
+  cursor: pointer;
+  color: var(--md-muted);
+}
+
+.cm-md-block summary:hover {
+  color: var(--md-text);
+}
+
+/*
+ * 手写 checkbox（文档里的 `<input type="checkbox">`）。
+ *
+ * 排除 `.task-checkbox`：GFM 任务列表那个是自绘的（appearance: none），
+ * 尺寸、边框、勾都由 theme.ts 控制，不能被这条通用规则掺一脚。
+ */
+.cm-md-block input[type='checkbox']:not(.task-checkbox) {
+  margin-right: 6px;
+  vertical-align: -0.1em;
+  accent-color: var(--md-link);
+  cursor: pointer;
+}
+
+/*
  * 空行压缩（v0.0.9）：段落之间的空行不再是"一整行的空白"。
  * 只压 line-height（空行没有文字，压缩不影响任何内容），
  * 光标所在的空行不加这个 class（见 addEmptyLineCollapse）。
