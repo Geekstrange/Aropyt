@@ -325,9 +325,36 @@
       display: none;
     }
 
-    .store-badge img {
-      height: 48px;
-      width: auto;
+    /*
+     * 徽章尺寸。
+     *
+     * 组件的 size 只有 large / small 两个合法值，且 large 硬编码
+     * `img { height: 104px }` —— 放在首屏里大得离谱。size="small" 本身
+     * 不带尺寸规则（用 SVG 的固有宽度），所以再用 Shadow Parts 把高度
+     * 钉在 48px：这是原来静态图的高度，也是指南建议的可读尺寸。
+     *
+     * !important 是为了压过 shadow 内部的 `img.large { height }` ——
+     * 组件脚本会按属性追加样式，没有它就取决于规则插入顺序。
+     */
+    .store-badge ms-store-badge::part(img) {
+      height: 48px !important;
+      width: auto !important;
+    }
+
+    /*
+     * 组件加载不出来时的纯文本出口（离线 / 网络被拦）。
+     * 默认 hidden，由 renderStoreBadge() 在等不到自定义元素注册时点亮。
+     */
+    .store-badge__fallback {
+      display: inline-block;
+      font-size: 14px;
+      line-height: 1.4;
+      color: var(--muted);
+      text-decoration: underline;
+    }
+
+    .store-badge__fallback[hidden] {
+      display: none;
     }
 
     .btn {
@@ -540,12 +567,22 @@
         data-i18n="hero.github">View on GitHub</a>
     </div>
     <!--
-      Store 徽章默认 hidden：上架前它的链接是 404。
-      填入 STORE_APP_ID 后由脚本点亮，见页面底部的 renderStoreBadge()。
+      Store 徽章用官方 web component（ms-store-badge），不用静态图片。
+
+      静态图（get.microsoft.com/images/<locale>%20dark.svg）只提供 en /
+      zh-cn / zh-tw 等少数几种语言，其余语言请求到的是 404 —— 徽章位置
+      直接空掉。组件自己处理语言、尺寸与明暗，我们只传 productid /
+      language / theme，九种语言都有官方美术。
+
+      默认 hidden：上架前链接是 404，填入 STORE_APP_ID 后由
+      renderStoreBadge() 点亮。
     -->
-    <a class="store-badge" id="msStoreBadge" hidden>
-      <img id="msStoreBadgeImg" alt="Get it from Microsoft Store" height="48" loading="lazy" />
-    </a>
+    <div class="store-badge" id="msStoreBadgeWrap" hidden>
+      <ms-store-badge productid="9pl9cm7qx8jf" window-mode="full" size="small" animation="on"
+        language="en-us" theme="auto"></ms-store-badge>
+      <a class="store-badge__fallback" id="msStoreBadgeFallback" hidden target="_blank"
+        rel="noopener">Get it from Microsoft Store</a>
+    </div>
     <p class="platforms" data-i18n="hero.platforms">Windows · macOS · Linux · Android</p>
   </header>
 
@@ -936,9 +973,14 @@
      * 结尾那一串）。填完不用改任何 HTML —— 语言、明暗变体都自动跟随。
      */
     const STORE_APP_ID = "9PL9CM7QX8JF";
+    /*
+     * 组件的 language 取值与站点语言不同：官方只认 en-us / zh-cn / zh-tw，
+     * 其余是**裸语言码**（ja、ko、de、fr、it、ru），不是 ja-jp 那种带地区的。
+     * 写错不会报错，只会静默回退到英文。
+     */
     const BADGE_LOCALE = {
-      en: "en-us", "zh-CN": "zh-cn", "zh-TW": "zh-tw", ja: "ja-jp",
-      ko: "ko-kr", de: "de-de", fr: "fr-fr", it: "it-it", ru: "ru-ru",
+      en: "en-us", "zh-CN": "zh-cn", "zh-TW": "zh-tw", ja: "ja",
+      ko: "ko", de: "de", fr: "fr", it: "it", ru: "ru",
     };
     const BADGE_ALT = {
       en: "Get it from Microsoft Store",
@@ -954,23 +996,50 @@
     let currentLang = "en";
 
     function renderStoreBadge() {
-      const link = document.getElementById("msStoreBadge");
-      const img = document.getElementById("msStoreBadgeImg");
-      if (!link || !img) return;
+      const wrap = document.getElementById("msStoreBadgeWrap");
+      const fallback = document.getElementById("msStoreBadgeFallback");
+      if (!wrap || !fallback) return;
       if (!STORE_APP_ID) {
-        link.hidden = true;
+        wrap.hidden = true;
         return;
       }
-      const locale = BADGE_LOCALE[currentLang] || "en-us";
+
+      const language = BADGE_LOCALE[currentLang] || "en-us";
       /*
-       * 变体要跟着站点主题走：指南的建议是浅色背景配深色徽章、深色背景配
-       * 浅色徽章 —— 反了之后徽章的描边会和背景糊在一起，看着像张脏图。
+       * theme 要跟着**站点**主题走，不能用组件的 auto —— auto 读的是
+       * 操作系统偏好，用户在站内切了主题而系统没变时，徽章会留在旧配色上。
+       * 指南的建议是浅色背景配深色徽章、深色背景配浅色徽章。
        */
-      const variant = document.documentElement.getAttribute("data-theme") === "light" ? "dark" : "light";
-      img.src = "https://get.microsoft.com/images/" + locale + "%20" + variant + ".svg";
-      img.alt = BADGE_ALT[currentLang] || BADGE_ALT.en;
-      link.href = "https://apps.microsoft.com/detail/" + STORE_APP_ID;
-      link.hidden = false;
+      const theme = document.documentElement.getAttribute("data-theme") === "light" ? "light" : "dark";
+
+      /*
+       * 每次渲染重建元素，而不是改属性：自定义元素可能只在
+       * connectedCallback 里读一次属性，改 attribute 不保证它重画。
+       * 重建的代价是一个徽章节点，可以忽略。
+       */
+      const next = document.createElement("ms-store-badge");
+      next.setAttribute("productid", STORE_APP_ID.toLowerCase());
+      next.setAttribute("window-mode", "full");
+      next.setAttribute("size", "small");
+      next.setAttribute("animation", "on");
+      next.setAttribute("language", language);
+      next.setAttribute("theme", theme);
+      const existing = wrap.querySelector("ms-store-badge");
+      if (existing) existing.replaceWith(next);
+      else wrap.prepend(next);
+
+      fallback.textContent = BADGE_ALT[currentLang] || BADGE_ALT.en;
+      fallback.href = "https://apps.microsoft.com/detail/" + STORE_APP_ID;
+      fallback.hidden = true;
+      wrap.hidden = false;
+
+      /*
+       * 组件脚本来自 get.microsoft.com，离线或网络不通时它会一直不注册。
+       * 6 秒还没等到就点亮纯文本出口 —— 否则首屏那块就是一个空白。
+       */
+      window.setTimeout(function () {
+        if (!window.customElements.get("ms-store-badge")) fallback.hidden = false;
+      }, 6000);
     }
 
     function detectLang() {
@@ -1085,6 +1154,12 @@
 
     applyLang(detectLang());
   </script>
+  <!--
+    Microsoft Store 徽章的官方 web component。
+    module 默认 defer，不阻塞首屏；加载失败时 renderStoreBadge() 会在
+    6 秒后点亮纯文本兜底链接。
+  -->
+  <script type="module" src="https://get.microsoft.com/badge/ms-store-badge.bundled.js"></script>
 </body>
 
 </html>
