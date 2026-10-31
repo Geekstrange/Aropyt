@@ -1,524 +1,712 @@
 # Changelog
 
-本项目的版本变更记录，格式参考 [Keep a Changelog](https://keepachangelog.com/)，
-版本号遵循 [语义化版本](https://semver.org/lang/zh-CN/)。
+All notable changes to this project are documented here. The format follows
+[Keep a Changelog](https://keepachangelog.com/), and versions follow
+[Semantic Versioning](https://semver.org/).
 
-单版本的发布公告（GitHub Release 正文）在 `docs/releases/<tag>.md`，
-这里保留所有版本的累积视图。
+Release notes for a single version (the GitHub Release body) live in
+`docs/releases/<tag>.md`; this file keeps the cumulative view of every
+release.
 
-## [Unreleased]
+## [0.1.7] - 2026-10-31
 
+> Release notes: `docs/releases/v0.1.8.md`.
+> 
 ### Fixed
 
-- **按退格会删掉整个块**：块在渲染态是一个**整体替换区间**，区间内部放不了
-  光标 —— 光标紧贴块边界（尤其是块尾换行那一格）时，`Backspace` / `Delete`
-  会把整块当成一个字符删掉。用户看到的是"点一下、按退格，整块没了"，
-  ToDo 列表最显眼，但段落、标题、代码块同样存在。
-  现在判定从"光标所在行落在块内"改为 `head ∈ [from-1, to+1]`：紧贴边界
-  时块切回源码，删的就只是普通字符。`to` 侧特意放宽一格 —— 块节点的
-  `to` 包含尾部换行，用户在"块后空行行首"按退格时 `head` 正好等于 `to`，
-  删的却是块里的内容（实测正是这一格导致整列表消失）。
-  代价：光标停在块后空行的行首时，上一个块会以源码形式显示 —— 那是
-  "退格会命中它"的位置，显形是必要的。
+- **Backspace deleted an entire block**: a rendered block is one indivisible
+  replacement range, so no cursor fits inside it. With the cursor hugging the
+  boundary — especially the cell holding the block's trailing newline —
+  `Backspace` / `Delete` treated the whole block as a single character. What
+  users saw was "click once, press backspace, the block is gone"; task lists
+  made it obvious, but paragraphs, headings and code blocks behaved the same.
+  The test is now positional (`head ∈ [from-1, to+1]`) instead of "the
+  cursor's line falls inside the block". The `to` side needs the extra
+  position because a block node's `to` includes the trailing newline —
+  pressing backspace at the start of the blank line after the block puts
+  `head` exactly at `to`, yet what gets deleted is the block's own content
+  (that single cell is what wiped the whole list in testing).
+  Cost: when the cursor sits at the start of the blank line after a block,
+  that block shows as source — which is precisely the position where
+  backspace would hit it, so revealing it is necessary.
 
-- **切换文档后按 Ctrl+Z 会退回上一个文档**：`replaceDocument` 用一次
-  `dispatch` 整篇替换，而这一步本身进了撤销历史 —— 在 B 文档里按 Ctrl+Z
-  撤销的正是"把 A 换成 B"，于是内容变回 **A**、标签却还是 B；一直按会
-  一路退回之前打开过的每一个文档。现在这次替换带两个注解：
-  `isolateHistory.of('before')` 在替换**之前**插一个历史边界（旧文档的
-  编辑记录不会再作用到新文档上），`Transaction.addToHistory.of(false)`
-  让替换本身不入栈。文档**内部**的撤销不受影响（实测：输入后 Ctrl+Z
-  正常回退，再按一次停在本文档原文，不会跳回旧文档）。
+- **Ctrl+Z after switching documents restored the previous document**:
+  `replaceDocument` replaced the whole text in one `dispatch`, and that step
+  itself entered the undo history — pressing Ctrl+Z inside document B undid
+  "swap A for B", so the content became **A** while the tab still said B, and
+  further presses walked back through every document opened before. The
+  replace now carries two annotations: `isolateHistory.of('before')` inserts
+  a history boundary *before* the swap (the old document's edits can no
+  longer map onto the new one), and `Transaction.addToHistory.of(false)` keeps
+  the replace itself out of the stack. Undo *inside* a document is unaffected
+  (verified: type, undo, undo again — it stops at the document's own text and
+  never jumps to the previous file).
 
-- **文件树的键盘操作不可靠，而且会留下一个高亮框**：三个问题叠在一起 ——
-  1）键盘导航（`j`/`k`、↑↓、Enter）只认 `focusedRow`，而它原来仅在
-     鼠标点击 / 键盘移动时赋值。用 Tab 或程序聚焦进树时它是 `null`，
-     ↑↓ 从第 0 行重来、Enter 落到同一个文件 —— 表现为"用 Enter 打开一个
-     之后就打不开第二个了"；
-  2）打开文件会 `refresh()` 重建整棵树，旧节点被移除、焦点回到 `<body>`，
-     之后 `keydown` 到不了 `.explorer-tree`，整段键盘通路失效；
-  3）`--focused` 原来画的是 outline 框，而且焦点离开后框还挂着 ——
-     打开文件后列表里一直吊着一个框，看起来像"这一行被选中了"。
-  现在：`focusin` 覆盖所有聚焦入口（Tab / 点击 / 程序），点行即选中；
-  刷新后按 `data-path` 找回键盘光标，并在"刷新前焦点本来就在树里"时把
-  焦点还给容器（否则打开文件会把焦点从编辑器抢走）；Enter 在没有光标行
-  时兜底到第一行；光标指示改成**左侧 2px 竖条 + 淡背景**并用
-  `:focus-within` 限定 —— 焦点不在树里就不显示。
-  焦点恢复的落点也从"容器"改成"具体那一行"：还到容器上时，按 `Tab`
-  会从容器内第一个可聚焦元素重来（"打开文件后继续用 Tab 总是从第一个
-  开始"），落回原行才会接着往下走。
+- **File-tree keyboard navigation was unreliable and left a highlight box**:
+  three problems stacked up. 1) Navigation (`j`/`k`, ↑↓, Enter) only consulted
+  `focusedRow`, which was assigned solely by mouse clicks and keyboard moves;
+  focus entering the tree via Tab or programmatically left it `null`, so ↑↓
+  restarted from row 0 and Enter landed on the same file — "opens one, can't
+  open the second". 2) Opening a file calls `refresh()`, which rebuilds the
+  whole tree; the old nodes are removed, focus falls back to `<body>`, and
+  `keydown` can no longer reach `.explorer-tree`. 3) `--focused` drew an
+  outline box that stayed behind after focus left the tree, so the list kept
+  showing a box that looked like "this row is selected".
+  Now: `focusin` covers every focus entry point (Tab / click / programmatic)
+  and clicking a row selects it; the cursor is restored by `data-path` after a
+  rebuild, and focus returns to the container only if it was inside the tree
+  before the rebuild (opening a file must not steal focus from the editor);
+  Enter falls back to the first row when nothing is focused; the indicator is
+  a **2px inset bar plus a faint background**, scoped by `:focus-within` so it
+  disappears once focus leaves the tree.
+  The restore target also moved from "container" to "that specific row":
+  container focus makes `Tab` restart at the first focusable child ("after
+  opening a file, Tab always starts from the first item"), while landing back
+  on the row continues from there.
 
 ### Removed
 
-- **`Icons.tsx` 里的手绘图标全部删除**：`UI_ICONS` 那 7 个（`menu` / `close` /
-  `eye` / `code` / `sun` / `moon` / `autoTheme`）在源码里**零引用** ——
-  对应的按钮后来要么改用文字，要么切到了 `icon/*.svg` 生成的那一套。
-  现在图标只有一个来源（`icon/` + `scripts/make-toolbar-icons.mjs`），
-  不会再有"两套坐标系各画一份"的局面；未知图标名仍渲染**同尺寸空 span**
-  （按钮宽度与对齐依赖这个占位），兜底从手绘的 `code` 换成生成物里的
-  `defaultPlugin`。
-- `check:icons` 同步：删掉两条基于 `UI_ICONS` 的断言（解析手绘集合、
-  兜底项存在），"白贴"检查新增显式 `PENDING_ICONS` 名单 —— `export` 与
-  四个文件类型图标尚未接线，登记在这一处，而不是让闸门长期红着被无视。
+- **Every hand-drawn icon in `Icons.tsx` is gone**: the seven entries in
+  `UI_ICONS` (`menu` / `close` / `eye` / `code` / `sun` / `moon` /
+  `autoTheme`) had **zero references** — the buttons using them now show text,
+  or moved to the generated `icon/*.svg` set. Icons now have a single source
+  (`icon/` + `scripts/make-toolbar-icons.mjs`), so "two coordinate systems,
+  one drawn by hand" cannot come back. Unknown names still render an **empty
+  span of the same size** (button width and alignment depend on it); the
+  fallback moved from the hand-drawn `code` to the generated `defaultPlugin`.
+- `check:icons` follows: its two `UI_ICONS` assertions (parse the hand-drawn
+  set, the fallback exists) are gone, and the "pasted but not wired" check
+  gained an explicit `PENDING_ICONS` list — `export` and four file-type icons
+  are not connected yet, recorded in one place instead of leaving the gate red
+  and ignored.
 
 ### Fixed
 
-- **Fountain 标题页只认"键 + 同行值"**：Fountain 规范允许值写在**下一行并
-  缩进**（`Notes:` 的常见写法），而判定条件要求同行有非空白字符 ——
-  `Notes:` 那行被当成正文，它下面几行全大写的草稿说明还可能被误判成
-  角色名，把后文连带当成对白。另外标题页样式只有斜体 + 半透明，没有居中，
-  看起来不像封面。
-  现在：只认规范的八个键（Title / Credit / Author / Source / Draft date /
-  Contact / Notes / Copyright —— 不再用"任意 `Xxx:`"，否则正文里的
-  `Name: Alice` 会被整行弱化）；键后无值时吸收后续缩进行；`Title:` 单独
-  加重（1.4em、粗体、不透明）并在下方留白，其余元数据行居中弱化。
-  **键名本身被隐藏**（行内 `Decoration.replace`）：页面上只剩
-  `Big Fish` / `written by` / `John August` —— 有键名像表单，没有才像封面。
-  三条约束：只替换行内前缀（CM6 禁止 ViewPlugin 跨行替换）；值部分为空时
-  不替换（`Notes:` 只有键，藏了就整行空白）；光标落在前缀内部或值开头时
-  露出源码（否则在里面按 Backspace 会把整段前缀当成一个字符删掉）。
-  光标停在**行首**不算贴近 —— 否则打开文档时光标在 0、第一行永远带着
-  `Title:`。
-- **`.tex` 文档导出只剩一行文件名**：`export_document` 把读入格式写死成
-  `markdown`，于是 LaTeX 源码里的 `\documentclass` / `\section` / `\begin{}`
-  全被当成普通文字吞掉 —— 实测 `test/basic-test.tex`（66 行）导出成 PDF
-  只剩一行 `% basic-test.tex`。现在新增 `source` 参数（`--from` 白名单：
-  `markdown` / `latex`），前端按扩展名传：`.tex` / `.latex` / `.ltx` →
-  `latex`，其余 → `markdown`。
-  顺带修好随之暴露的第二个坑：LaTeX 的 `\ref{}` 会被 pandoc 转成 typst 的
-  `@sec:…` 交叉引用，而 typst 要求被引用的标题**有编号**，否则直接报
-  `cannot reference heading without numbering`。latex 源现在带
-  `--number-sections`（LaTeX 文档本来默认就编号）。
-  同一份文件实测：markdown 读入 → 7984 字节（一行）；latex 读入 + 编号
-  → **56788 字节**（内容完整）。
-- **PDF 导出报 `path contains invalid component "C:"`**：`--pdf-engine` 传的是
-  **绝对路径**（设置里指定了 `C:\Opt\typst.exe`，它不在 PATH 上）。pandoc 用
-  `\\?\` 长路径前缀调起引擎，typst 因此把它**自己下载的图片缓存**
-  （`C:\…\Temp\media-…\<sha1>.png`）当成**相对路径**解析，直接失败。
-  同一台机器、同一个 typst 0.15.1 实测：`--pdf-engine typst`（名字）→ 成功，
-  `--pdf-engine=C:\Opt\typst.exe`（绝对路径）→ 必炸，报错逐字一致。
-  **与中文无关**：中文 PDF 实测 11KB、嵌入中文字体、退出码 0；docx / html /
-  rtf 也都不受影响 —— 只有 PDF 有引擎调用这一步。
-  也解释了"全英就能成功"：那份文档里没有图，typst 不会去加载缓存路径。
-  现在把引擎所在目录 **prepend 进子进程 PATH、只传名字**（prepend 而非
-  append：用户显式指定的那份应该优先）。另加一层防御：PDF 导出前把
-  `](C:/…)` / `](D:\…)` 改写成 `](file:///C:/…)`（反斜杠一并转正斜杠），
-  覆盖"文档里写死本地绝对路径"的情况 —— 只对 PDF 生效，因为 docx / html
-  里塞 `file:///` 链接，发给别人打不开，反而更糟。
-- **RTF 导出中文乱码**：`export_document` 没传 `--standalone`，pandoc 输出的是
-  **片段**而不是完整文档 —— RTF 以 `{\pard …}` 开头、没有 `{\rtf1\ansi…}`
-  文件头（实测：416 字节 vs 加 `-s` 后的 862 字节），任何 RTF 阅读器都会
-  把它当纯文本打开，于是 `\u20013 ?` 这类 Unicode 转义原样显示，看起来就是
-  乱码。**中文本身不是原因**：`\uN?` 正是 RTF 表示非 ASCII 字符的正确写法。
-  现在统一加 `--standalone`，HTML 一并受益（此前缺 `<!DOCTYPE>` 与
-  `<meta charset>`）；docx / epub 是容器格式，加不加无差别。
-- **导出图标缺了一半**：`icon/export.svg` 是「一个 `<path>` + 一个
-  `<polygon>`」（箭头的三角形用 polygon 画），而图标生成器只提取
-  `<path>` —— 生成出来的图标只剩信封轮廓、没有箭头。
-  生成器现在同时提取 `<polygon>`，`export` 的产物变成 path + polygon 两个图形。
+- **Fountain title pages only accepted "key plus value on the same line"**:
+  the spec allows the value on the following **indented** line (the usual way
+  to write `Notes:`), but the test demanded a non-space character after the
+  colon — so `Notes:` fell through as body text, and the all-caps draft notes
+  beneath it could be mistaken for a character name, turning the rest of the
+  script into dialogue. The styling was also just italic plus 70% opacity,
+  with no centring, so it did not read as a cover.
+  Now: only the eight keys in the spec are recognised (Title / Credit /
+  Author / Source / Draft date / Contact / Notes / Copyright — no longer "any
+  `Xxx:`", which also dimmed lines like `Name: Alice` written inside a
+  scene); a key with no value absorbs the indented lines that follow;
+  `Title:` is weighted separately (1.4em, bold, opaque) with space beneath it,
+  and the remaining metadata lines are centred and dimmed.
+  **The key names themselves are hidden** via an inline
+  `Decoration.replace`: the page shows `Big Fish` / `written by` /
+  `John August`. Keys visible read as a form; without them it reads as a
+  cover. Three constraints: the replace only covers a prefix within one line
+  (CM6 forbids ViewPlugin replacements spanning line breaks); a key whose
+  value is empty is left alone (`Notes:` alone would become a blank,
+  unclickable line); and the prefix reappears while the cursor is inside it or
+  at the start of the value — otherwise Backspace there deletes the whole
+  prefix as one character. A cursor at the very **start of the line** does not
+  count as inside, or the first line would keep showing `Title:` every time a
+  document opens with the selection at position 0.
+- **`.tex` documents exported as a single line of file name**:
+  `export_document` hard-coded the reader as `markdown`, so `\documentclass` /
+  `\section` / `\begin{}` were swallowed as ordinary text — `test/basic-test.tex`
+  (66 lines) exported as one line, `% basic-test.tex`. A `source` parameter now
+  selects the reader (`markdown` / `latex`, whitelisted), and the front end
+  picks it by extension: `.tex` / `.latex` / `.ltx` → `latex`, everything else
+  → `markdown`.
+  That exposed a second problem: LaTeX `\ref{}` becomes a typst `@sec:…`
+  cross-reference, and typst refuses to reference a heading **without
+  numbering** (`cannot reference heading without numbering`). Latex sources
+  now pass `--number-sections` (LaTeX numbers sections by default anyway).
+  Same file: markdown reader → 7 984 bytes (one line); latex reader with
+  numbering → **56 788 bytes** (complete).
+- **PDF export failed with `path contains invalid component "C:"`**:
+  `--pdf-engine` was given an **absolute path** (the user had pointed it at
+  `C:\Opt\typst.exe`, which is not on PATH). pandoc invokes the engine through
+  a `\\?\` long-path prefix, so typst parsed the image it had **downloaded and
+  cached** (`C:\…\Temp\media-…\<sha1>.png`) as a **relative** path and gave
+  up. Verified on the same machine with the same typst 0.15.1:
+  `--pdf-engine typst` (bare name) succeeds, `--pdf-engine=C:\Opt\typst.exe`
+  fails with the same message every time. **Nothing to do with CJK**: a
+  Chinese PDF produced 11 KB with an embedded CJK font and exit code 0, and
+  docx / html / rtf were never affected — only PDF has an engine invocation.
+  It also explains "English documents export fine": that document had no
+  images, so typst never touched the cache path.
+  The engine's directory is now **prepended to the child PATH** and only the
+  bare name is passed (prepend, not append — the explicitly configured copy
+  should win). A second layer: before PDF export, `](C:/…)` / `](D:\…)` are
+  rewritten to `](file:///C:/…)` with backslashes normalised, covering
+  documents that hard-code local absolute paths. PDF only — a `file:///` link
+  inside a docx or html handed to someone else is worse than useless.
+- **RTF exported as mojibake**: `export_document` never passed
+  `--standalone`, so pandoc emitted a **fragment** rather than a document. The
+  RTF began at `{\pard …}` with no `{\rtf1\ansi…}` header (416 bytes versus 862
+  with `-s`), so every RTF reader opened it as plain text and the
+  `\u20013 ?` Unicode escapes showed up verbatim — which reads as garbled
+  Chinese. **The Chinese was never the problem**: `\uN?` is exactly how RTF
+  represents non-ASCII. `--standalone` is now always passed; HTML benefits
+  too (it previously lacked `<!DOCTYPE>` and `<meta charset>`), while docx and
+  epub are container formats and unaffected.
+- **The export icon was missing half of itself**: `icon/export.svg` contains
+  one `<path>` plus one `<polygon>` (the arrow head is a polygon), and the
+  icon generator only extracted `<path>` — so the generated icon kept the
+  envelope outline and dropped the arrow. The generator now extracts
+  `<polygon>` as well; `export` renders both shapes.
 
 ### Changed
 
-- **导出按钮挪到保存右边**：原先硬编码在工具栏右侧（`toolbar-spacer` 之后），
-  现在改由 `aropyt.file` 插件贡献（`aropyt.file.export`，group `1`、
-  order `4`），位置紧跟「保存」。实现仍在宿主（`aropyt.export.run`）——
-  插件拿不到原生通道，调不了 pandoc。这样"挨着保存"由菜单的
-  group/order 决定，而不是靠 JSX 里的摆放顺序。
-- **状态栏字数统计统一走 `countStats`**：原来 `App.tsx` 自己写了一遍正则
-  （"词"只算英文、"字"只算中文），与 core 的口径不同 —— 同一份文档会在
-  两个地方得到两个数字。现在统一成：词 = 西文词 + 中日文字数，
-  字 = 非空白字符数（与 Typora 一致）。**数字会与旧版不同**。
-- `countStats` 从 `markdown.ts` 挪到新的 `text-stats.ts` 并从包根入口导出：
-  `markdown.ts` 刻意不进首屏预算（带 markdown-it + highlight.js），
-  而状态栏每次重渲染都要算字数。
-- `safeJsonParse` 接上了两处裸 `JSON.parse`（视图折叠状态、旧版插件禁用
-  名单）：它们本来就是"解析失败就当没写过"，靠外层 try 兜着；
-  现在把意图写进函数名。
+- **The export button moved next to Save**: it used to be hard-coded on the
+  right of the toolbar (after `toolbar-spacer`); it is now contributed by the
+  `aropyt.file` plugin (`aropyt.file.export`, group `1`, order `4`), directly
+  after Save. The implementation stays in the host (`aropyt.export.run`) —
+  plugins have no native channel and cannot call pandoc. "Next to Save" is
+  therefore decided by the menu's group/order, not by JSX placement.
+- **Status-bar word counts go through `countStats`**: `App.tsx` ran its own
+  regexes ("words" counted English only, "characters" counted CJK only),
+  which disagreed with core — the same document produced two different numbers
+  in two places. Both now follow core: words = Latin words + CJK characters,
+  characters = non-whitespace characters (matching Typora). **Numbers will
+  differ from earlier versions.**
+- `countStats` moved from `markdown.ts` to a new `text-stats.ts` and is
+  exported from the package root: `markdown.ts` deliberately stays out of the
+  first-paint budget (it pulls in markdown-it and highlight.js), while the
+  status bar recomputes counts on every render.
+- `safeJsonParse` replaced two bare `JSON.parse` sites (collapsed view state,
+  the legacy plugin-disable list). Both already meant "if it does not parse,
+  treat it as absent" and leaned on an outer try; the function name now says
+  so.
 
 ### Removed
 
-- **`commands.ts` 里 15 个旧编辑命令**：`toggleBold` / `toggleHeading` /
-  `toggleItalic` / `toggleTaskList` / `insertLink` / `insertTable` /
-  `indentSelection` … 每个都在自己的实现里直接 dispatch 事务。插件早已
-  统一走 `EditorApi.wrapSelection` / `toggleLinePrefix` / `replaceSelection`
-  （有守卫、能归因到插件、覆盖同样的行为），这些函数于是全部零引用。
-  只留 `toggleLinePrefix` 与 `toggleWrap` —— `EditorApi` 正是拿它们实现的。
-  文件从 216 行降到 116 行。
+- **15 legacy editing commands in `commands.ts`**: `toggleBold` /
+  `toggleHeading` / `toggleItalic` / `toggleTaskList` / `insertLink` /
+  `insertTable` / `indentSelection` … each dispatched its own transactions.
+  Plugins had already moved to `EditorApi.wrapSelection` /
+  `toggleLinePrefix` / `replaceSelection` (guarded, attributable to a plugin,
+  same behaviour), leaving every one of these without a reference. Only
+  `toggleLinePrefix` and `toggleWrap` remain — `EditorApi` is built on them.
+  The file went from 216 to 116 lines.
 
 ### Added
 
-- **全局兜底守卫接到启动流程**（`installGlobalGuards`，`observeOnly`）：
-  只记录、不拦截 —— 未捕获异常归入失败计数并留一条 `uncaught` 轨迹。
-  它与 `installDebugLog` 分工不同：后者记"发生了什么"（明细进面板），
-  前者记"我们没预料到的事发生了"（计数 + 轨迹）。
-- **空闲预热 katex / mermaid**：首次插入公式或图表时不必再等一次动态
-  import；用 `onIdle` 而不是启动即加载，避免和"打开第一个文件"抢带宽。
-- 诊断报告新增「失败动作」段：失败项本来混在 30 条轨迹里要一行行扫，
-  单独提出来让维护者第一眼看到是哪一步炸的；调试面板的「清空」连带
-  清空轨迹（只清日志会留下上一轮的记录）。
+- **Document export (docx / pdf / html / odt / epub / rtf)**: the toolbar's
+  **Export…** button (right next to Save) asks for a format, asks for a
+  location, and hands the conversion to **pandoc**. Content goes in over
+  **stdin** (no temp file, so no path escaping to get wrong and nothing left
+  behind on failure) and `--resource-path` points at the workspace root —
+  without it `![](assets/a.png)` arrives in the docx as a broken image. A
+  failed conversion reports pandoc's **stderr verbatim** (missing images and
+  unclosed fenced divs are only explicable there) with a 120-second timeout as
+  the backstop.
+  **PDF runs typst** (`--pdf-engine=typst`): a single ~30 MB binary, two
+  orders of magnitude lighter than TeX Live. **The engine is installed by the
+  user and never bundled** (product decision); a missing typst disables PDF
+  alone while every other format keeps working, and the check happens
+  **before** the save dialog — a late failure would already have created a
+  0-byte file. **No** MediaWiki / reST / OPML: they are interchange formats for
+  specific downstream systems rather than documents people read (most wikis
+  take markdown directly), yet each would take a slot in the menu.
+- **pandoc and typst paths can be set by hand**: a new "Export tools" section
+  in Settings, with a Browse button for each, the detected version shown live
+  beside it, and an immediate re-probe. An empty path means "search PATH and
+  the usual install locations" (Program Files, LocalAppData, cargo bin,
+  homebrew, /usr/local/bin). Changing a path takes effect without a restart,
+  and tool discovery is shared between pandoc and typst (`resolve_tool`).
+- **Global failure guard wired into startup** (`installGlobalGuards`,
+  `observeOnly`): records without intercepting — uncaught errors go into the
+  failure count and leave an `uncaught` trace. It differs from
+  `installDebugLog` by role: that one records what happened (detail into the
+  panel), this one records that something we did not anticipate happened
+  (count plus trace).
+- **Idle preloading of katex and mermaid**: the first formula or diagram no
+  longer waits for a dynamic import. `onIdle` rather than load-at-startup, so
+  it does not compete with "open the first file" for bandwidth.
+- The diagnostics report gained a **failed actions** section: failures used to
+  be mixed into the 30-line timeline and had to be scanned line by line; they
+  are pulled out so a maintainer sees which step broke first. The debug panel's
+  Clear button now clears the timeline too (clearing only the log left the
+  previous run's traces behind).
 
 ### Planned
 
-- 编辑历史的版本间 diff（v0.1.2 已完成单版本对比，尚缺版本间对比）
-- 工具栏在触屏上的点按目标（当前约 26px，低于 44px 建议值）
-- 文件导出（docx / html / epub）：首选 pandoc，PDF 需另配 typst 之类引擎
+- Version-to-version diff in edit history (v0.1.2 shipped single-version
+  comparison; comparing two versions is still missing)
+- Touch targets in the toolbar (about 26px today, below the 44px guideline)
+- WebDAV sync: the user brings their own server; the client lands in `v0.1.9`
 
 ## [0.1.7] - 2026-10-30
 
-> 发布公告见 `docs/releases/v0.1.7.md`。
+> Release notes: `docs/releases/v0.1.7.md`.
 
 ### Added
 
-- **文件导出（docx / pdf / html / odt / epub / rtf）**：工具栏「导出…」
-  （就在「保存」右边）→ 选格式 → 选位置，转换由 **pandoc** 完成。内容经
-  **stdin** 传入（不落临时文件，也就没有路径转义与清理问题），
-  `--resource-path` 指向工作区根 —— 否则 `![](assets/a.png)` 在 docx 里
-  全是断图。失败时把 pandoc 的 **stderr 原样**带出来（缺图、fenced div
-  未闭合这类问题只有它说得清），并对 120 秒超时兜底。
-  **PDF 走 typst**（`--pdf-engine=typst`）：单文件约 30MB，比 TeX Live
-  轻两个数量级。**引擎由用户自行安装，不随应用打包**（产品决策）；
-  缺 typst 时只有 PDF 不可用、其它格式照常，且在选择保存路径**之前**
-  就拦下 —— 否则用户选完位置、等几秒才被告知缺引擎，磁盘上还会留个空文件。
-  **不含** MediaWiki / reST / OPML：它们是"特定下游系统的交换格式"，
-  不是给人读的文档（wiki 大多直接吃 markdown），却要在菜单里占三个位置。
-- **pandoc / typst 路径可在设置里手动指定**：设置页新增「导出工具」一节，
-  两个「浏览…」按钮直接选可执行文件，旁边实时显示探测到的版本；路径留空
-  则自动查 PATH 与常见安装位置（Program Files、LocalAppData、cargo bin、
-  homebrew、/usr/local/bin）。改完路径**立刻重探**，不需要重启。
-  探测逻辑泛化为 `resolve_tool`（pandoc / typst 共用）。
-- **`Ctrl/Cmd+Shift+O` 打开工作区**：与工具栏「打开文件夹」走同一个命令
-  （`aropyt.file.pickWorkspace`），并经 `runCommand` 复用那层"把真实错误
-  带出来"的处理 —— 选目录失败时用户能看到原因，而不是静默无反应。
-- **工具栏可整体隐藏**：`Ctrl/Cmd+Shift+H` 切换，或设置页「显示工具栏」开关。
-  隐藏后工具栏上的全部按钮（打开文件、主题、源码模式…）一并消失，
-  `.app-main` 是纵向 flex，编辑区自动顶到标签栏下沿（实测 +35px，无空位）。
-  状态存进 `settings.toolbar.open`，重启保持。
-  恢复入口**只有两个**：这个快捷键与设置页开关 —— 工具栏自己没了，
-  别再顺手删掉其中一个。
-- **围栏块点击就地编辑（代码块与 mermaid）**：渲染态里点一下代码块或图表，
-  它自己变成编辑框（预填源码、自动全选）。**失焦即提交**，`Esc` 放弃，
-  `Ctrl/Cmd+Enter` 也可提交，`Tab` 插入两个空格。没有确定/取消按钮 ——
-  点走就是接受，不必先扫过一排按钮；内容没改动时不会产生空的撤销步。
-  原来的交互是"点一下整块变回源码"：为了改一行要先看满屏的反引号与
-  fence 语言标记。插入符落在**文末**而不是全选 —— 全选意味着"点一下、
-  敲第一个字符，原有内容整段消失"。
-- **mermaid 编辑时带实时预览**：编辑区比代码块更高（9 行起）并撑满宽度，
-  下方一块预览区随输入更新（260ms 防抖）。渲染串行化 + 序号丢弃过期结果，
-  快速输入时不会被先返回的旧图覆盖；语法错误直接把 mermaid 的报错显示在
-  预览区，而不是留一块空白。
-- **文档里手写的 HTML 控件有了样式**：`<kbd>` 画成按键帽（等宽、描边、
-  底边加粗、圆角）、`<details>` 的 summary 有手型光标与悬停反馈、
-  `<input type="checkbox">` 用品牌绿 `accent-color`，与 GFM 任务列表的
-  复选框观感一致。
+- **`Ctrl/Cmd+Shift+O` opens a workspace**: runs the same command as the
+  toolbar's "Open folder" (`aropyt.file.pickWorkspace`) through `runCommand`,
+  so the layer that surfaces real error messages is reused — a failed pick
+  tells you why instead of silently doing nothing.
+- **The toolbar can be hidden entirely**: `Ctrl/Cmd+Shift+H`, or the "Show
+  toolbar" switch in Settings. Hiding it also removes every button on it
+  (open file, theme, source mode…); `.app-main` is a vertical flex container,
+  so the editor moves up to the bottom edge of the tab bar (measured +35px,
+  no gap). The state lives in `settings.toolbar.open` and survives a restart.
+  There are **exactly two** ways back: this shortcut and the Settings switch —
+  the toolbar's own buttons are gone by definition, so don't casually delete
+  either one.
+- **Click a fenced block to edit it in place (code and mermaid)**: in rendered
+  mode, clicking a code block or diagram turns it into an editor (source
+  pre-filled, all selected). **Blur commits**, `Esc` discards,
+  `Ctrl/Cmd+Enter` also commits, and `Tab` inserts two spaces. No confirm or
+  cancel row — clicking away is acceptance, so you don't have to scan past a
+  row of buttons first, and unchanged content produces no empty undo step.
+  The old interaction was "click once and the whole block turns back into
+  source": to change one line you had to look at a screenful of backticks and
+  the fence language tag. The caret lands at the **end of the text** instead
+  of selecting everything — select-all means "click once, type one character,
+  and the entire original content disappears".
+- **mermaid editing comes with a live preview**: the editor is taller than
+  the code-block one (nine rows and up) and full width, with a preview pane
+  beneath it that updates as you type (260 ms debounce). Rendering is
+  serialised and stale results are dropped by sequence number, so fast typing
+  is never overwritten by an earlier render that returns late; syntax errors
+  show mermaid's own message in the preview pane instead of leaving a blank
+  box.
+- **Hand-written HTML controls in documents got styles**: `<kbd>` is drawn as
+  a keycap (monospace, outlined, thicker bottom edge, rounded), `<details>`
+  summaries get a pointer cursor and hover feedback, and
+  `<input type="checkbox">` uses the brand green via `accent-color`, matching
+  the look of GFM task-list checkboxes.
 
 ### Fixed
 
-- **手写 HTML 控件在渲染态点不动**：`<input type="checkbox">` 切不了、
-  `<details>` 展不开。CM6 处理 widget 上的 mousedown 时会 `preventDefault`
-  （为了把光标落到替换范围的边界），浏览器默认行为被吃掉 —— 上一轮只给
-  `.task-checkbox` 开了例外，文档里其它控件的标签不是那个类。现在
-  `input` / `button` / `select` / `textarea` / `label` / `details` / `summary`
-  统一告诉 CM6"这次事件我自己处理"。`<a>` 不在列：桌面壳里点击链接会让
-  WebView 导航，需要单独的处理策略。
-- **官网的 Microsoft Store 徽章只显示英语 / 简中 / 繁中**：静态图
-  `get.microsoft.com/images/<locale>%20<variant>.svg` 只提供少数语言，
-  其余 locale 请求到 404，徽章位置直接空掉。改用官方 web component
-  （`ms-store-badge`），九种语言都有官方美术。三个细节：`theme` 显式跟随
-  **站点**主题（组件的 `auto` 读系统偏好，站内切主题不生效）；语言 / 主题
-  切换时重建元素（自定义元素不保证响应属性变化）；脚本 6 秒内未注册
-  （离线或被拦）则显示纯文本兜底链接。
-- 徽章尺寸：组件的 `size` 只认 `large` / `small`，没有"中号"——`large` 在
-  内部样式里硬编码 `img { height: 104px }`（首屏里过大），`small` 又不带
-  尺寸规则、素材本身偏小（想放到 48px 得靠放大，位图放大会糊）。
-  现在**保留 `size="large"`**（素材是最大份的），只用
-  `ms-store-badge::part(img) { height: 48px }` 把高度压到与原来的静态图
-  同高 —— 缩小永远比放大清晰，48px 也是商店指南建议的可读尺寸。
+- **Hand-written HTML controls ignored clicks in rendered mode**:
+  `<input type="checkbox">` would not toggle and `<details>` would not open.
+  CM6 calls `preventDefault` on mousedown over a widget (to place the caret at
+  the edge of the replaced range), swallowing the browser's default
+  behaviour — the previous round exempted only `.task-checkbox`, and the other
+  controls in documents do not carry that class. Now `input` / `button` /
+  `select` / `textarea` / `label` / `details` / `summary` all tell CM6 "this
+  event is mine". `<a>` is deliberately not in the list: in the desktop shell
+  clicking a link navigates the WebView, which needs its own policy.
+- **The Microsoft Store badge only rendered English / Simplified / Traditional
+  Chinese**: the static image at
+  `get.microsoft.com/images/<locale>%20<variant>.svg` ships only a few
+  locales, everything else 404s and the slot goes blank. It now uses the
+  official web component (`ms-store-badge`), which has artwork for all nine
+  languages. Three details: `theme` explicitly follows the **site** theme
+  (the component's `auto` reads the OS preference, so switching theme inside
+  the site would not apply); the element is rebuilt on language and theme
+  changes (custom elements do not guarantee reacting to attribute changes);
+  and if the script has not registered within six seconds (offline or
+  blocked), a plain-text fallback link appears.
+- Badge sizing: the component's `size` accepts only `large` / `small` —
+  there is no medium. `large` hard-codes `img { height: 104px }` in its internal
+  styles (too big above the fold), and `small` ships no sizing rule while its
+  artwork is smaller to begin with (reaching 48px would mean upscaling a
+  bitmap, which blurs). So we **keep `size="large"`** (the largest artwork)
+  and use `ms-store-badge::part(img) { height: 48px }` to bring the height
+  down to what the old static image had — shrinking is always sharper than
+  enlarging, and 48px is the readable size the store guidelines suggest.
 
-- **LaTeX 渲染态点击后插入符跳到下一行**：两个原因叠加。一是
-  `.cm-tex-table` / `.cm-tex-pagebreak` 这类 block widget 用 `margin`
-  表达间距，而 CM6 用 `offsetHeight` 测量 widget 高度（不含 margin）——
-  实际布局比高度图高，之后每一行的点击坐标都往下偏一行。二是 KaTeX
-  异步渲染完成后没有通知 CM6 重测：公式块从"一行源码占位"变成多行排版
-  结果，同样造成累积偏移。现在 widget 间距一律用 padding 表达，KaTeX
-  填充后调用 `view.requestMeasure()`。
-- **段落内的换行不生效**：markdown-it 默认 `breaks: false` —— 只有行尾
-  两个空格或反斜杠才算硬换行。实测示例文档 `test/basic.md` 里写着"这一行
-  末尾有两个空格，应当渲染为软换行"的那行，磁盘上一个空格都没有（字符码
-  确认末尾直接是 `。`）：行尾空格在保存、`git commit`、复制粘贴时太容易
-  被 trim。现在改为 `breaks: true`：段落内单个换行即渲染为 `<br>`，
-  与 GitHub issue 正文一致；列表项内的续行同样生效。
-- **GitHub 警告块此前只是"GitHub 风味"**：整块铺着淡底色，竖线用的是通用
-  引用色而不是类型色，正文还被引用块规则淡化。原因是 `.markdown-alert`
-  自己声明了 `background`，而 CM6 baseTheme 编译出的
-  `.ͼ1 .cm-md-block blockquote`（0,2,1）压过了
-  `.cm-md-block .markdown-alert`（0,2,0），把类型色换成 `--md-border-strong`
-  又把正文染成 `--md-muted` —— 同一批属性在两处各写一份，谁赢只取决于
-  生成顺序。现在删掉 baseTheme 里的 blockquote 声明（样式只在 styles.css
-  定义一处），警告块去掉底色，竖线与标题按类型着色，正文保持正常文字色。
-- 引用与警告块的颜色、竖线宽度改为可独立调节的令牌，且**深浅主题共用**：
-  `--quote-border`（引用竖线，中性浅灰 `#dfe2e5`）、`--alert-note` /
-  `--alert-tip` / `--alert-important` / `--alert-warning` / `--alert-caution`
-  （取 GitHub 亮色主题的实际值），宽度是 `--quote-width` / `--alert-width`。
-  此前它们借用 `--md-h1` / `--md-link` / `--md-h3` / `--md-h5` / `--md-danger`
-  / `--md-accent` —— 那些是文档语义色，全项目 60+ 处在用，调一处会连带改标题、
-  链接与焦点环。
-  ⚠️ 两个主题块（`:root[data-theme='light']` 与 `[data-theme='dark']`）里
-  要**各写一份、值保持一致**：只写在浅色那处时，深色主题下这些变量整体
-  消失，`border-left: var(--alert-width) solid …` 整条失效、竖线不见
-  （实测深色下宽度变 0）。
-- **警告块竖线宽度调不动**：规则里写的是字面量
-  `border-left: 3px solid var(--alert-color)`，`--alert-width` 从未被引用 ——
-  改 3.5px、8px 都没有任何反应。现在改成 `var(--alert-width)`，与普通引用的
-  `var(--quote-width)` 对称。另注：`border-width` 会被 UA 取整到整数设备
-  像素，1x 屏上 `3.5px` 实际渲染为 `3px`，调粗细请用整数。
-- **单独打开的文件关不掉**：标签上的 `×` 调 `closeTab(path)` 时省略了
-  `workspaceId`，而 `closeTab` 在找不到就退回"当前激活工作区"来查 ——
-  外部文件的 `workspaceId` 是 `null`，永远匹配不上，只能靠中键关闭
-  （中键那条调用传了 `workspaceId`，所以有效）。现在 `×` 带上标签自己的
-  `workspaceId`；`activateTab` / `closeTab` / `findTab` 的 `workspaceId`
-  一律从**可选改成必填**（可选时漏传不报错、只表现为"点了没反应"），
-  由编译器保证每个调用点传全；`closeTab` 另保留"路径在标签里唯一就直接关"
-  的运行期兜底，同名文件开在两个项目里时不猜。
-  顺带修好：单独打开的文件**标签不高亮**（渲染层自己重算了一份
-  `path + workspaceId` 判定，与 runtime 分叉了）。判定统一收敛到
-  `runtime.isTabActive()`；vim 的 `:q` / `:wq` 也改为按激活标签关。
-- **打开单个文件不再把它的目录变成工作区**：打开一个文件只是"读这个文件"，
-  顺手把父目录注册成项目，会让文件树突然多出一堆用户没要求打开的兄弟
-  文件，这个目录还会写进 `workspace.roots`、下次启动自动恢复。现在文件
-  以**外部文件**身份打开（`workspaceId: null`，标签不带工作区色条），
-  保存走 `write_external_file` 写回原位置；想让某个目录成为工作区，
-  用「打开文件夹」。
-- 顺带修好：已经打开过工作区时，"打开文件"加入的标签**不会被激活**
-  （`activateTab` 少了显式的 `null`，按当前激活工作区去查，永远找不到
-  这个不属于任何项目的新标签）。
-- 外部文件的保存此前**没有任何成功反馈**：那条分支只处理失败提示，而
-  "打开单个文件"现在固定走它，于是每次 `Ctrl+S` 都像"点了没反应"。
-  现在与工作区文件一致地显示已保存。
-- **输入中文时整个编辑区卡死**：诊断报告里的第一条错误是根因 ——
-  `RangeError: Decorations that replace line breaks may not be specified
-  via plugins`。它的上游是 ViewPlugin `update` 里那句
-  `if (update.view.composing) return`：IME 组合期间文档在变，装饰却被
-  冻结在旧坐标系上，CM6 拿它们切 tile 时位置越界或跨了换行 —— 抛错之后
-  tile 索引全乱，之后每一次测量、点击、滚动都报 `TilePointer.advance` /
-  `No tile at position <n>`，编辑区彻底不动（报告里剩下十几条全是连锁）。
-  现在文档一变就先把已有装饰 `map` 到新坐标（只改位置、不动 DOM，不会
-  打断候选词），映射后仍非法（越界 / 跨行 replace）的单项丢弃并记一条
-  warn；组合结束后照常完整重建。装饰构建完也统一过一遍同样的合法性检查。
-  复现与回归都用 CDP 的 `Input.imeSetComposition`：两行任务列表、在行内
-  敲第二个组合字符，修复前必抛 RangeError，修复后零错误。
-- **任务列表可能渲染成「☐ ] 未完」**：复选框的替换范围直接取了 lezer
-  `TaskMarker` 节点的 `from`/`to`，而该边界在某些输入状态下会落在 `]`
-  之前 —— `[ ` 被替换、`]` 孤零零留在行首。现在按行内文本定位：只认
-  "节点起点附近一格内的 `[`，且恰好隔一个字符就是 `]`"，形状对不上就
-  整行保持源码，绝不做半截替换（错位比不渲染更难解释）。
+- **Clicking a LaTeX block in rendered mode put the caret one line lower**:
+  two causes stacked up. First, block widgets such as `.cm-tex-table` and
+  `.cm-tex-pagebreak` expressed spacing with `margin`, while CM6 measures
+  widget height with `offsetHeight` (which excludes margins) — the real
+  layout was one line taller than the height map, so every later click landed
+  one line low. Second, KaTeX rendered asynchronously and never told CM6 to
+  re-measure: a formula block went from "one line of placeholder source" to
+  multi-line typeset output, adding cumulative drift. Widget spacing is now
+  expressed with padding, and KaTeX calls `view.requestMeasure()` once it has
+  filled in.
+- **A newline inside a paragraph did nothing**: markdown-it defaults to
+  `breaks: false`, where only two trailing spaces or a backslash count as a
+  hard break. In the sample document `test/basic.md`, the line that literally
+  says "this line ends with two spaces and should render as a soft break" has
+  no spaces on disk (the character codes confirm it ends with `。`): trailing
+  whitespace is too easily trimmed by saving, `git commit` and copy-paste.
+  Now `breaks: true`: a single newline inside a paragraph renders as `<br>`,
+  matching GitHub issue bodies, and continuation lines inside list items work
+  the same way.
+- **GitHub alert blocks were only "GitHub-flavoured"**: the whole block had a
+  tinted background, the border used the generic quote colour instead of the
+  type colour, and the body text was dimmed by the quote rule. The cause:
+  `.markdown-alert` declared its own `background`, while the compiled
+  `.ͼ1 .cm-md-block blockquote` (0,2,1) from the CM6 base theme outranked
+  `.cm-md-block .markdown-alert` (0,2,0), replacing the type colour with
+  `--md-border-strong` and tinting the body with `--md-muted` — the same
+  properties were written in two places, so which one won depended only on
+  generation order. The base theme's blockquote declarations are gone (styles
+  are defined in `styles.css` only), the alert background is removed, the
+  border and title take the type colour, and body text stays at normal
+  contrast.
+- Quote and alert colours plus border widths became independent tokens,
+  **shared by both themes**: `--quote-border` (quote border, neutral light
+  grey `#dfe2e5`), `--alert-note` / `--alert-tip` / `--alert-important` /
+  `--alert-warning` / `--alert-caution` (the actual GitHub light-theme
+  values), with `--quote-width` / `--alert-width` for widths. They used to
+  borrow `--md-h1` / `--md-link` / `--md-h3` / `--md-h5` / `--md-danger` /
+  `--md-accent` — document-semantic colours used in 60+ places, where a
+  single tweak also repainted headings, links and focus rings.
+  ⚠️ In both theme blocks (`:root[data-theme='light']` and
+  `[data-theme='dark']`) these must be **written once each with identical
+  values**: declaring them only in the light block makes them vanish entirely
+  under the dark theme, which kills the whole
+  `border-left: var(--alert-width) solid …` declaration and the border
+  disappears (measured: width becomes 0 in dark mode).
+- **The alert border width could not be adjusted**: the rule used the literal
+  `border-left: 3px solid var(--alert-color)`, and `--alert-width` was never
+  referenced — changing it to 3.5px or 8px had no effect at all. It is now
+  `var(--alert-width)`, symmetric with the quote's `var(--quote-width)`.
+  Note: the UA rounds `border-width` to whole device pixels, so `3.5px` at 1x
+  renders as `3px`; use integers when tuning thickness.
+- **A separately opened file could not be closed**: the `×` on its tab called
+  `closeTab(path)` without `workspaceId`, and `closeTab` falls back to "the
+  currently active workspace" when it cannot find a match — an external
+  file's `workspaceId` is `null`, so it never matched, and only middle-click
+  worked (that call passes `workspaceId`, which is why it did). The `×` now
+  passes the tab's own `workspaceId`; `activateTab` / `closeTab` / `findTab`
+  take `workspaceId` as **required** instead of optional (when optional,
+  omitting it compiles fine and only shows up as "clicking does nothing"), so
+  the compiler guarantees every call site passes it; `closeTab` also keeps a
+  runtime fallback of "if the path is unique among tabs, just close it" and
+  does not guess when the same file name is open in two projects.
+  Also fixed: a separately opened file's **tab was not highlighted** (the
+  render layer recomputed its own `path + workspaceId` check, diverging from
+  runtime). The check now converges on `runtime.isTabActive()`; vim's `:q` /
+  `:wq` also close by active tab.
+- **Opening a single file no longer turns its folder into a workspace**:
+  opening a file should mean "read this file". Registering the parent folder
+  as a project as a side effect made the file tree suddenly fill up with
+  sibling files the user never asked for, and that folder was written into
+  `workspace.roots` and restored automatically on the next launch. Files now
+  open as **external files** (`workspaceId: null`, no workspace colour bar on
+  the tab) and save through `write_external_file` back to their original
+  location; to make a folder a workspace, use "Open folder".
+- Also fixed: with a workspace already open, tabs added by "Open file" **were
+  not activated** (`activateTab` was missing an explicit `null` and searched
+  the currently active workspace, which could never find this new tab that
+  belongs to no project).
+- External file saves previously gave **no success feedback at all**: that
+  branch only handled failure messages, and since "open a single file" now
+  always takes it, every `Ctrl+S` looked like "clicked and nothing happened".
+  They now report "saved" the same way workspace files do.
+- **Typing Chinese froze the entire editor**: the first error in the
+  diagnostics report was the root cause —
+  `RangeError: Decorations that replace line breaks may not be specified via
+  plugins`. Upstream of it was a line in the ViewPlugin's `update`:
+  `if (update.view.composing) return`. During IME composition the document
+  changes while the decorations stay frozen in the old coordinate space; when
+  CM6 sliced tiles with them, positions were out of range or spanned a line
+  break — and once it threw, the tile index was corrupted, so every
+  subsequent measure, click and scroll reported `TilePointer.advance` /
+  `No tile at position <n>` and the editor stopped responding entirely (the
+  remaining dozen entries in the report were all fallout). Now, as soon as
+  the document changes, existing decorations are `map`ped to the new
+  coordinates (position only, no DOM churn, so the candidate window is not
+  interrupted); items still illegal after mapping (out of range, or a
+  replace spanning lines) are dropped with a warning; a full rebuild happens
+  as usual when composition ends. Decoration construction runs through the
+  same legality check. Reproduced and regression-tested with CDP's
+  `Input.imeSetComposition`: a two-line task list, typing the second
+  composition character — it threw RangeError before the fix and produces
+  zero errors after.
+- **Task items could render as "☐ ] text"**: the checkbox replacement range
+  was taken straight from the lezer `TaskMarker` node's `from`/`to`, and that
+  boundary sometimes lands before the `]` — so `[ ` was replaced and the `]`
+  was left stranded at the start of the line. Position is now derived from
+  the line text: only a `[` within one cell of the node start, followed by
+  exactly one character and then `]`, is accepted; when the shape does not
+  match, the whole line stays as source rather than doing a half replacement
+  (a misplaced bracket is harder to explain than no checkbox).
 
 ## [0.1.6] - 2026-10-29
 
-> 发布公告见 `docs/releases/v0.1.6.md`。
+> Release notes: `docs/releases/v0.1.6.md`.
 
 ### Added
 
-- **DEBUG 面板的操作轨迹**：打开/关闭文件、新建标签、保存/取消保存/保存失败、
-  命令执行与失败、焦点落点失败、上次退出是否正常，各自记一条，容量 200 条。
-  轨迹与日志缓冲分开存，插件打几十行日志也不会把"用户点了什么"挤掉。
-- **诊断报告的错误摘要**：按文本去重，给出出现次数、首次/末次时间、完整堆栈，
-  维护者不必再逐行扫日志。
-- **诊断报告的环境块**：系统、架构、Tauri 版本、WebView 内核、窗口尺寸与缩放、
-  界面语言、主题、安全模式 —— 对应 issue 模板里的必填项。
-- **诊断报告的插件状态表**：包含每个插件的状态与失败原因。
-- **上次会话的错误**：error 落盘到 IndexedDB，进程被杀或白屏后重启，
-  仍能在日志与报告中看到上一次会话的错误。
-- `console.debug` 纳入捕获 —— 插件通过 `logger.debug()` 打的调试信息此前完全不可见。
-- 未捕获异常保留 `event.error.stack` 与列号；资源加载失败（图片/脚本）也会记录。
-- **语言识别**：内置表覆盖已经注册文件关联的格式（Markdown / LaTeX /
-  Fountain / 纯文本），并支持插件通过 `contributes.languages` 接管某个
-  扩展名（插件贡献优先于内置表）。
-- **状态栏与标签显示文件类型**：状态栏显示当前语言；非 Markdown 标签带
-  类型徽标，`.fountain` / `.tex` 打开后不再"看起来像没支持"。
-- **编辑器按语言切换解析器**（Compartment）：`.tex` / `.latex` 现在有语法
-  高亮；`.fountain` 使用纯文本视图（官方 CodeMirror 语言包不含 Fountain，
-  渲染由后续插件提供）。
-- **内置 Fountain 剧本插件**：`.fountain` 文件打开后，侧栏出现「场景」列表
-  （场景标题与分节，显示行号，点击跳转）；编辑器按行区分元素 ——
-  场景标题加粗、角色名居中、对白缩进、括注与转场右对齐。
-  实现只往行上挂 class、不改任何字符，编辑/撤销/保存全部走原生路径。
-- **`onLanguage:` 激活事件接线**：这个激活事件在插件 API 里声明了很久，
-  但从来没有任何地方派发它 —— 打开某语言的文档时插件不会被激活，
-  按语言挂载的渲染扩展也就永远挂不上。现在由 activeFile 事件统一派发，
-  切标签、另存为、崩溃恢复都会覆盖到。
-- **文件树列出所有可编辑文本**：判定改为内核语言表（`detectLanguage`），
-  不再写死 `.md/.markdown/.txt`。`.tex` / `.fountain` 现在能在树里看到、
-  点击打开；图片与二进制仍然不列。空状态文案相应改为「还没有可编辑的文件」。
-- **"打开文件…"与"另存为…"支持 LaTeX / Fountain / 纯文本**：对话框过滤器
-  与文件关联共用同一份扩展名列表（`EDITABLE_EXTS`），不再只有 `.md/.txt`。
-- **Fountain 元素补全**：标题页（`Key: Value`）、笔记 `[[ … ]]`、
-  注释块 boneyard、歌词 `~`、分页线 `====` 都有对应样式；注释块里的
-  `INT. …` 不再被误判成场景（先判注释块、再判场景）。
-- **侧栏视图按语言显示**：视图贡献新增 `languages` 声明（缺省不限），
-  「大纲」只在 Markdown 下出现、「场景」只在 Fountain 下出现，
-  「文件」不受限制。判定完全来自插件声明，宿主不认识具体视图 id ——
-  外部插件同样可用。未打开文件时按 Markdown 处理（产品默认形态）。
-- **多工作区并存**：打开新文件夹是**追加**而不是顶替，旧项目的标签留在
-  标签栏里；点某个标签就切回它所属的工作区（文件树、保存路由、插件看到
-  的 `context.workspace` 一起跟随）。
-- 每个标签顶部按**自己所属的工作区**着色（同一工作区同色，激活标签更实），
-  两个项目里都叫 `notes.md` 的文件在同一条标签栏里也能分辨。
-- 原生侧工作区由单根改为注册表：`set_workspace` 返回 `{ id, name, root }`，
-  文件读写/列举命令都带 `rootId`。这样异步调用交错时也不会落到别的根上。
-- 草稿与编辑历史按工作区隔离（复合键 `工作区id + 路径`）；旧版本以裸路径
-  保存的草稿在读取时自动迁移，升级后第一次崩溃恢复不会失效。
-- **侧栏顶部的工作区条**：一行一个已打开的工作区（色点 + 名称），点一下
-  切换 —— 文件树换根、编辑器打开该项目最近用的标签（没有就清空）。
-  色点与标签顶部色条同源，能直接把"这个标签"与"那个项目"对上。
-  关闭按钮也从文件树内部移到这里，按工作区各管各的。
-- 工作区列表持久化为 `workspace.roots: string[]`，并记录 `workspace.active`；
-  启动时逐个恢复，激活项回到上次用的那个（不再退回列表末尾）。
-  旧配置只有 `workspace.lastId` 时自动兼容。
-- 启动轨迹增加一条 `plugins plugins=N views=N commands=N`：视图槽位数量是
-  "侧栏为什么没有内容"的第一手证据 —— `views=0` 说明贡献汇总失败，
-  `views>0` 而插件停在 declared 说明 onView 没有派发到，两种故障表现相似
-  但根因完全不同。
-- **内置 LaTeX 插件**：`.tex` 文件打开后有「结构」视图（`\part` / `\chapter` /
-  `\section` / `\subsection` 等，按层级缩进、点击跳转），编辑器里用 KaTeX
-  **原地渲染公式** —— 行内 `$…$` / `\(…\)`，块级 `\[…\]` / `$$…$$` /
-  `equation` / `align` / `gather` / `multline` / `displaymath` / `eqnarray`。
-  光标进入公式时自动退回源码，离开后重新排版。
-- **LaTeX 文档排版**（公式之外的部分）：章节标题按层级排字号并隐藏命令本身、
-  `\textbf` / `\emph` / `\textit` / `\texttt` / `\underline` / `\textsf` /
-  `\textrm` 行内命令换成样式、`itemize` / `enumerate` 换成 `•` 与编号
-  （环境行隐藏、`\item` 替换为符号）。列表项里的行内命令与公式同样生效。
-- **LaTeX 文档结构渲染**：标题页（`\title` / `\author` / `\date` + `\today`）、
-  摘要（`abstract`）、引用块（`quote` / `quotation`）、代码块
-  （`verbatim` / `lstlisting` / `minted`，内部不做任何解析）、
-  **表格**（`table` / `tabular`：`&` 分列、`\\` 分行、`\toprule` /
-  `\midrule` / `\bottomrule` 画线、`\caption` 作表题、列格式 `l/c/r` 决定对齐）、
-  `\newpage` 画分页线；`\maketitle` / `\tableofcontents` / `\label` /
-  `\begin{document}` 等没有可见输出的命令直接隐藏。
-- **行内命令补全**：`\LaTeX` / `\TeX` / `\XeTeX` 等换成文字，`\ref` /
-  `\eqref` / `\cite` 保留键名并淡化，`~` 换成不换行空格，`\%` `\&` `\_`
-  `\#` `\$` `\{` `\}` 还原成字符，`\includegraphics` 显示为路径占位。
-- `%` 注释与 `\begin{}` / 导言行淡化。
+- **Operation timeline in the DEBUG panel**: opening/closing files, creating tabs,
+  save/cancel-save/save-failure, command execution and failure, focus-placement
+  failure, and whether the last exit was normal each get an entry, capacity 200.
+  The timeline is stored separately from the log buffer, so a plugin printing dozens
+  of log lines cannot push out "what the user clicked".
+- **Error summary in the diagnostics report**: deduplicated by text, with occurrence
+  count, first/last time, and full stack, so maintainers no longer have to scan
+  logs line by line.
+- **Environment block in the diagnostics report**: OS, architecture, Tauri version,
+  WebView engine, window size and scale, UI language, theme, safe mode — matching
+  the required fields in the issue template.
+- **Plugin status table in the diagnostics report**: including each plugin's status
+  and failure reason.
+- **Errors from the previous session**: errors are persisted to IndexedDB, so after
+  a process kill or white screen and restart, the previous session's errors are
+  still visible in logs and reports.
+- `console.debug` is now captured — debug information plugins emitted via
+  `logger.debug()` was previously completely invisible.
+- Uncaught exceptions retain `event.error.stack` and column number; resource load
+  failures (images/scripts) are also recorded.
+- **Language detection**: the built-in table covers formats that already have file
+  associations (Markdown / LaTeX / Fountain / plain text), and plugins can take over
+  an extension via `contributes.languages` (plugin contributions take precedence
+  over the built-in table).
+- **Status bar and tabs show file type**: the status bar shows the current language;
+  non-Markdown tabs carry a type badge, so `.fountain` / `.tex` no longer "look
+  unsupported" after opening.
+- **Editor switches parser by language** (Compartment): `.tex` / `.latex` now have
+  syntax highlighting; `.fountain` uses a plain-text view (the official CodeMirror
+  language pack does not include Fountain; rendering is provided by a later plugin).
+- **Built-in Fountain screenplay plugin**: after opening a `.fountain` file, a
+  "Scenes" list appears in the sidebar (scene headings and sections, with line
+  numbers, click to jump); the editor distinguishes elements by line — scene
+  headings bold, character names centred, dialogue indented, parentheticals and
+  transitions right-aligned.
+  The implementation only attaches classes to lines and does not change any
+  characters; editing/undo/save all go through native paths.
+- **`onLanguage:` activation event wired up**: this activation event had been declared
+  in the plugin API for a long time, but nothing ever dispatched it — plugins were
+  not activated when opening a document in a given language, and language-mounted
+  rendering extensions could never attach. It is now dispatched uniformly by the
+  activeFile event, covering tab switches, Save As, and crash recovery.
+- **File tree lists all editable text**: the criterion changed to the core language
+  table (`detectLanguage`) instead of hard-coded `.md/.markdown/.txt`. `.tex` /
+  `.fountain` now appear in the tree and can be clicked open; images and binaries
+  are still not listed. The empty-state text changed to "No editable files yet".
+- **"Open file…" and "Save as…" support LaTeX / Fountain / plain text**: the dialog
+  filters and file associations share the same extension list (`EDITABLE_EXTS`),
+  no longer only `.md/.txt`.
+- **Fountain element completion**: title page (`Key: Value`), notes `[[ … ]]`,
+  comment blocks (boneyard), lyrics `~`, and page breaks `====` all have
+  corresponding styles; `INT. …` inside comment blocks is no longer mistaken for a
+  scene (comment blocks are checked before scenes).
+- **Sidebar views shown by language**: view contributions gained a `languages`
+  declaration (default: unrestricted); "Outline" only appears under Markdown,
+  "Scenes" only under Fountain, and "Files" is unrestricted. The decision comes
+  entirely from plugin declarations; the host does not know specific view ids —
+  external plugins can use the same mechanism. With no file open, Markdown is
+  assumed (the product default).
+- **Multiple workspaces coexist**: opening a new folder is **additive** rather than
+  replacing; the old project's tabs stay in the tab bar; clicking a tab switches
+  back to its workspace (file tree, save routing, and `context.workspace` seen by
+  plugins follow together).
+- Each tab is coloured by **its own workspace** at the top (same workspace, same
+  colour; active tab more solid), so two projects both containing `notes.md` are
+  distinguishable in one tab bar.
+- The native side changed workspaces from a single root to a registry:
+  `set_workspace` returns `{ id, name, root }`, and file read/write/list commands
+  carry `rootId`. This way interleaved async calls cannot land on the wrong root.
+- Drafts and edit history are isolated per workspace (composite key
+  `workspace id + path`); drafts saved by older versions under bare paths are
+  migrated on read, so crash recovery after upgrade does not fail.
+- **Workspace bar at the top of the sidebar**: one open workspace per row (colour
+  dot + name), click to switch — the file tree changes root, and the editor opens
+  that project's most recently used tab (or clears if none). The colour dot and the
+  tab top colour bar share the same source, so you can directly match "this tab"
+  with "that project". The close button also moved here from inside the file tree,
+  managed per workspace.
+- The workspace list is persisted as `workspace.roots: string[]`, and
+  `workspace.active` is recorded; on startup each is restored, and the active one
+  returns to the last used (no longer falling back to the end of the list). Old
+  configs with only `workspace.lastId` are automatically compatible.
+- Startup trace gained a `plugins plugins=N views=N commands=N` line: the view slot
+  count is first-hand evidence for "why is the sidebar empty" — `views=0` means
+  contribution aggregation failed; `views>0` while a plugin stays declared means
+  onView was not dispatched. The two failures look similar but have completely
+  different root causes.
+- **Built-in LaTeX plugin**: after opening a `.tex` file, there is a "Structure"
+  view (`\part` / `\chapter` / `\section` / `\subsection`, etc., indented by level,
+  click to jump), and formulas are **rendered in place** with KaTeX — inline
+  `$…$` / `\(…\)`, block `\[…\]` / `$$…$$` / `equation` / `align` / `gather` /
+  `multline` / `displaymath` / `eqnarray`. When the cursor enters a formula it
+  reverts to source, and re-typesets after leaving.
+- **LaTeX document typesetting** (parts other than formulas): section headings are
+  sized by level and the command itself is hidden; `\textbf` / `\emph` / `\textit` /
+  `\texttt` / `\underline` / `\textsf` / `\textrm` inline commands become styles;
+  `itemize` / `enumerate` become `•` and numbering (environment lines hidden,
+  `\item` replaced by a symbol). Inline commands and formulas inside list items also
+  work.
+- **LaTeX document structure rendering**: title page (`\title` / `\author` /
+  `\date` + `\today`), abstract (`abstract`), quote blocks (`quote` / `quotation`),
+  code blocks (`verbatim` / `lstlisting` / `minted`, no parsing inside), **tables**
+  (`table` / `tabular`: `&` separates columns, `\\` separates rows, `\toprule` /
+  `\midrule` / `\bottomrule` draw lines, `\caption` is the table caption, column
+  format `l/c/r` determines alignment), `\newpage` draws a page-break line;
+  commands with no visible output such as `\maketitle` / `\tableofcontents` /
+  `\label` / `\begin{document}` are hidden directly.
+- **Inline command completion**: `\LaTeX` / `\TeX` / `\XeTeX`, etc. become text;
+  `\ref` / `\eqref` / `\cite` keep the key name and are dimmed; `~` becomes a
+  non-breaking space; `\%` `\&` `\_` `\#` `\$` `\{` `\}` are restored to characters;
+  `\includegraphics` displays as a path placeholder.
+- `%` comments and `\begin{}` / preamble lines are dimmed.
 
 ### Changed
 
-- 诊断报告重排为「环境 → 错误摘要 → 上次会话 → 操作轨迹 → 插件 →
-  文档与配置 → 性能 → 日志」，并**不再包含标签正文**：原来的"设置快照"
-  序列化了整个运行时状态（含所有标签的全文），会让报告超过 issue 字符上限、
-  把日志段截断在中间。
-- 性能页区分两种输入延迟：面板内 EMA 采样（仅面板打开后）与运行时**常驻**
-  探针（含面板打开之前的超预算记录），并新增预算超支明细（来源 + 实际/预算值）。
-- 面板内的文档规模改用 CodeMirror 文档元数据（O(1)），不再每次渲染调用
-  `getText().split('\n')`。
-- 日志列表独立渲染并合并高频通知：FPS 每秒刷新不再重绘 500 行日志。
-- "复制报告"移到标题栏，三个页都可用；复制失败会给出提示，不再静默无响应。
-- **非 Markdown 文档不再套用 Markdown 解析器与原地渲染**：此前 `.fountain`
-  的 `#` 动作行会被当成标题渲染。现在这些格式按源码视图处理（行号 +
-  等宽），源码/渲染切换按钮也随之隐藏 —— 它们没有第二种形态。
-- 语言识别不再只认 `.md` / `.txt`：未命名文档与无法识别的扩展名仍回退
-  Markdown（产品默认形态），但已知格式会拿到自己的 language id。
-- 插件贡献的语言条目没有显示名时，回退到内置表同名条目的名称 ——
-  此前插件一旦声明 `{ id: 'fountain' }`，状态栏会显示小写 `fountain`
-  而标签徽标显示 `Fountain`，同一个语言在两处两个名字。
-- 侧栏视图标题改为**渲染层翻译**：manifest 里保留中文原文（`场景` / `结构`），
-  由 `commandTitle()` 按当前语言替换。此前在 manifest 顶层调用 `t()`，
-  而那时语言还没从配置读出来 —— 界面切成英文后侧栏仍显示
-  `Expand "场景"`，且切换语言不会更新。
-- **非 Markdown 文档也支持源码/渲染切换**：`isRenderableLanguage` 只把
-  **纯文本**排除，`.tex` / `.fountain` 与 markdown 一样有 Ctrl+/ 与工具栏开关。
-  插件装饰在源码模式下自动让路（`EditorApi.sourceMode`）。
-- 渲染层按语言挂载：只有 markdown 使用内联渲染器；其它语言的"渲染"完全由
-  插件装饰提供。此前渲染层与语言无关，打开 `.tex` 会把正文当成 markdown
-  解析，整段替换成 `cm-md-block` widget —— 插件装饰作用在被替换掉的文本上，
-  用户看到的是一片错误的排版（这也是"tex 只渲染了公式"的直接原因）。
-- 状态栏不再显示当前文件的语言：标签上的类型徽标已经说明了格式，
-  两处写同一件事只是噪声。
-- 头部不再显示工作区名（以及未命名文档的脏点提示 —— 现在每个文档都有
-  标签，脏点由标签自己显示）。工作区的标识改由**标签顶部的色条**承担：
-  颜色由工作区 id 哈希得到，同一工作区同色，激活标签更实，
-  没有工作区的文件不着色。
+- The diagnostics report was reordered to "Environment → Error summary → Previous
+  session → Operation timeline → Plugins → Document and configuration → Performance
+  → Logs", and **no longer includes tab bodies**: the old "settings snapshot"
+  serialised the entire runtime state (including the full text of all tabs), which
+  made the report exceed the issue character limit and truncated the log section in
+  the middle.
+- The performance page distinguishes two kinds of input latency: in-panel EMA
+  sampling (only after the panel opens) and a runtime **always-on** probe (including
+  over-budget records before the panel opened), plus new over-budget details
+  (source + actual/budget value).
+- Document size in the panel now uses CodeMirror document metadata (O(1)) instead of
+  calling `getText().split('\n')` on every render.
+- The log list renders independently and merges high-frequency notifications: FPS
+  refreshing every second no longer redraws 500 log lines.
+- "Copy report" moved to the title bar and is available on all three pages; copy
+  failure now shows a message instead of silently doing nothing.
+- **Non-Markdown documents no longer use the Markdown parser and in-place
+  rendering**: previously `.fountain`'s `#` action lines were rendered as headings.
+  These formats now use the source view (line numbers + monospace), and the
+  source/rendered toggle is hidden — they have no second form.
+- Language detection no longer only recognises `.md` / `.txt`: unnamed documents and
+  unrecognised extensions still fall back to Markdown (the product default), but
+  known formats get their own language id.
+- When a plugin-contributed language entry has no display name, fall back to the
+  name of the same entry in the built-in table — previously once a plugin declared
+  `{ id: 'fountain' }`, the status bar showed lowercase `fountain` while the tab
+  badge showed `Fountain`: the same language had two names in two places.
+- Sidebar view titles changed to **render-layer translation**: the manifest keeps
+  the original Chinese text (`Scenes` / `Structure`), and `commandTitle()` replaces
+  it according to the current language. Previously `t()` was called at the top level
+  of the manifest, when the language had not yet been read from configuration — after
+  switching the UI to English, the sidebar still showed `Expand "Scenes"`, and
+  switching language did not update it.
+- **Non-Markdown documents also support source/rendered toggle**:
+  `isRenderableLanguage` excludes only **plain text**; `.tex` / `.fountain` have
+  Ctrl+/ and the toolbar switch like markdown. Plugin decorations automatically step
+  aside in source mode (`EditorApi.sourceMode`).
+- Rendering layer mounted by language: only markdown uses the inline renderer; for
+  other languages "rendering" is entirely provided by plugin decorations. Previously
+  the rendering layer was language-agnostic, so opening `.tex` parsed the body as
+  markdown and replaced entire paragraphs with `cm-md-block` widgets — plugin
+  decorations acted on replaced text, and users saw a page of wrong typesetting
+  (which was also the direct cause of "tex only rendered formulas").
+- The status bar no longer shows the current file's language: the type badge on the
+  tab already states the format; writing the same thing in two places is just noise.
+- The header no longer shows the workspace name (and the dirty dot for unnamed
+  documents — every document now has a tab, and the tab itself shows the dirty dot).
+  Workspace identity is now carried by the **colour bar at the top of the tab**:
+  colour is hashed from the workspace id, same workspace same colour, active tab
+  more solid, files without a workspace are uncoloured.
 
 ### Removed
 
-- 删除应用外壳里的 `[kd]` 按键诊断日志（每次带修饰键或功能键按下都写一条，
-  污染日志缓冲并拖慢面板）。
+- Removed the `[kd]` key diagnostics log in the app shell (it wrote an entry on every
+  keypress with a modifier or function key, polluting the log buffer and slowing the
+  panel).
 
 ### Fixed
 
-- 长任务时间显示为 1970 年 —— `entry.startTime` 是相对 `timeOrigin` 的
-  高精度时间戳，被当成 epoch 使用；现在采集时就换成 `Date.now()`。
-- 主线程阻塞占比的"30 秒窗口"是固定分母且不随时间衰减，空闲后数字仍停住；
-  改为真正的 60 秒滑动窗口。
-- 日志自动滚动会把正在向上翻阅的用户拽回底部；现在只在已贴底时跟随。
-- 同一条错误循环出现时刷满 500 条缓冲、把崩溃前的上下文挤掉；现在合并计数，
-  且淘汰时优先保留 error（300 条独立配额）。
-- Fountain 装饰在**滚动**时不再重新分类全文（此前每次视口变化都从文档开头
-  跑一遍状态机，长剧本滚动会掉帧）；分类结果只在文本变化时重算一次。
-- 切换工作区时文件树会显示**两套同名文件**：两次刷新并发执行，后完成的
-  那次把行追加到了已被清空的容器上。现在先在离屏节点里建整棵树，
-  再用序号丢弃过期结果。
-- 文件树的抬头显示目录名而不是根路径（多工作区下路径会被截成一段省略号）。
-- 打开第二个工作区之后**无法切回去**：上一版只实现了"并存"的数据层，
-  没有任何切换入口，用户只能从标签栏里找一个属于旧项目的标签。
-  现在由侧栏顶部的工作区条承担这个入口。
-- 侧栏视图可能**永远停在「正在激活插件…」**：`onView` 派发用了一个
-  `requestedRef` 去重，而 ref 会跨重挂载（HMR、折叠再展开、按语言隐藏再出现）
-  保留 —— 只要第一次激活没成功，就再也不会派发第二次。现在每次渲染都派发
-  （`activateFor` 本身对已激活插件是幂等的），并且 3 秒仍未拿到 provider 时
-  显示「插件未激活」+ 重试按钮，不再无限等待。
-- DEBUG 日志列表的 React key 用「来源 + 时间 + 文本前 40 字」拼接，
-  同一毫秒的多条日志或前缀相同的警告会**撞 key**，面板每帧报一次
-  "Encountered two children with the same key"，122 次就把日志缓冲洗掉。
-  现在每条日志带会话内唯一 id。
-- 诊断报告里 `%s` 占位符不再原样保留：console 参数按 `%s/%d/%o/%c` 格式化，
-  React 的警告因此能显示出具体 key 与组件栈。
-- 设置页的语言图标 SVG 使用了 `stroke-width` / `clip-path`（React 要求
-  camelCase），每次打开设置都刷两条警告；顺带修正了英国国旗 `clipPath`
-  引用 id（`#a` 与定义的 `f-en-a` 不一致，裁剪一直没生效）。
-- **同一插件的两个激活事件并发时会把 `activate()` 执行两次**（打开 `.tex`
-  时 `onLanguage` 与 `onView` 几乎同时到达）：视图注册两次、编辑器扩展
-  注入两次，表现为行级装饰的 class 重复（`cm-tex-section cm-tex-section`），
-  并留下一份无法回收的订阅。现在按插件并发去重，两次调用共享同一个 Promise。
-- `align` / `gather` 等数学环境**整块不渲染**：此前剥掉 `\begin{align}`
-  只把中间几行交给 KaTeX，而 `&` 是环境级的对齐标记，KaTeX 直接报错
-  （`Unexpected alignment tab`），最显眼的那段公式退化成源码。现在把完整
-  环境交给 KaTeX，编号 `(1) (2)` 也一并渲染。
-- **引用式图片与引用式链接不渲染**（`![logo][img-ref]` / `[文字][ref]`）：
-  编辑区的块级渲染是逐块调 markdown-it 的，而 `[img-ref]: https://…`
-  通常单独占一行（属于另一个块），逐块渲染时 `env.references` 为空，
-  整条图片退化成纯文本。现在先把全文的引用定义喂一次引擎、块之间共享
-  同一个 env，并让渲染缓存随定义变化失效。
-- **块级渲染内容此前没有任何样式**：`.cm-md-block` 里的 `ul` / `blockquote` /
-  `pre` / `table` 由 markdown-it 生成，浏览器默认值直接生效 —— 列表缩进
-  40px、引用只有 `1em 40px` 的外边距、代码块没有边框与底色。现在补齐并
-  对齐 `website/demo.html` 的数值：列表下边距 12px、项间 5px、引用 3px
-  强调色左边框 + 14px 内边距 + 淡化文字、代码块 1px 边框 + 底色 + 内边距 +
-  **6px 圆角**，行内代码单独给浅底与小圆角；表格边框与表头底色、分隔线、
-  图片 `max-width: 100%` 一并补齐。
-- **列表项之间多出一整行、引用竖线比正文长**：`.cm-md-block` 挂在
-  `.cm-content` 里，而 CodeMirror 的内容层是 `white-space: pre-wrap`
-  （源码要保留换行）。这个值被 widget 内的 HTML 继承，markdown-it 输出中
-  元素之间的换行（`</li>\n<li>`、`</p>\n</blockquote>`）于是变成真实换行 ——
-  实测 li 高 18px 而项间距 41px，三层嵌套引用的竖线比最后一行长 20px。
-  现在块级内容显式 `white-space: normal`，只有 `pre` 保留 `pre`。
-- **任务列表按钮点了没反应**：命令里自己写了一个循环，跳过空行、跳过
-  已经是任务项的行、处理一行就 return。三者叠加的结果是——空文档上点
-  按钮什么都不发生、已存在的任务项无法取消、多行选区只改第一行。
-  现在直接复用 `toggleLinePrefix('- [ ] ')`（它本来就负责"剥旧前缀、加新前缀"）。
-- **任务复选框可以直接点**：渲染态里的复选框此前是 `<input disabled>`，
-  只能看到、点不动，用户必须把光标挪进那一行手打 `x`；未勾选还是浏览器
-  默认的灰色（读起来像禁用）。现在 `appearance: none` 自绘（品牌绿细边框 +
-  勾选用实心绿 + 白勾），点击按"块内第 N 个复选框 ↔ 源码里第 N 个
-  `[ ]`"的映射就地改写三个字符，不必进入源码态。
-- 浅色主题的深绿 `#0d7259` 统一换成 `#4aa63d`（`--md-link` / `--md-h2` /
-  `--md-syntax-string`）；官网 `--green` 与 demo 页同步。
-- `toggleLinePrefix` 剥前缀时不认复选框：把 `- [x] 内容` 转成任务列表
-  会拼成 `- [ ] [x] 内容`。现在列表前缀连同 `[ ]` / `[x]` 一起剥掉。
-- 回归脚本的 `set_workspace` 桩改为返回工作区描述符；崩溃恢复脚本的
-  IndexedDB 打开不再写死版本号、草稿键跟随工作区前缀 —— 否则整套
-  `npm run verify` 会因为桩与新契约不匹配而全红。
-- 关闭调试面板后不再捕获错误（原注释承诺"关闭后恢复原生 console"，
-  实际是启动即装且从不卸载，注释与实现相反）；拦截现在常驻，
-  仅在测试中显式卸载。
+- Long-task time displayed as 1970 — `entry.startTime` is a high-precision timestamp
+  relative to `timeOrigin`, but was used as epoch; it is now converted to `Date.now()`
+  at collection time.
+- The "30-second window" for main-thread blocking ratio had a fixed denominator and
+  did not decay over time, so the number stayed frozen after idle; changed to a true
+  60-second sliding window.
+- Log auto-scroll pulled users who were scrolling up back to the bottom; it now only
+  follows when already at the bottom.
+- The same error looping filled the 500-entry buffer and pushed out pre-crash
+  context; it now merges counts, and eviction prioritises keeping errors (300
+  separate quota).
+- Fountain decorations no longer re-classify the whole document on **scroll**
+  (previously every viewport change ran the state machine from the start of the
+  document, causing frame drops when scrolling long scripts); classification results
+  are recomputed only when text changes.
+- Switching workspaces showed **two sets of files with the same names** in the file
+  tree: two refreshes ran concurrently, and the later one appended rows to an already
+  cleared container. Now the whole tree is built in an offscreen node first, then
+  stale results are discarded by sequence number.
+- The file tree header shows the directory name instead of the root path (under
+  multiple workspaces the path would be truncated to an ellipsis).
+- **Could not switch back after opening a second workspace**: the previous version
+  only implemented the data layer for "coexistence", with no switching entry; users
+  could only find a tab belonging to the old project in the tab bar. The workspace
+  bar at the top of the sidebar now provides this entry.
+- A sidebar view could **stay at "Activating plugin…" forever**: `onView` dispatch
+  used a `requestedRef` for deduplication, and refs persist across remounts (HMR,
+  collapse/expand, hide/show by language) — as long as the first activation failed,
+  it would never dispatch a second time. It now dispatches on every render
+  (`activateFor` itself is idempotent for already-active plugins), and if no
+  provider is obtained after 3 seconds it shows "Plugin not activated" + a retry
+  button instead of waiting forever.
+- The DEBUG log list's React key was built from "source + time + first 40 chars of
+  text"; multiple logs in the same millisecond or warnings with the same prefix
+  would **collide keys**, and the panel reported "Encountered two children with the
+  same key" every frame, wiping the log buffer after 122 times. Each log now has a
+  session-unique id.
+- `%s` placeholders in the diagnostics report are no longer left as-is: console
+  arguments are formatted according to `%s/%d/%o/%c`, so React warnings can show the
+  specific key and component stack.
+- The language icons SVG in Settings used `stroke-width` / `clip-path` (React
+  requires camelCase), causing two warnings every time Settings opened; also fixed
+  the UK flag's `clipPath` reference id (`#a` did not match the defined `f-en-a`, so
+  clipping never worked).
+- **Two activation events for the same plugin running concurrently executed
+  `activate()` twice** (opening `.tex` made `onLanguage` and `onView` arrive almost
+  simultaneously): views registered twice, editor extensions injected twice,
+  manifesting as duplicated line-level decoration classes
+  (`cm-tex-section cm-tex-section`), and leaving an unreclaimable subscription. It
+  is now deduplicated per plugin concurrency, and the two calls share the same
+  Promise.
+- Math environments such as `align` / `gather` **did not render at all**: previously
+  `\begin{align}` was stripped and only the middle lines were handed to KaTeX, but
+  `&` is an environment-level alignment marker and KaTeX errored directly
+  (`Unexpected alignment tab`), so the most visible formula degraded to source. Now
+  the complete environment is handed to KaTeX, and numbering `(1) (2)` is rendered
+  too.
+- **Reference-style images and reference-style links did not render**
+  (`![logo][img-ref]` / `[text][ref]`): block-level rendering in the editor calls
+  markdown-it block by block, and `[img-ref]: https://…` usually occupies its own
+  line (belonging to another block), so when rendering block by block
+  `env.references` was empty and the whole image degraded to plain text. Now the
+  full document's reference definitions are fed to the engine once, the same env is
+  shared between blocks, and the render cache is invalidated when definitions
+  change.
+- **Block-level rendered content previously had no styles at all**: `ul` /
+  `blockquote` / `pre` / `table` inside `.cm-md-block` were generated by markdown-it
+  and browser defaults applied directly — list indent 40px, quote only `1em 40px`
+  margin, code block without border or background. Now filled in and aligned with
+  `website/demo.html` values: list bottom margin 12px, item spacing 5px, quote 3px
+  accent left border + 14px padding + dimmed text, code block 1px border +
+  background + padding + **6px radius**, inline code gets a light background and
+  small radius separately; table borders and header background, separators, and
+  image `max-width: 100%` are also filled in.
+- **An extra blank line between list items, quote vertical line longer than body
+  text**: `.cm-md-block` is attached inside `.cm-content`, and CodeMirror's content
+  layer is `white-space: pre-wrap` (source must preserve newlines). This value was
+  inherited by the HTML inside widgets, so newlines between elements in markdown-it
+  output (`</li>\n<li>`, `</p>\n</blockquote>`) became real newlines — measured li
+  height 18px but item spacing 41px, and a three-level nested quote's vertical line
+  was 20px longer than the last line. Block-level content now explicitly sets
+  `white-space: normal`, and only `pre` keeps `pre`.
+- **Task list button did nothing when clicked**: the command had its own loop that
+  skipped empty lines, skipped lines already task items, and returned after
+  processing one line. Combined, the result was — clicking the button on an empty
+  document did nothing, existing task items could not be unchecked, and a multi-line
+  selection only changed the first line. It now directly reuses
+  `toggleLinePrefix('- [ ] ')` (which already handles "strip old prefix, add new
+  prefix").
+- **Task checkboxes are directly clickable**: checkboxes in rendered mode were
+  previously `<input disabled>`, visible but not clickable, and users had to move the
+  cursor into the line and type `x` manually; unchecked ones also used the browser
+  default grey (reading as disabled). Now `appearance: none` is self-drawn (brand
+  green thin border + solid green when checked + white checkmark), and clicking
+  rewrites the three characters in place according to the mapping "Nth checkbox in
+  block ↔ Nth `[ ]` in source", without entering source mode.
+- The light theme's dark green `#0d7259` was uniformly replaced with `#4aa63d`
+  (`--md-link` / `--md-h2` / `--md-syntax-string`); the website `--green` and demo
+  page were synchronised.
+- `toggleLinePrefix` did not recognise checkboxes when stripping prefixes: converting
+  `- [x] content` to a task list produced `- [ ] [x] content`. Now the list prefix
+  is stripped together with `[ ]` / `[x]`.
+- The regression script's `set_workspace` stub now returns a workspace descriptor;
+  the crash recovery script's IndexedDB open no longer hard-codes a version number,
+  and draft keys follow the workspace prefix — otherwise the whole
+  `npm run verify` would go red because the stub did not match the new contract.
+- Errors are no longer captured after closing the debug panel (the original comment
+  promised "restore native console after closing", but the implementation installed
+  at startup and never uninstalled, the opposite of the comment); interception is
+  now always on, and only explicitly uninstalled in tests.
 
 ## [0.1.5] - 2026-10-28
 
@@ -532,11 +720,11 @@ The workspace finally has an exit, and folders you never open can be put away.
   carry a `×` that appears on hover (always visible on touch devices, where
   hover does not exist). Removing hides the folder **and its whole subtree**;
   nothing on disk is touched. The list is persisted per workspace name, and
-  `恢复已移除的目录` in the command palette brings everything back — removing
-  would otherwise be a one-way street.
+  `Restore removed directories` in the command palette brings everything back —
+  removing would otherwise be a one-way street.
 - **Close workspace** — the tree gained a header showing the workspace name
-  with a close button (the command palette has `关闭工作区` too). Closing also
-  clears `workspace.lastId`, so a deliberately closed workspace does not
+  with a close button (the command palette has `Close workspace` too). Closing
+  also clears `workspace.lastId`, so a deliberately closed workspace does not
   reopen on the next launch; tabs are closed along with it, and unsaved tabs
   prompt first.
 
@@ -602,8 +790,8 @@ Eight interface languages, and a layout that works on a phone.
 
 ### Added
 
-- **Eight interface languages** — 简体中文 / English / Deutsch / Français /
-  日本語 / 한국어 / Italiano / Русский, 223 keys each, selectable from
+- **Eight interface languages** — Simplified Chinese / English / German / French /
+  Japanese / Korean / Italian / Russian, 223 keys each, selectable from
   Settings › Language as a flag row (plus a globe for "follow system")
   - `t()` is a plain function over module-level state, not a React hook —
     runtime messages and plugin code need text outside the component tree
@@ -674,7 +862,7 @@ Edit History Diff, plus a batch of fixes accumulated since v0.1.1.
 - `Ctrl+F` did nothing: `search()` extension present, `Mod-f` binding missing
 - WebView native find hijacked `Ctrl+F`; intercepted and forwarded as app event
   (CM6 keymap skips `defaultPrevented` events)
-- vim `:wq`: command unregistered / `:wq` resolves as `write` + `q` /
+- vim `:wq`: command unregistered / `:wq` resolves as `write` + `q` / 
   save-then-close race (saving is async); `onSaveRequest` now returns a `Promise`
 - File-tree focus never reached the tree (stopPropagation, missing `tabindex`,
   wrong query selector); `j/k/Enter` navigation works after focus
@@ -696,235 +884,286 @@ Edit History Diff, plus a batch of fixes accumulated since v0.1.1.
 
 ## [0.1.1] - 2026-10-23
 
-> 与 `docs/releases/v0.1.1.md` 保持一致。
+> Consistent with `docs/releases/v0.1.1.md`.
 
-面板快捷键、vim 全键盘、字数统计与 DEBUG 模式。渲染与 v0.1.0 一致，本版聚焦
-"操作效率"与"可观测性"。
+Panel shortcuts, full vim keyboard, word counts, and DEBUG mode. Rendering is
+the same as v0.1.0; this release focuses on "operational efficiency" and
+"observability".
 
 ### Added
 
-- **面板快捷键**（全部 toggle，再按一次关闭；判断用 `event.code`）
-  - `Ctrl/Cmd+Shift+X` 插件面板
-  - `Ctrl/Cmd+Shift+G` 编辑历史
-  - `Ctrl/Cmd+Shift+,` 设置
-  - `Ctrl/Cmd+Shift+M` vim 模式
-  - `Ctrl/Cmd+Shift+E` 聚焦编辑区
-  - `Ctrl/Cmd+Shift+P` 命令面板
-- **vim 模式全键盘**
-  - ex 命令：`:w` 保存、`:q` 关闭当前标签（未保存时走确认）、`:wq`
-  - `Ctrl+F` 打开编辑区查找（不绑定 `Ctrl+G` / `Shift+Ctrl+G`）
-  - `Ctrl+Shift+B` 打开侧栏后焦点进入文件树，`j`/`k`/`Enter` 可导航
-  - 状态栏 `-- NORMAL --` / `-- INSERT --` 子模式指示
-- **字数、行数、词数统计**：状态栏右下角 `行 · 词 · 字`；中文按 CJK 计字、
-  英文按连续字母数字计词，等宽排版防跳动
-- **DEBUG 模式**（`F12`，底部停靠）
-  - 指标：FPS / 输入延迟（EMA 平滑）/ 堆内存 / 主线程阻塞次数 / 版本
-  - 输入延迟与主线程阻塞**只在调试面板显示**，不占状态栏
-  - 日志：`console.*` + 未捕获异常 + Promise 拒绝，环形缓冲 500 条，
-    应用启动即收集；支持搜索与级别过滤
-  - 复制诊断报告：含设置快照、文档状态、性能指标与最近 200 条日志
+- **Panel shortcuts** (all toggle; press again to close; detection uses
+  `event.code`)
+  - `Ctrl/Cmd+Shift+X` plugin panel
+  - `Ctrl/Cmd+Shift+G` edit history
+  - `Ctrl/Cmd+Shift+,` settings
+  - `Ctrl/Cmd+Shift+M` vim mode
+  - `Ctrl/Cmd+Shift+E` focus editor
+  - `Ctrl/Cmd+Shift+P` command palette
+- **Full vim-mode keyboard**
+  - ex commands: `:w` save, `:q` close current tab (with confirmation when
+    unsaved), `:wq`
+  - `Ctrl+F` opens editor search (does not bind `Ctrl+G` / `Shift+Ctrl+G`)
+  - `Ctrl+Shift+B` opens the sidebar and moves focus into the file tree;
+    `j`/`k`/`Enter` navigate
+  - Status bar `-- NORMAL --` / `-- INSERT --` submode indicator
+- **Word, line, and character counts**: bottom-right of the status bar
+  `lines · words · chars`; Chinese counted by CJK characters, English by
+  consecutive letters/digits, monospace layout prevents jitter
+- **DEBUG mode** (`F12`, docked at the bottom)
+  - Metrics: FPS / input latency (EMA smoothed) / heap memory / main-thread
+    blocking count / version
+  - Input latency and main-thread blocking are **only shown in the debug
+    panel**, not in the status bar
+  - Logs: `console.*` + uncaught exceptions + Promise rejections, ring buffer
+    of 500 entries, collected from app startup; supports search and level
+    filtering
+  - Copy diagnostics report: includes settings snapshot, document state,
+    performance metrics, and the last 200 log entries
 
 ### Fixed
 
-- `Ctrl+Shift+B` 只能关不能开（handler 读渲染期闭包旧值）
-- `Ctrl+Shift+,` 无效（`Shift+,` 的 key 是 `<`，改用 `event.code`）
-- DEBUG 面板日志为空（拦截在面板打开时才安装）
-- DEBUG 面板只露出一条边（`.app` grid 隐式行高度 0）
-- `Ctrl+F` 查找丢失（`search()` 扩展在，但 keymap 缺 `Mod-f`）
+- `Ctrl+Shift+B` could only close, not open (handler read a stale value from
+  the render-time closure)
+- `Ctrl+Shift+,` did nothing (`Shift+,` has key `<`; switched to `event.code`)
+- DEBUG panel logs were empty (interception was installed only when the panel
+  opened)
+- DEBUG panel showed only one edge (`.app` grid implicit row height 0)
+- `Ctrl+F` search was missing (the `search()` extension was present, but the
+  keymap lacked `Mod-f`)
 
 ### Known limitations
 
-- vim 的 `:q` 关闭当前标签，不是整个应用
-- 堆内存依赖 `performance.memory`（WebView2 可能显示 —）
+- vim's `:q` closes the current tab, not the whole application
+- Heap memory depends on `performance.memory` (WebView2 may show —)
 
 ## [0.1.0] - 2026-10-22
 
-> 与 `docs/releases/v0.1.0.md` 保持一致。
+> Consistent with `docs/releases/v0.1.0.md`.
 
-插件系统从"能加载"走到"能写"：五个贡献点全部接通，命令面板补齐了
-命令层的唯一主入口，加载链有五层容错。
+The plugin system went from "can load" to "can write": all five contribution
+points are wired up, the command palette completes the single main entry point
+for the command layer, and the load chain has five layers of fault tolerance.
 
 ### Added
 
-- **插件贡献点**：`commands` / `keybindings` / `menus` / `views` /
-  `configuration` 全部可用
-  - 命令三个入口：工具栏按钮、命令面板、键位
-  - 键位按 VSCode 写法（`Mod-Shift-D`），宿主翻译成编辑器语法
-  - 视图在侧栏注册 `render(container)` 面板
-  - 配置项在设置页「插件配置」区自动渲染，插件可读写
-- **命令面板**（`Ctrl/Cmd+Shift+P`）：搜索、方向键选择、回车执行、
-  右侧显示快捷键；过滤掉无需用户可见 title 的内部命令
-- **插件管理面板**：列表视图，含图标、状态徽章（已启用/已禁用/
-  加载失败/未激活）、版本与 id、失败原因、启用/禁用/删除、导入入口
-- **插件配置 UI**：`ConfigurationService.listSchemas()` + 设置页
-  「插件配置」区（boolean 分段按钮，number/text 输入框）
-- **`defaultPlugin` 图标**：插件未设置图标时的统一默认图标
+- **Plugin contribution points**: `commands` / `keybindings` / `menus` / `views` /
+  `configuration` all usable
+  - Commands have three entries: toolbar buttons, command palette, keybindings
+  - Keybindings use VSCode syntax (`Mod-Shift-D`), translated by the host into
+    editor syntax
+  - Views register `render(container)` panels in the sidebar
+  - Configuration items are automatically rendered in the Settings "Plugin
+    configuration" section; plugins can read and write them
+- **Command palette** (`Ctrl/Cmd+Shift+P`): search, arrow-key selection, Enter
+  to execute, shortcuts shown on the right; filters out internal commands that
+  do not need a user-visible title
+- **Plugin management panel**: list view with icon, status badge (enabled /
+  disabled / load failed / not activated), version and id, failure reason,
+  enable/disable/delete, import entry
+- **Plugin configuration UI**: `ConfigurationService.listSchemas()` + Settings
+  "Plugin configuration" section (boolean segmented buttons, number/text input
+  fields)
+- **`defaultPlugin` icon**: unified default icon when a plugin has no icon
 
 ### Changed
 
-- 插件加载移入启动序列（`configuration.load` → 恢复工作区 →
-  `loadSettings`/`applySettings` → 插件加载/激活 → 冷启动文件），
-  禁用名单与插件配置在此之前才有值
-- 弹窗类 UI 统一复用 `.settings-*` 结构与样式（插件面板、命令面板）
-- 工具栏命令未设 `icon` 时兜底改为 `defaultPlugin`（原为 `code`）
-- 状态栏只统计加载失败的插件（`failed`），用户主动禁用不再计入
+- Plugin loading moved into the startup sequence (`configuration.load` → restore
+  workspace → `loadSettings`/`applySettings` → plugin load/activate → cold-start
+  file), so the disable list and plugin configuration have values before that
+- Popup UIs uniformly reuse `.settings-*` structure and styles (plugin panel,
+  command palette)
+- Toolbar command fallback icon changed to `defaultPlugin` when no `icon` is set
+  (previously `code`)
+- The status bar counts only plugins that failed to load (`failed`); plugins
+  deliberately disabled by the user are no longer counted
 
 ### Fixed
 
-插件加载链的六个独立缺陷，任何一个都会让插件"看起来装了、实际不可用"：
+Six independent defects in the plugin load chain, any one of which would make a
+plugin "look installed but actually unusable":
 
-- **贡献被覆盖**：外部插件逐个 `host.load()`，而 load 是全量重建，
-  最后一个插件的贡献把内置插件（文件树/大纲/格式化/文件操作）冲掉 ——
-  表现为工具栏清空、侧栏打不开
-- **激活过严**：点命令时还要求显式声明 `onCommand:<id>` ——
-  改为"声明了命令即隐含激活"（对齐 VSCode）
-- **生命周期错位**：插件加载与激活曾写在 `regrantWorkspace()` 里，
-  正常启动走自动恢复工作区，从不经过该函数
-- **闭包 TDZ**：启动任务在 `createRuntime` 同步体早期访问函数体内后段
-  的 const；catch 里的 `showMessage` 当时也不可用 —— 错误双重静默
-- **假激活**：没有 `activate` 导出时仍置为 `active`，命令一条没注册
-- **字段名不匹配**：外部插件传 `{ module: { activate } }` 而接口是平铺
-  字段，且被 `as never` 掩盖 —— 插件系统失效的真正根因
+- **Contributions overwritten**: external plugins each called `host.load()`, and
+  load rebuilt everything, so the last plugin's contributions wiped out the
+  built-in plugins (file tree / outline / formatting / file operations) — the
+  toolbar went empty and the sidebar would not open
+- **Activation too strict**: clicking a command also required an explicit
+  `onCommand:<id>` declaration — changed to "declaring a command implies
+  activation" (aligned with VSCode)
+- **Lifecycle misplacement**: plugin loading and activation were written inside
+  `regrantWorkspace()`, while normal startup goes through automatic workspace
+  restoration and never passes through that function
+- **Closure TDZ**: startup tasks accessed `const`s later in the function body
+  during the synchronous body of `createRuntime`; `showMessage` in the catch was
+  also unavailable at that time — errors were doubly silent
+- **Fake activation**: when there was no `activate` export, the plugin was still
+  marked `active`, with not a single command registered
+- **Field name mismatch**: external plugins passed `{ module: { activate } }`
+  while the interface had flat fields, and it was hidden by `as never` — the
+  real root cause of the plugin system failing
 
-其余修复：
+Other fixes:
 
-- **禁用不持久**：`plugins.disabled` 只写不读；且插件加载早于
-  `applySettings`，读到的是默认空名单
-- **禁用后工具栏残留**：`disable()` 只清命令表、不重建贡献集
-- **命令面板列出内部命令**：`aropyt.explorer.open` 等需要参数的内部命令
-  出现在面板里
-- **插件键位不触发**：CM6 要求末段字母小写（`Mod-Shift-d`），插件按
-  VSCode 写 `Mod-Shift-D` 永远匹配不上
-- **`Ctrl+Shift+B` 只能关不能开**：只注册一次的 handler 读到了首次渲染
-  时闭包里的旧值
-- **history 图标被裁切**：`history.svg` 的 viewBox 是 `0 0 200 200`，
-  转制时写死成 1024
-- **`deactivate()` 从未被调用**：文档承诺"退出或禁用时调用"
+- **Disable not persisted**: `plugins.disabled` was only written, never read;
+  and plugin loading happened before `applySettings`, so it read the default
+  empty list
+- **Toolbar residue after disabling**: `disable()` only cleared the command
+  table and did not rebuild the contribution set
+- **Command palette listed internal commands**: internal commands requiring
+  parameters such as `aropyt.explorer.open` appeared in the palette
+- **Plugin keybindings did not trigger**: CM6 requires the last letter to be
+  lowercase (`Mod-Shift-d`); plugins writing `Mod-Shift-D` in VSCode style never
+  matched
+- **`Ctrl+Shift+B` could only close, not open**: a handler registered only once
+  read the old value from the closure at first render
+- **history icon clipped**: `history.svg`'s viewBox was `0 0 200 200`, but the
+  conversion hard-coded 1024
+- **`deactivate()` was never called**: the documentation promised "called on
+  exit or disable"
 
 ### Known limitations
 
-- 插件为单文件，不能使用 npm 依赖
-- 插件与应用同进程运行，没有沙箱
-- 不支持热重载（修改后需重新导入并重启）
-- `views` 目前验证了 `sidebar`；`main` / `right` 未验证
-- 生产版无开发者工具，插件错误详情通过插件面板的原因字段查看
+- Plugins are single files and cannot use npm dependencies
+- Plugins run in the same process as the app, with no sandbox
+- No hot reload (after modification, re-import and restart)
+- `views` currently validates `sidebar`; `main` / `right` are unverified
+- Production builds have no developer tools; plugin error details are viewed
+  through the reason field in the plugin panel
 
 ## [0.0.9] - 2026-10-20
 
-> 与 `docs/releases/v0.0.9.md` 保持一致。
+> Consistent with `docs/releases/v0.0.9.md`.
 
 ### Added
 
-- **GitHub 风格警报块**：`[!NOTE]` / `[!TIP]` / `[!IMPORTANT]` /
-  `[!WARNING]` / `[!CAUTION]`，五套官方 Octicon 图标与类型配色
-  （CSS mask + data URI，颜色取语义令牌，深浅主题自适应）
+- **GitHub-style alert blocks**: `[!NOTE]` / `[!TIP]` / `[!IMPORTANT]` /
+  `[!WARNING]` / `[!CAUTION]`, five sets of official Octicon icons and type
+  colours (CSS mask + data URI, colours from semantic tokens, adaptive to light
+  and dark themes)
 
 ### Changed
 
-- **排版节奏收紧**：正文行高 1.2；段落间的空行压缩至 0.1em；
-  重置 `blockquote` / `pre` 的 UA 默认 margin（1em 40px / 1em）；
-  引用与列表项内部段落不吃段间距；警告块 padding/margin 收紧
+- **Tighter typographic rhythm**: body line height 1.2; blank lines between
+  paragraphs compressed to 0.1em; reset UA default margins on `blockquote` /
+  `pre` (1em 40px / 1em); paragraphs inside quotes and list items do not get
+  paragraph spacing; alert block padding/margin tightened
 
 ### Fixed
 
-- **侧栏开合状态不持久**：sidebarOpen 改为 RuntimeState 投影订阅。
-  原实现是组件局部 state + 只在 runtime 创建时读一次配置，而配置异步
-  加载 —— 那一刻拿到的是默认值，之后永不更新（表现为"关掉侧栏、
-  重启又展开"）
+- **Sidebar open/closed state not persisted**: sidebarOpen changed to a
+  RuntimeState projection subscription. The original implementation used
+  component-local state + read configuration only once when runtime was created,
+  while configuration loads asynchronously — at that moment it got the default
+  value and never updated afterwards (manifesting as "close the sidebar, restart
+  and it is expanded again")
 
 ## [0.0.8] - 2026-10-19
 
-> 与 `docs/releases/v0.0.8.md` 保持一致；本节只做技术向归类。
+> Consistent with `docs/releases/v0.0.8.md`; this section only categorises
+> technically.
 
 ### Added
 
-- **Android 正式签名 APK**（Android 10+ / arm64）：CI 全自动构建 —
-  Gradle init script 注入签名、`tauri icon` 生成 Android mipmap、
-  `fitsSystemWindows` 修复状态栏溢出
-- **源码模式非打印字符**（`Ctrl+/`）：空格为浅色中点、制表符为向右箭头、
-  控制字符为转义符号（`highlightSpecialChars` + 自定义行装饰）
-- 工具栏图标更新：设置、插件管理、源码模式（setting / plugin / invisible）
+- **Android signed release APK** (Android 10+ / arm64): CI fully automated build —
+  Gradle init script injects signing, `tauri icon` generates Android mipmaps,
+  `fitsSystemWindows` fixes status bar overflow
+- **Non-printing characters in source mode** (`Ctrl+/`): spaces as light middle
+  dots, tabs as right arrows, control characters as escape symbols
+  (`highlightSpecialChars` + custom line decorations)
+- Toolbar icon updates: settings, plugin management, source mode (setting /
+  plugin / invisible)
 
 ### Changed
 
-- 设置面板标题栏固定，内容区独立滚动
-- 配置区过时说明文字修正（"写回文件在下一版接入" → "会立即写回"）
-- 空白字符标记使用专用颜色令牌 `--md-ws-dot`（半透明，深浅两套）
+- Settings panel title bar fixed, content area scrolls independently
+- Outdated description text in the configuration section corrected ("write-back
+  to file will be connected in the next version" → "writes back immediately")
+- Whitespace markers use a dedicated colour token `--md-ws-dot` (semi-transparent,
+  light and dark sets)
 
 ### Fixed
 
-- 发布流程 tag 错位：`tagName` 改用真实 tag（rc 与正式版不再混淆）
-- Windows MSI 编码：fileAssociations 类型名改英文 + `wix.language=zh-CN`
-- Android 安装包图标不再是 Tauri 默认图标
+- Release process tag misplacement: `tagName` changed to the real tag (rc and
+  release versions no longer confused)
+- Windows MSI encoding: fileAssociations type name changed to English +
+  `wix.language=zh-CN`
+- Android installer icon is no longer the Tauri default icon
 
 ### Removed
 
-- 应用内 i18n（多轮脚本改写导致字典损坏；完整实现已跳票，
-  不再承诺具体版本）
+- In-app i18n (multiple rounds of script rewriting corrupted the dictionaries;
+  the full implementation slipped and no specific version is promised anymore)
 
 ## [0.0.7] - 2026-10-19
 
 ### Added
 
-- **编辑历史**：保存即版本、内容哈希去重、按文件淘汰、一键恢复
-  （恢复前自动快照当前内容）、手动命名版本
-- **自动保存版本**：可设间隔（默认 60 秒）
-- **数据导出 / 导入**：草稿与编辑历史打包为单个 JSON
-- 设置面板「数据备份」与「编辑历史」分区
+- **Edit history**: save creates a version, content-hash deduplication, eviction
+  per file, one-click restore (automatically snapshots current content before
+  restoring), manually named versions
+- **Automatic version saving**: configurable interval (default 60 seconds)
+- **Data export / import**: drafts and edit history packed as a single JSON
+- Settings panel "Data backup" and "Edit history" sections
 
 ### Fixed
 
-- 导出无反应：ACL 未授权 `dialog:allow-save` / `dialog:allow-ask`
-- 导出静默失败：读取 IndexedDB 的错误未被捕获
-- CI：移除平台特定的 `bundle.targets`
+- Export did nothing: ACL did not authorise `dialog:allow-save` /
+  `dialog:allow-ask`
+- Export failed silently: errors reading IndexedDB were not caught
+- CI: removed platform-specific `bundle.targets`
 
 ## [0.0.6] - 2026-10-18
 
 ### Added
 
-- 文件关联：`.md` / `.markdown`、`.tex` / `.latex`、`.fountain`
-  （NSIS 安装时注册，自定义 SVG 图标）
-- 单实例：已运行时双击文件转发到现有窗口
+- File associations: `.md` / `.markdown`, `.tex` / `.latex`, `.fountain`
+  (registered during NSIS installation, custom SVG icons)
+- Single instance: double-clicking a file while already running forwards it to
+  the existing window
 
 ### Fixed
 
-- 主线程预算提示在启动阶段误报（宽限期）
+- Main-thread budget warning false positive during startup (grace period)
 
 ## [0.0.5] - 2026-10-17
 
 ### Added
 
-- 设置面板：主题三态、Vim 开关、配置文件路径与打开入口
-- 配置真源迁移到 `~/.aropyt/settings.jsonc`（原子写 + 非法值提示）
+- Settings panel: three-state theme, Vim toggle, configuration file path and
+  open entry
+- Configuration source of truth migrated to `~/.aropyt/settings.jsonc` (atomic
+  write + invalid-value prompt)
 
 ## [0.0.4] - 2026-10-16
 
 ### Added
 
-- Vim 模式打磨：NORMAL / INSERT / VISUAL 状态指示、光标形状、
-  vim 模式下固定源码视图
+- Vim mode polish: NORMAL / INSERT / VISUAL status indicator, cursor shape,
+  fixed source view in vim mode
 
 ## [0.0.3] - 2026-10-15
 
 ### Added
 
-- 侧栏：文件树与大纲（折叠、活动文件展开、跨会话折叠状态）
-- 视图系统：内核固有视图与插件贡献视图两条通道
+- Sidebar: file tree and outline (collapse, active file expansion, cross-session
+  collapse state)
+- View system: two channels — core built-in views and plugin-contributed views
 
 ## [0.0.2] - 2026-10-14
 
 ### Added
 
-- Typora 式原地渲染：块级所见即所得，光标行显形、非光标行渲染
-- Markdown 渲染管线：GFM、数学公式、代码高亮、任务列表
+- Typora-style in-place rendering: block-level WYSIWYG, cursor line shows source,
+  non-cursor lines rendered
+- Markdown rendering pipeline: GFM, math formulas, code highlighting, task lists
 
 ## [0.0.1] - 2026-10-13
 
 ### Added
 
-- 项目骨架：Tauri 2 + CodeMirror 6 + React 18
-- 编辑器内核、命令注册表、键位解析、主题系统
-- 深浅色板与首屏包体预算闸门
+- Project skeleton: Tauri 2 + CodeMirror 6 + React 18
+- Editor core, command registry, keybinding parsing, theme system
+- Light and dark palettes and first-paint bundle budget gate
 
 [Unreleased]: https://github.com/Geekstrange/Aropyt/compare/v0.1.7...HEAD
 [0.1.7]: https://github.com/Geekstrange/Aropyt/compare/v0.1.6...v0.1.7
