@@ -35,6 +35,8 @@ const VIEW_ID = 'aropyt.fountain.scenes';
 type LineKind =
   | 'blank'
   | 'title'
+  /** 标题页的 `Title:` 那一行：单独加重，它是剧本的名字。 */
+  | 'titleMain'
   | 'scene'
   | 'section'
   | 'character'
@@ -53,6 +55,13 @@ export interface FountainLine {
   readonly number: number;
   readonly kind: LineKind;
   readonly text: string;
+  /**
+   * 封面行专用：键名（`Title:` 连同冒号后的空白）到此为止，之后是值。
+   *
+   * 渲染时把这前半段替换成空，页面上就只剩 `Big Fish` —— 有键名像表单，
+   * 没有才像剧本封面。
+   */
+  readonly prefixEnd?: number;
 }
 
 /** 场景标题：INT. / EXT. / EST. / INT./EXT. / I/E. —— 允许大小写，实际写作都是大写。 */
@@ -71,8 +80,17 @@ const CHARACTER_TEXT = /^[A-Z0-9 .,'’\-()#^@]+$/;
 const PAGE_BREAK = /^={3,}$/;
 /** 歌词：`~` 开头。 */
 const LYRICS = /^~/;
-/** 标题页：`Key: Value`，只认文档开头的若干行。 */
-const TITLE_LINE = /^[A-Za-z][A-Za-z0-9 _-]*:\s*\S/;
+/**
+ * 标题页：**只认 Fountain 规范里的这八个键**。
+ *
+ * 不能放宽成"任意 `Xxx:`"：正文里 `Name: Alice`、`Note: 待办` 这类行很常见，
+ * 放宽之后它们会被当成封面信息整行弱化，而作者根本没那个意思。
+ */
+const TITLE_KEYS = /^(?:title|credit|author|source|draft\s*date|contact|notes|copyright)\s*:/i;
+/** 键后面有没有值。没有时值写在**下一行并缩进**（`Notes:` 的常见写法）。 */
+const TITLE_HAS_VALUE = /:\s*\S/;
+/** `Title:` —— 封面里唯一需要加重的行。 */
+const TITLE_MAIN = /^title\s*:/i;
 /** 标题页最多认这么多行 —— 正文里偶尔出现 "作者: xxx" 不该被当成标题页。 */
 const TITLE_PAGE_LIMIT = 30;
 
@@ -111,6 +129,12 @@ export function classifyFountain(lines: readonly string[]): readonly FountainLin
   let previousBlank = true;
   let inBoneyard = false;
   let inNote = false;
+  /*
+   * 上一行是"只有键、没有值"的封面字段（例如 `Notes:`）。
+   * 紧跟其后的缩进行仍属于封面 —— 否则 `FINAL PRODUCTION DRAFT` 这种
+   * 全大写行会被当成角色名，把后面几行连带当成对白。
+   */
+  let inTitleValue = false;
 
   for (let index = 0; index < lines.length; index += 1) {
     const raw = lines[index] ?? '';
@@ -145,26 +169,49 @@ export function classifyFountain(lines: readonly string[]): readonly FountainLin
       out.push({ number: index + 1, kind: 'blank', text: raw });
       inDialogue = false;
       previousBlank = true;
+      /* 空行收尾：封面到此结束，后面的缩进行不再是它的续行 */
+      inTitleValue = false;
       continue;
     }
 
     let kind: LineKind;
-    if (PAGE_BREAK.test(text)) kind = 'pagebreak';
-    else if (LYRICS.test(text)) kind = 'lyrics';
-    else if (index < TITLE_PAGE_LIMIT && TITLE_LINE.test(text)) kind = 'title';
-    else if (CENTERED.test(text)) kind = 'center';
-    else if (SECTION.test(text)) kind = 'section';
-    else if (isTransition(text)) kind = 'transition';
-    else if (isScene(text)) kind = 'scene';
-    else if (text.startsWith('(') && text.endsWith(')')) kind = 'paren';
-    else if (inDialogue) kind = 'dialogue';
-    else if (previousBlank && (FORCED_CHARACTER.test(text) || isCharacter(text))) kind = 'character';
-    else kind = 'action';
+    /* 封面行的键名结束位置（含冒号后的空白）—— 渲染时会把这段藏掉 */
+    let titlePrefixEnd: number | undefined;
+
+    if (index < TITLE_PAGE_LIMIT && TITLE_KEYS.test(text)) {
+      kind = TITLE_MAIN.test(text) ? 'titleMain' : 'title';
+      /* 键后无值 → 下一行的缩进内容属于它 */
+      inTitleValue = !TITLE_HAS_VALUE.test(text);
+
+      const colon = raw.indexOf(':');
+      let end = colon >= 0 ? colon + 1 : 0;
+      while (end < raw.length && (raw[end] === ' ' || raw[end] === '\t')) end += 1;
+      titlePrefixEnd = end;
+    } else if (index < TITLE_PAGE_LIMIT && inTitleValue && /^\s+\S/.test(raw)) {
+      kind = 'title';
+    } else {
+      inTitleValue = false;
+      if (PAGE_BREAK.test(text)) kind = 'pagebreak';
+      else if (LYRICS.test(text)) kind = 'lyrics';
+      else if (CENTERED.test(text)) kind = 'center';
+      else if (SECTION.test(text)) kind = 'section';
+      else if (isTransition(text)) kind = 'transition';
+      else if (isScene(text)) kind = 'scene';
+      else if (text.startsWith('(') && text.endsWith(')')) kind = 'paren';
+      else if (inDialogue) kind = 'dialogue';
+      else if (previousBlank && (FORCED_CHARACTER.test(text) || isCharacter(text))) kind = 'character';
+      else kind = 'action';
+    }
 
     if (kind === 'character') inDialogue = true;
     else if (kind !== 'dialogue' && kind !== 'paren') inDialogue = false;
 
-    out.push({ number: index + 1, kind, text: raw });
+    out.push({
+      number: index + 1,
+      kind,
+      text: raw,
+      ...(titlePrefixEnd === undefined ? {} : { prefixEnd: titlePrefixEnd }),
+    });
     previousBlank = false;
   }
 
@@ -179,6 +226,8 @@ function extractOutline(text: string): readonly FountainLine[] {
 }
 
 const LINE_CLASS: Partial<Record<LineKind, string>> = {
+  /* 两个类：基础样式管居中和弱化，修饰类只给 Title 行加重 */
+  titleMain: 'cm-fountain-title cm-fountain-title--main',
   title: 'cm-fountain-title',
   scene: 'cm-fountain-scene',
   section: 'cm-fountain-section',
@@ -196,6 +245,7 @@ const LINE_CLASS: Partial<Record<LineKind, string>> = {
 /** 按行号区间生成行装饰。只处理视口内的行。 */
 function decorate(view: EditorView, lines: readonly FountainLine[]): DecorationSet {
   const doc = view.state.doc;
+  const head = view.state.selection.main.head;
   const builder = new RangeSetBuilder<Decoration>();
 
   for (const line of lines) {
@@ -205,6 +255,40 @@ function decorate(view: EditorView, lines: readonly FountainLine[]): DecorationS
     const docLine = doc.line(line.number);
     if (docLine.to < view.viewport.from || docLine.from > view.viewport.to) continue;
     builder.add(docLine.from, docLine.from, Decoration.line({ class: css }));
+
+    /*
+     * 封面行：把 `Title:` / `Author:` 这类键名藏起来，只留值 ——
+     * 有键名像表单，没有才像剧本封面。
+     *
+     * 三条约束：
+     *  1. **不跨行**：CM6 禁止 ViewPlugin 提供替换换行的装饰，这里只动
+     *     行首的前缀，永远在同一行内；
+     *  2. **值部分为空时不藏**：`Notes:` 这种只有键的行，藏了就整行空白，
+     *     既看不见也点不到；
+     *  3. **光标贴近时不藏**：被替换的区间放不进光标，在那儿按 Backspace
+     *     会把整段前缀当成一个字符删掉（与块级删除是同一个坑）。
+     */
+    const prefixEnd = line.prefixEnd;
+    if (prefixEnd !== undefined && prefixEnd > 0) {
+      const from = docLine.from;
+      const to = Math.min(from + prefixEnd, docLine.to);
+      const hasValue = to < docLine.to;
+      /*
+       * `head === from`（光标停在行首）也算"没贴近"：行首的 Backspace 删的是
+       * 上一行，Delete 只吃掉键名的第一个字符、下一次分类就不成其为键了
+       * （届时前缀自然重现），都不会造成"整段前缀被当成一个字符删掉"。
+       *
+       * 但**进入前缀内部**或落在值开头（`head === to`）时必须露出源码：
+       * 前者是在改键名，后者按 Backspace 正好会命中整段前缀。
+       *
+       * 这一格之差决定"打开文档时封面是不是已经排好"—— 光标默认在 0，
+       * 若把行首也算贴近，第一行永远带着 `Title:`。
+       */
+      const hugging = head > from && head <= to + 1;
+      if (hasValue && !hugging) {
+        builder.add(from, to, Decoration.replace({}));
+      }
+    }
   }
 
   return builder.finish();
@@ -237,6 +321,14 @@ function fountainDecorations(isActive: () => boolean): Extension {
         if (update.docChanged || active !== this.#active) {
           this.#active = active;
           this.#recompute(update.view);
+          return;
+        }
+        if (update.selectionSet) {
+          /*
+           * 光标移动会改变"要不要藏封面键名"，必须重挂。
+           * 只是重挂装饰（视口内几十行），不重新分类。
+           */
+          this.decorations = decorate(update.view, this.#classified);
           return;
         }
         if (update.viewportChanged) {

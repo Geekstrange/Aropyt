@@ -63,6 +63,22 @@
 
 ### Fixed
 
+- **Fountain 标题页只认"键 + 同行值"**：Fountain 规范允许值写在**下一行并
+  缩进**（`Notes:` 的常见写法），而判定条件要求同行有非空白字符 ——
+  `Notes:` 那行被当成正文，它下面几行全大写的草稿说明还可能被误判成
+  角色名，把后文连带当成对白。另外标题页样式只有斜体 + 半透明，没有居中，
+  看起来不像封面。
+  现在：只认规范的八个键（Title / Credit / Author / Source / Draft date /
+  Contact / Notes / Copyright —— 不再用"任意 `Xxx:`"，否则正文里的
+  `Name: Alice` 会被整行弱化）；键后无值时吸收后续缩进行；`Title:` 单独
+  加重（1.4em、粗体、不透明）并在下方留白，其余元数据行居中弱化。
+  **键名本身被隐藏**（行内 `Decoration.replace`）：页面上只剩
+  `Big Fish` / `written by` / `John August` —— 有键名像表单，没有才像封面。
+  三条约束：只替换行内前缀（CM6 禁止 ViewPlugin 跨行替换）；值部分为空时
+  不替换（`Notes:` 只有键，藏了就整行空白）；光标落在前缀内部或值开头时
+  露出源码（否则在里面按 Backspace 会把整段前缀当成一个字符删掉）。
+  光标停在**行首**不算贴近 —— 否则打开文档时光标在 0、第一行永远带着
+  `Title:`。
 - **`.tex` 文档导出只剩一行文件名**：`export_document` 把读入格式写死成
   `markdown`，于是 LaTeX 源码里的 `\documentclass` / `\section` / `\begin{}`
   全被当成普通文字吞掉 —— 实测 `test/basic-test.tex`（66 行）导出成 PDF

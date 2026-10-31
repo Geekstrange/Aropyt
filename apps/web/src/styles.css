@@ -2555,10 +2555,31 @@ button {
   font-weight: 700;
 }
 
-/* 标题页元数据（Title: … / Author: …）—— 是剧本的封面信息，不是正文 */
+/* 标题页元数据（Credit: … / Author: …）—— 剧本封面，整行居中并弱化 */
 .cm-fountain-title {
   font-style: italic;
   opacity: 0.7;
+  text-align: center;
+}
+
+/*
+ * `Title:` 那一行是剧本的名字，给足视觉重量。
+ *
+ * 必须写在基础规则之后：两个类挂在同一个 `.cm-line` 上，
+ * 相同属性（font-style / opacity）靠后者覆盖前者。
+ */
+.cm-fountain-title--main {
+  font-style: normal;
+  font-size: 1.4em;
+  font-weight: 700;
+  letter-spacing: 0.01em;
+  opacity: 1;
+  /*
+   * 标题与署名之间留白：真实剧本封面里这两块是分开的两簇。
+   * 用 padding 而不是 margin —— margin 不参与 CM6 的 offsetHeight 测量，
+   * 会让点击落点偏高（同一坑在 LaTeX 块那里踩过）。
+   */
+  padding-bottom: 0.7em;
 }
 
 .cm-fountain-lyrics {
