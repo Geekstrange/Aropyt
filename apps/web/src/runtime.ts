@@ -56,6 +56,7 @@ import {
   assembleBackup,
   detectLanguage,
   languageLabelOf,
+  onIdle,
 } from '@aropyt/core';
 
 import type { DocumentRef, ImportedFile, Memento, PluginManifest } from '@aropyt/plugin-api';
@@ -158,6 +159,20 @@ export interface RuntimeState {
    * 这个是"工具栏这块区域显不显示"。
    */
   readonly toolbarOpen: boolean;
+  /**
+   * 导出能力：pandoc 是否可用。
+   *
+   * 启动时探测一次。不可用时导出按钮禁用并给出安装引导 —— 比让用户点下
+   * 按钮、再看一串英文报错要好。
+   */
+  readonly pandoc: { readonly available: boolean; readonly version: string | null };
+  /**
+   * PDF 排版引擎（typst）是否可用。
+   *
+   * 与 pandoc 分开：两者装不装互不相关（只写 docx 的人不需要 typst）。
+   * 缺 typst 时只有 PDF 这一个格式不可用，其它照常。
+   */
+  readonly typst: { readonly available: boolean; readonly version: string | null };
   /** 恢复自草稿/崩溃日志的文件路径；null = 本次会话没有恢复过。状态栏黄点用它，且只在**当前激活**文件是它时才亮。 */
   readonly recoveredPath: string | null;
   /** 恢复来源所在的工作区 —— 与 recoveredPath 一起判断黄点（同名文件跨工作区不能互相点亮）。 */
@@ -289,6 +304,15 @@ export interface AropytRuntime {
    * （Ctrl+Shift+H）与设置页开关，别再删掉这两个中的一个。
    */
   toggleToolbar(): void;
+  /**
+   * 导出当前文档。`format` 取 pandoc 的目标格式（docx / html / epub / rtf）。
+   *
+   * 内部会先探测 pandoc、再让用户选保存位置；任何一步失败都会提示真实的
+   * 原因（pandoc 的 stderr 原样带回），不会静默。
+   */
+  exportDocument(format?: string): Promise<void>;
+  /** 选择外部工具（pandoc / typst）的可执行文件并写进配置。 */
+  pickToolPath(kind: 'pandoc' | 'typst'): Promise<void>;
   /**
    * 插件启用/禁用。
    * 禁用**立即生效**（撤销该插件的命令/视图声明）并写入 localStorage；
@@ -439,6 +463,8 @@ export function createRuntime(options: RuntimeOptions): AropytRuntime {
     historyInterval: currentSettings.history.autoSaveInterval,
     sidebarOpen: currentSettings.sidebar.open,
     toolbarOpen: currentSettings.toolbar.open,
+    pandoc: pandocState,
+    typst: typstState,
     recoveredPath: state.recoveredPath,
     recoveredWorkspaceId: state.recoveredWorkspaceId,
     plugins: host.records,
@@ -954,6 +980,8 @@ export function createRuntime(options: RuntimeOptions): AropytRuntime {
     createUntitledTab,
     toggleVimMode,
     toggleToolbar,
+    exportDocument,
+    pickToolPath,
     activateRelativeTab,
     openSettingsFile,
     getSettings() {
@@ -1913,6 +1941,20 @@ function validateContributions(manifest: PluginManifest): void {
   /** 配置的真相：运行时状态由它派生（theme / vim / sidebar）。 */
   let currentSettings: AppSettings = structuredClone(DEFAULT_SETTINGS);
 
+  /**
+   * pandoc 探测结果。放在这里（而不是靠近 `exportDocument`）是因为
+   * `getState()` 在初始化阶段就会被调用，晚声明会命中 TDZ。
+   */
+  let pandocState: { available: boolean; version: string | null } = {
+    available: false,
+    version: null,
+  };
+  /** PDF 排版引擎。与 pandoc 独立探测，缺它只影响 PDF 一个格式。 */
+  let typstState: { available: boolean; version: string | null } = {
+    available: false,
+    version: null,
+  };
+
   /** 把配置应用到运行时（启动与每次修改都走这里，保证单一入口）。 */
   function applySettings(next: AppSettings): void {
     currentSettings = next;
@@ -1950,6 +1992,7 @@ function validateContributions(manifest: PluginManifest): void {
       vim: { ...currentSettings.vim, ...(patch.vim ?? {}) },
       sidebar: { ...currentSettings.sidebar, ...(patch.sidebar ?? {}) },
       toolbar: { ...currentSettings.toolbar, ...(patch.toolbar ?? {}) },
+      export: { ...currentSettings.export, ...(patch.export ?? {}) },
       plugins: { ...currentSettings.plugins, ...(patch.plugins ?? {}) },
       history: { ...currentSettings.history, ...(patch.history ?? {}) },
     };
@@ -1959,6 +2002,11 @@ function validateContributions(manifest: PluginManifest): void {
     const next = mergeSettings(patch);
     applySettings(next);
     notify();
+    /*
+     * 导出工具路径变了就重探 —— 用户改路径的动机就是"我装在这儿，你去看看"，
+     * 让他还要重启一次才生效是没道理的。
+     */
+    if (patch.export) void probeTools();
     // 落盘失败必须可见：这是"界面改了但下次启动又回去了"的唯一原因
     void saveSettings(settingsIo, next).catch((error: unknown) => {
       const detail =
@@ -2182,6 +2230,202 @@ function validateContributions(manifest: PluginManifest): void {
    */
   function toggleToolbar(): void {
     updateSettings({ toolbar: { open: !currentSettings.toolbar.open } });
+  }
+
+  /* ── 导出 ─────────────────────────────────────────── */
+
+  /**
+   * 探测单个外部工具。
+   *
+   * 失败只记 `info` 级日志：没装是完全正常的状态（很多人只写 markdown），
+   * 启动就把错误刷到控制台会制造噪声。真正需要引导的时机是用户点下导出。
+   */
+  async function probeOne(
+    label: string,
+    configured: string,
+    command: string,
+  ): Promise<{ available: boolean; version: string | null }> {
+    try {
+      const info = await invokeNative<{ path: string; version: string }>(command, {
+        overridePath: configured.trim() || null,
+      });
+      return { available: true, version: info.version };
+    } catch (error) {
+      console.info(`[aropyt] ${label} 不可用`, error);
+      return { available: false, version: null };
+    }
+  }
+
+  /**
+   * 探测导出用的外部工具。
+   *
+   * 两个**并行**探：串起来会让启动多等一次子进程（每次几十到几百毫秒）。
+   * 启动一次；改过 `export.pandocPath` / `export.typstPath` 后再探一次。
+   */
+  async function probeTools(): Promise<void> {
+    const [pandoc, typst] = await Promise.all([
+      probeOne('pandoc', currentSettings.export.pandocPath, 'pandoc_probe'),
+      probeOne('typst', currentSettings.export.typstPath, 'typst_probe'),
+    ]);
+    pandocState = pandoc;
+    typstState = typst;
+    notify();
+  }
+
+  /**
+   * 选一个可执行文件并写进配置（设置页的「浏览…」按钮）。
+   *
+   * 选完立刻重探（`updateSettings` 里触发），用户不需要重启。
+   */
+  async function pickToolPath(kind: 'pandoc' | 'typst'): Promise<void> {
+    const title = kind === 'pandoc' ? '选择 pandoc 可执行文件' : '选择 typst 可执行文件';
+    let picked: string | null = null;
+    try {
+      picked = await invokeNative<string | null>('pick_binary', { title });
+    } catch (error) {
+      const detail = error instanceof Error ? error.message : String(error);
+      await windowService.showMessage(t('rt.exportFailed', { detail }), { level: 'error' });
+      return;
+    }
+    if (!picked) return; // 用户取消
+    updateSettings(
+      kind === 'pandoc' ? { export: { pandocPath: picked } } : { export: { typstPath: picked } },
+    );
+  }
+
+  /**
+   * 导出时的**读入**格式（pandoc `--from`）。
+   *
+   * 必须跟着文档走：`.tex` 用 `markdown` 读入时，pandoc 会把
+   * `\documentclass` / `\section` / `\begin{}` 当成普通字符吞掉 ——
+   * 实测 `test/basic-test.tex`（66 行）导出成 PDF 只剩一行
+   * `% basic-test.tex`。换成 `latex` 读入后正文完整。
+   */
+  function exportSourceFormat(path: string | null): string {
+    const ext = path?.split('.').pop()?.toLowerCase() ?? '';
+    return ext === 'tex' || ext === 'latex' || ext === 'ltx' ? 'latex' : 'markdown';
+  }
+
+  /** 导出用的默认文件名：当前文档名换扩展名。 */
+  function exportFileName(format: string): string {
+    const active = state.activePath;
+    const name = active ? (active.split(/[\\/]/).pop() ?? 'document') : 'document';
+    return `${name.replace(/\.[^.]+$/, '') || 'document'}.${format}`;
+  }
+
+  /**
+   * 导出当前文档。
+   *
+   * 流程：探测 → 选目标路径 → 原生侧跑 pandoc（内容走 stdin）。
+   * 失败必须把 **pandoc 的原始 stderr** 带出来 —— 那里面才有真正的
+   * 原因（缺图、fenced div 未闭合、filter 报错），一句"导出失败"
+   * 什么也定位不了。
+   */
+  /*
+   * 导出格式清单。
+   *
+   * 顺序按"用户有多大可能点它"排：docx / pdf 是绝大多数人的目标，
+   * html 是"给同事看个网页"，odt / epub / rtf 是特定工具链的需要。
+   *
+   * 不含 MediaWiki / reST / OPML：它们是下游系统的交换格式，
+   * 不是给人读的文档，而且 wiki 大多直接吃 markdown。
+   */
+  const EXPORT_CHOICES: readonly { readonly label: string; readonly format: string }[] = [
+    { label: 'Word (.docx)', format: 'docx' },
+    { label: 'PDF (.pdf)', format: 'pdf' },
+    { label: 'HTML (.html)', format: 'html' },
+    { label: 'OpenDocument (.odt)', format: 'odt' },
+    { label: 'EPUB (.epub)', format: 'epub' },
+    { label: 'RTF (.rtf)', format: 'rtf' },
+  ];
+
+  /*
+   * 导出的**实现**在宿主，命令在宿主注册。
+   *
+   * `aropyt.file` 插件只负责把这个命令接到工具栏按钮上（同组紧随保存）——
+   * 它拿不到 runtime，也就没法直接调原生 pandoc。宿主这里才是唯一
+   * 有原生通道的一层。
+   */
+  commands.register('aropyt.export.run', () => {
+    void exportDocument();
+  });
+
+  async function exportDocument(format?: string): Promise<void> {
+    if (!pandocState.available) {
+      await windowService.showMessage(t('rt.pandocMissing'), { level: 'warning' });
+      return;
+    }
+
+    /*
+     * 没指定格式时先问一句。用 showMessage 的选择项而不是新造一个下拉：
+     * 导出是低频动作，为一个四级选择引入一套弹层不值当，而且这条路径
+     * 在命令面板里也能用（`exportDocument()` 无参即弹选择）。
+     */
+    let resolved = format;
+    if (!resolved) {
+      const choice = await windowService.showMessage(t('rt.exportChooseFormat'), {
+        level: 'info',
+        actions: EXPORT_CHOICES.map((item) => ({ label: item.label, run: () => {} })),
+      });
+      resolved = EXPORT_CHOICES.find((item) => item.label === choice)?.format;
+      if (!resolved) return; // 用户取消
+    }
+    const formatName = resolved;
+
+    /*
+     * PDF 需要 typst。缺它时**在选路径之前**就拦下 —— 否则用户已经
+     * 选好保存位置、等了几秒，才被告知"缺引擎"，那个文件还会留在磁盘上。
+     */
+    if (formatName === 'pdf' && !typstState.available) {
+      await windowService.showMessage(t('rt.typstMissing'), { level: 'warning' });
+      return;
+    }
+
+    const text = editor.getText();
+    if (text.trim().length === 0) {
+      await windowService.showMessage(t('rt.exportEmpty'), { level: 'warning' });
+      return;
+    }
+
+    const detailOf = (error: unknown): string =>
+      error instanceof Error ? error.message : typeof error === 'string' ? error : JSON.stringify(error);
+
+    let target: string | null = null;
+    try {
+      target = await invokeNative<string | null>('pick_export_path', {
+        suggested: exportFileName(formatName),
+        extension: formatName,
+      });
+    } catch (error) {
+      await windowService.showMessage(t('rt.docExportFailed', { detail: detailOf(error) }), {
+        level: 'error',
+      });
+      return;
+    }
+    if (!target) return; // 用户取消：不是错误，不留痕迹
+
+    try {
+      const report = await invokeNative<{ target: string; bytes: number }>('export_document', {
+        content: text,
+        format: formatName,
+        source: exportSourceFormat(state.activePath),
+        target,
+        /*
+         * 工作区 id 就是规范化后的根路径（`set_workspace` 的契约），
+         * 外部文件没有工作区 → null，pandoc 就按相对路径原样找图。
+         */
+        baseDir: state.activeWorkspaceId,
+        pandocPath: currentSettings.export.pandocPath.trim() || null,
+        typstPath: currentSettings.export.typstPath.trim() || null,
+      });
+      timeline('export', `${formatName} · ${report.target}`);
+      await windowService.showMessage(t('rt.docExported', { path: report.target }), { level: 'info' });
+    } catch (error) {
+      timeline('export-fail', `${formatName} · ${detailOf(error)}`, { failed: true });
+      await windowService.showMessage(t('rt.docExportFailed', { detail: detailOf(error) }), {
+        level: 'error',
+      });
+    }
   }
 
   /**
@@ -2664,6 +2908,26 @@ function validateContributions(manifest: PluginManifest): void {
         );
       }
     }
+
+    /*
+     * 空闲预热重渲染依赖（katex / mermaid）。
+     *
+     * 两者都是动态 import，首次插入公式或图表时才下载 —— 那意味着用户
+     * 敲完 `$$…$$` 要空等一次网络。这里趁空闲先拉下来。
+     * 用 onIdle 而不是启动即加载：它们合计几百 KB，和"打开第一个文件"
+     * 抢带宽的代价是首屏变慢，而那才是用户真正在等的东西。
+     */
+    onIdle(() => {
+      void import('katex').catch(() => undefined);
+      void import('mermaid').catch(() => undefined);
+    });
+
+    /*
+     * 外部工具探测放最后，且**不 await**：它依赖配置里的 `export.*Path`
+     * （配置是异步加载的，所以要排在这之后），但两次子进程调用不该拖慢
+     * "打开启动文件"。探测完自己 notify。
+     */
+    void probeTools();
 
     const launchFile = await invokeNative<string | null>('take_launch_file').catch(() => null);
     if (launchFile) await openExternalPath(launchFile);

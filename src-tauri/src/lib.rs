@@ -1052,6 +1052,514 @@ fn backup_write(path: String, text: String) -> Result<(), String> {
     fs::rename(&tmp, &file).map_err(|error| format!("替换失败: {}", error))
 }
 
+// ── 导出（pandoc） ──────────────────────────────────────────
+
+/// 支持导出的格式 —— 同时也是 pandoc 的 `--to` 取值。
+///
+/// `pdf` 需要外部排版引擎（这里用 **typst**）：pandoc 自己不会排版 PDF。
+/// 之所以选 typst 而不是 xelatex：单文件约 30MB、无需 TeX Live 那几 GB，
+/// 且中文字体是运行时按需读取的，配好字体名就能出中文。
+///
+/// 刻意**不含** MediaWiki / reST / OPML：它们是"特定下游系统的交换格式"，
+/// 不是给人读的文档 —— wiki markup 可以直接贴 markdown（wiki 大多支持），
+/// reST 是 Sphinx 工程源，OPML 是大纲结构。用户群极窄，却要在"导出"菜单里
+/// 占三个位置并各配一套说明。
+const EXPORT_FORMATS: &[&str] = &["docx", "odt", "html", "epub", "rtf", "pdf"];
+
+/// 允许作为读入格式（pandoc `--from`）的取值。
+///
+/// 目前只放开两种：markdown（默认）与 latex。不直接透传任意字符串 ——
+/// 拼错的格式名会让 pandoc 以"unknown format"退出，而报错文案对用户
+/// 毫无意义；白名单至少能在我们这层给出可用列表。
+const PANDOC_READERS: &[&str] = &["markdown", "latex"];
+
+/// 需要外部排版引擎的格式 → 引擎名。
+///
+/// ⚠️ **引擎必须由用户自己安装，不随应用打包**（产品决策，明确要求）。
+/// 下面的探测只负责"省去手填路径"，不是兜底分发 —— 别把它改成从
+/// `resources/` 里捞一个随包二进制，那会让安装包凭空多出 30–90MB，
+/// 也让"导出的 PDF 是谁排的版"变得不可追溯。
+const PDF_ENGINE_FOR: &[(&str, &str)] = &[("pdf", "typst")];
+
+/// 外部工具（pandoc / typst）的探测结果。
+#[derive(serde::Serialize)]
+struct ToolInfo {
+    path: String,
+    version: String,
+}
+
+/// 导出结果。
+#[derive(serde::Serialize)]
+struct ExportReport {
+    target: String,
+    bytes: u64,
+}
+
+/// 找到一个**能跑起来**的外部工具（pandoc / typst / …）。
+///
+/// 顺序：显式配置的路径 → PATH → 各平台常见安装位置。
+/// 只检查文件是否存在是不够的：软链、旧版本、权限不足都会让后续调用以
+/// "找不到 X"的面目失败，所以这里直接跑一次 `--version` 验证。
+fn resolve_tool(name: &str, override_path: Option<&str>) -> Result<String, String> {
+    let mut candidates: Vec<String> = Vec::new();
+    if let Some(path) = override_path {
+        let path = path.trim();
+        if !path.is_empty() {
+            candidates.push(path.to_string());
+        }
+    }
+    candidates.push(name.to_string());
+
+    /* 安装器常见的落点。大小写按产品名猜（Pandoc / Typst），Windows 不敏感。 */
+    let mut chars = name.chars();
+    let capitalized = match chars.next() {
+        Some(first) => first.to_uppercase().collect::<String>() + chars.as_str(),
+        None => name.to_string(),
+    };
+    #[cfg(windows)]
+    {
+        candidates.push(format!(r"C:\Program Files\{capitalized}\{name}.exe"));
+        candidates.push(format!(r"C:\Program Files (x86)\{capitalized}\{name}.exe"));
+        if let Ok(local) = std::env::var("LOCALAPPDATA") {
+            // scoop / 官方 zip 解压 / 用户级安装常在这两处
+            candidates.push(format!(r"{local}\Programs\{capitalized}\{name}.exe"));
+            candidates.push(format!(r"{local}\Programs\{name}\{name}.exe"));
+        }
+        if let Ok(home) = std::env::var("USERPROFILE") {
+            // cargo install
+            candidates.push(format!(r"{home}\.cargo\bin\{name}.exe"));
+        }
+    }
+    #[cfg(not(windows))]
+    {
+        candidates.push(format!("/usr/local/bin/{name}"));
+        candidates.push(format!("/opt/homebrew/bin/{name}"));
+        candidates.push(format!("/usr/bin/{name}"));
+        candidates.push(format!("/opt/local/bin/{name}"));
+        if let Ok(home) = std::env::var("HOME") {
+            candidates.push(format!("{home}/.cargo/bin/{name}"));
+            candidates.push(format!("{home}/.local/bin/{name}"));
+        }
+    }
+
+    let mut tried: Vec<String> = Vec::new();
+    for candidate in candidates {
+        match std::process::Command::new(&candidate)
+            .arg("--version")
+            .stdout(std::process::Stdio::null())
+            .stderr(std::process::Stdio::null())
+            .status()
+        {
+            Ok(status) if status.success() => return Ok(candidate),
+            _ => tried.push(candidate),
+        }
+    }
+
+    Err(format!(
+        "没有找到可用的 {name}（试过：{}）。请先安装 {name}，或在 settings.jsonc 里设置它的路径。",
+        tried.join("、")
+    ))
+}
+
+fn resolve_pandoc(override_path: Option<&str>) -> Result<String, String> {
+    resolve_tool("pandoc", override_path)
+}
+
+/// 探测 pandoc 是否可用。
+///
+/// 前端在启动时调用一次，用于决定「导出」按钮是可用、还是要给出安装引导 ——
+/// 比等用户点下导出再报错友好得多。
+#[tauri::command]
+async fn pandoc_probe(override_path: Option<String>) -> Result<ToolInfo, String> {
+    tauri::async_runtime::spawn_blocking(move || {
+        let path = resolve_pandoc(override_path.as_deref())?;
+        let output = std::process::Command::new(&path)
+            .arg("--version")
+            .output()
+            .map_err(|error| format!("无法执行 {}：{error}", path))?;
+        let stdout = String::from_utf8_lossy(&output.stdout);
+        let version = stdout
+            .lines()
+            .next()
+            .unwrap_or("pandoc")
+            .trim()
+            .to_string();
+        Ok(ToolInfo { path, version })
+    })
+    .await
+    .map_err(|error| format!("探测线程异常：{error}"))?
+}
+
+/// 探测 typst —— PDF 的排版引擎。
+///
+/// 单独一条命令而不是塞进 `pandoc_probe`：两者的安装互相独立
+/// （有人只写 docx，不装 typst），前端也要分别显示状态。
+#[tauri::command]
+async fn typst_probe(override_path: Option<String>) -> Result<ToolInfo, String> {
+    tauri::async_runtime::spawn_blocking(move || {
+        let path = resolve_tool("typst", override_path.as_deref())?;
+        let output = std::process::Command::new(&path)
+            .arg("--version")
+            .output()
+            .map_err(|error| format!("无法执行 {}：{error}", path))?;
+        let stdout = String::from_utf8_lossy(&output.stdout);
+        let version = stdout.lines().next().unwrap_or("typst").trim().to_string();
+        Ok(ToolInfo { path, version })
+    })
+    .await
+    .map_err(|error| format!("探测线程异常：{error}"))?
+}
+
+/// 选一个可执行文件（设置里填 pandoc / typst 路径时用）。
+///
+/// 与 `pick_export_path` 分开：那个是"保存到"，这个是"打开一个程序"，
+/// 对话框的语义与过滤器都不同。
+#[tauri::command]
+async fn pick_binary(
+    app: tauri::AppHandle,
+    title: Option<String>,
+) -> Result<Option<String>, String> {
+    use tauri_plugin_dialog::DialogExt;
+
+    let picked = tauri::async_runtime::spawn_blocking(move || {
+        let mut dialog = app
+            .dialog()
+            .file()
+            .set_title(title.unwrap_or_else(|| "选择可执行文件".to_string()));
+        #[cfg(windows)]
+        {
+            dialog = dialog.add_filter("可执行文件", &["exe"]);
+        }
+        dialog.blocking_pick_file()
+    })
+    .await
+    .map_err(|error| format!("文件对话框线程异常：{error}"))?;
+
+    Ok(picked.map(|path| path.to_string()))
+}
+
+/// 选导出目标路径。
+///
+/// 与 `save_markdown_file` 只差在过滤器：导出扩展名由格式决定
+/// （.docx / .html / …），不能复用"可编辑文本"那一套。
+#[tauri::command]
+async fn pick_export_path(
+    app: tauri::AppHandle,
+    suggested: Option<String>,
+    extension: String,
+) -> Result<Option<String>, String> {
+    use tauri_plugin_dialog::DialogExt;
+
+    let ext = extension.trim_start_matches('.').to_lowercase();
+    if ext.is_empty() {
+        return Err("导出格式缺少扩展名".to_string());
+    }
+
+    let picked = tauri::async_runtime::spawn_blocking(move || {
+        let label = ext.to_uppercase();
+        let mut dialog = app
+            .dialog()
+            .file()
+            .set_title("导出到")
+            .add_filter(&label, &[ext.as_str()]);
+        if let Some(name) = suggested {
+            if !name.is_empty() {
+                dialog = dialog.set_file_name(&name);
+            }
+        }
+        dialog.blocking_save_file()
+    })
+    .await
+    .map_err(|error| format!("导出对话框线程异常：{error}"))?;
+
+    Ok(picked.map(|path| path.to_string()))
+}
+
+/// 把 markdown 里指向本地文件的盘符路径改写成 `file:///` URL。
+///
+/// 为什么需要：pandoc 的 typst writer 会把 `![x](C:/a/b.png)` 原样写成
+/// `#figure(image("C:/a/b.png"))`，而 typst 只接受"相对路径或 URL" ——
+/// 裸盘符在部分版本上直接失败：
+///
+/// ```text
+/// error: failed to load file (path contains invalid component "C:")
+///   ┌─ \\?\E:\…\toP29A3.typ:207:14
+/// 207 │ #figure(image("C:/Users/…/media-…/shot.png", alt: "占位图"),
+/// ```
+///
+/// 用户看到的是一个指向"图片路径"的报错，容易误以为是中文/编码问题
+/// （实测：文档里去掉图片后中文 PDF 完全正常）。改成 `file:///C:/…`
+/// 是 typst 明确支持的 URL 形式，也不影响 pandoc 读图。
+///
+/// 只给 PDF 用：docx / html 里的 `file:///` 链接发出去对别人毫无意义，
+/// 保持原样更诚实。
+fn rewrite_local_paths_as_urls(markdown: &str) -> String {
+    let chars: Vec<char> = markdown.chars().collect();
+    let mut out = String::with_capacity(markdown.len() + 64);
+    let mut index = 0;
+
+    while index < chars.len() {
+        if chars[index] == ']' && chars.get(index + 1) == Some(&'(') {
+            out.push_str("](");
+            index += 2;
+            while matches!(chars.get(index), Some(' ') | Some('\t')) {
+                out.push(chars[index]);
+                index += 1;
+            }
+
+            /* 盘符：单个字母 + ':' + '/' 或 '\' */
+            let is_drive = chars.get(index).is_some_and(|c| c.is_ascii_alphabetic())
+                && chars.get(index + 1) == Some(&':')
+                && matches!(chars.get(index + 2), Some('/') | Some('\\'));
+
+            if is_drive {
+                out.push_str("file:///");
+                out.push(chars[index]);
+                out.push(':');
+                index += 2; // 跳过盘符与冒号，剩下的从分隔符开始
+
+                /*
+                 * 盘符之后**整段路径**的反斜杠都转成正斜杠。
+                 *
+                 * 只转紧挨盘符的那一个是不够的：`D:\work\shot.png` 会被
+                 * pandoc 写进 typst 字符串，`\w` / `\s` 在那里是非法转义
+                 * （即便 pandoc 补了转义，正斜杠也更少出岔子）。
+                 * 遇到右括号、空白或引号就停 —— 那是 URL 的结尾或 title。
+                 */
+                while let Some(&c) = chars.get(index) {
+                    if c == ')' || c == ' ' || c == '\t' || c == '"' || c == '\'' {
+                        break;
+                    }
+                    out.push(if c == '\\' { '/' } else { c });
+                    index += 1;
+                }
+                continue;
+            }
+            continue;
+        }
+
+        out.push(chars[index]);
+        index += 1;
+    }
+
+    out
+}
+
+/// 用 pandoc 把 markdown 导出成别的格式。
+///
+/// 三个实现要点：
+///  1. **内容走 stdin**，不落临时文件 —— 没有路径转义、没有编码问题，
+///     失败时也不会在磁盘上留下半截文件；
+///  2. **`--resource-path` 指向工作区根**，否则 `![](assets/a.png)` 在
+///     docx 里全是断图：pandoc 按相对路径找图，而它不知道工作区在哪；
+///  3. **超时 + 读 stderr**：大文档可能要跑十几秒，但卡死必须能退出；
+///     pandoc 的报错只在 stderr 里，原样带回去比一句"导出失败"有用得多。
+#[tauri::command]
+async fn export_document(
+    content: String,
+    format: String,
+    source: Option<String>,
+    target: String,
+    base_dir: Option<String>,
+    pandoc_path: Option<String>,
+    typst_path: Option<String>,
+) -> Result<ExportReport, String> {
+    let format = format.trim().to_lowercase();
+    if !EXPORT_FORMATS.contains(&format.as_str()) {
+        return Err(format!(
+            "不支持的导出格式：{format}（可用：{}）",
+            EXPORT_FORMATS.join(" / ")
+        ));
+    }
+
+    /*
+     * 读入格式（`--from`）必须跟着文档走。
+     *
+     * 之前写死 `markdown`：打开 `.tex` 导出时，pandoc 用 markdown 解析
+     * LaTeX 源码 —— `\documentclass` / `\section` / `\begin{}` 全被当成
+     * 普通文字或转义吞掉，产物只剩第一行注释（实测：`basic-test.tex`
+     * 66 行导出成一行 `% basic-test.tex`）。换成 `latex` 读入后内容完整。
+     */
+    let reader = source
+        .as_deref()
+        .map(str::trim)
+        .filter(|value| !value.is_empty())
+        .unwrap_or("markdown")
+        .to_lowercase();
+    if !PANDOC_READERS.contains(&reader.as_str()) {
+        return Err(format!(
+            "不支持的源格式：{reader}（可用：{}）",
+            PANDOC_READERS.join(" / ")
+        ));
+    }
+
+    tauri::async_runtime::spawn_blocking(move || {
+        use std::io::{Read, Write};
+
+        let exe = resolve_pandoc(pandoc_path.as_deref())?;
+        log_line(&format!("export_document → {format} · {target}"));
+
+        /*
+         * PDF 才改写本地图片路径：typst 不接受裸盘符路径，
+         * 而 docx / html 用 `file:///` 反而更糟（本地链接发出去没有意义）。
+         */
+        let content = if format == "pdf" {
+            rewrite_local_paths_as_urls(&content)
+        } else {
+            content
+        };
+
+        /*
+         * PDF 要先确定排版引擎：pandoc 拿到 `--pdf-engine` 才会排版，
+         * 否则直接报"没有 PDF 引擎"。在这里解析而不是先问前端，是为了
+         * 让"路径配错"与"没装"都落到同一条能读懂的报错上。
+         */
+        let engine = PDF_ENGINE_FOR
+            .iter()
+            .find(|(ext, _)| *ext == format)
+            .map(|(_, name)| *name);
+        let engine_path = match engine {
+            Some(name) => Some(resolve_tool(name, typst_path.as_deref())?),
+            None => None,
+        };
+
+        let mut command = std::process::Command::new(&exe);
+        command
+            .args([
+                "--from",
+                reader.as_str(),
+                "--to",
+                format.as_str(),
+                /*
+                 * ⚠️ `--standalone` 不能省。
+                 *
+                 * 不加时 pandoc 输出的是"片段"而不是完整文档：
+                 *  · rtf  → `{\pard …}` 开头，**没有 `{\rtf1\ansi…}` 头**，
+                 *           任何 RTF 阅读器都会把它当纯文本打开，
+                 *           于是 `\u20013 ?` 这类 Unicode 转义原样显示 ——
+                 *           用户看到的就是"中文乱码"（实测主诉）；
+                 *  · html → 没有 `<!DOCTYPE>` 与 `<meta charset>`，
+                 *           在某些按本地编码解析的环境里同样乱码。
+                 *
+                 * docx / epub 是容器格式，加不加都一样；pdf 由 pandoc
+                 * 强制 standalone。所以统一加，没有副作用。
+                 */
+                "--standalone",
+                "--output",
+                &target,
+            ])
+            .stdin(std::process::Stdio::piped())
+            .stdout(std::process::Stdio::piped())
+            .stderr(std::process::Stdio::piped());
+
+        if reader == "latex" {
+            /*
+             * LaTeX 文档默认带章节编号。开着它不是审美选择 —— `\ref{}` 会被
+             * pandoc 转成 typst 的 `@sec:conclusion` 交叉引用，而 typst 要求
+             * 被引用的标题**有编号**，否则直接失败：
+             *
+             *   error: cannot reference heading without numbering
+             *   239 │ See Section~@sec:conclusion for the conclusion.
+             *       = hint: you can enable heading numbering with
+             *         `#set heading(numbering: "1.")`
+             *
+             * 只对 latex 源开：markdown 文档要不要编号是作者的选择。
+             */
+            command.arg("--number-sections");
+        }
+
+        if let Some(engine) = engine_path.as_deref() {
+            /*
+             * ⚠️ 不能写成 `--pdf-engine=<绝对路径>`。
+             *
+             * pandoc 用 `\\?\` 长路径前缀调起引擎，typst 因此把它自己下载的
+             * 图片缓存（`C:\…\Temp\media-…\x.png`）当成**相对路径**解析，
+             * 直接报：
+             *
+             *   error: failed to load file (path contains invalid component "C:")
+             *     ┌─ \\?\E:\…\toP29A3.typ:207:14
+             *
+             * 同一台机器、同一个 typst 0.15.1，传名字就正常、传绝对路径就
+             * 必炸 —— 这也是"全英文档能导、带图就失败"的真实原因。
+             *
+             * 所以把引擎所在目录 prepend 进子进程 PATH，只传名字。
+             * prepend 而不是 append：用户显式指定的那份应该优先。
+             */
+            let path = std::path::Path::new(engine);
+            let name = path
+                .file_stem()
+                .and_then(|stem| stem.to_str())
+                .unwrap_or(engine);
+            if path.is_absolute() {
+                if let Some(dir) = path.parent() {
+                    let mut dirs = vec![dir.to_path_buf()];
+                    if let Some(existing) = std::env::var_os("PATH") {
+                        dirs.extend(std::env::split_paths(&existing));
+                    }
+                    if let Ok(joined) = std::env::join_paths(dirs) {
+                        command.env("PATH", joined);
+                    }
+                }
+            }
+            command.args(["--pdf-engine", name]);
+        }
+        if let Some(dir) = base_dir.as_deref() {
+            if !dir.trim().is_empty() {
+                command.arg("--resource-path").arg(dir);
+            }
+        }
+
+        let mut child = command
+            .spawn()
+            .map_err(|error| format!("无法启动 pandoc（{exe}）：{error}"))?;
+
+        if let Some(mut stdin) = child.stdin.take() {
+            // 写完必须关闭 stdin：pandoc 读到 EOF 才开始转换，
+            // 忘记 drop 会一直等下去（表现为"导出永远不结束"）。
+            stdin
+                .write_all(content.as_bytes())
+                .map_err(|error| format!("写入 pandoc 输入失败：{error}"))?;
+        }
+
+        let deadline = std::time::Instant::now() + std::time::Duration::from_secs(120);
+        let status = loop {
+            match child.try_wait() {
+                Ok(Some(status)) => break status,
+                Ok(None) => {
+                    if std::time::Instant::now() > deadline {
+                        let _ = child.kill();
+                        let _ = child.wait();
+                        return Err("pandoc 超过 120 秒仍未完成，已中止".to_string());
+                    }
+                    std::thread::sleep(std::time::Duration::from_millis(50));
+                }
+                Err(error) => return Err(format!("等待 pandoc 失败：{error}")),
+            }
+        };
+
+        let mut stderr = String::new();
+        if let Some(mut pipe) = child.stderr.take() {
+            let _ = pipe.read_to_string(&mut stderr);
+        }
+
+        if !status.success() {
+            let detail = stderr.trim();
+            return Err(if detail.is_empty() {
+                format!("pandoc 退出码 {:?}", status.code())
+            } else {
+                detail.chars().take(800).collect()
+            });
+        }
+
+        let bytes = std::fs::metadata(&target)
+            .map(|meta| meta.len())
+            .unwrap_or(0);
+        Ok(ExportReport { target, bytes })
+    })
+    .await
+    .map_err(|error| format!("导出线程异常：{error}"))?
+}
+
 /// mobile_entry_point 必须紧贴无参函数：中间插过注释块后 attribute
 /// 挂到了别的 fn 上，Android 编译直接报 E0593（实测）。
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
@@ -1079,7 +1587,12 @@ pub fn run() {
             read_external_file,
             write_external_file,
             backup_read,
-            backup_write
+            backup_write,
+            pandoc_probe,
+            typst_probe,
+            pick_binary,
+            pick_export_path,
+            export_document
         ])
         .setup(|app| {
             app.manage(PendingOpen(Mutex::new(launch_file_from_args())));

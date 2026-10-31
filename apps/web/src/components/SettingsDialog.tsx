@@ -14,6 +14,7 @@ import { useCallback, useSyncExternalStore, type JSX, type MouseEvent } from 're
 import type { AropytRuntime, RuntimeState } from '../runtime.js';
 import { setLocale } from '../i18n';
 import { useT } from '../i18n/useT';
+import { SETTINGS_FILE } from '../config/settings.js';
 
 interface SettingsDialogProps {
   readonly runtime: AropytRuntime;
@@ -258,6 +259,50 @@ export function SettingsDialog({
             </div>
           </section>
 
+          {/*
+           * 导出工具链。
+           *
+           * 两个路径都留空即"自动查找 PATH"，但很多人装在别处（scoop /
+           * Chocolatey / 便携版 / cargo install），所以必须能手动指。
+           * 下面那行实时显示探测结果 —— 用户点完「浏览」立刻知道自己填对没有，
+           * 不用等导出失败才发现。
+           */}
+          <section className="settings-section">
+            <h3>{t('settings.toolchain')}</h3>
+
+            <div className="settings-row">
+              <span className="settings-row__label">{t('settings.pandocPath')}</span>
+              <button
+                type="button"
+                className="settings-button"
+                onClick={() => void runtime.pickToolPath('pandoc')}
+              >
+                {t('settings.browse')}
+              </button>
+            </div>
+            <code className="settings-path">
+              {state.pandoc.available
+                ? t('settings.detected', { version: state.pandoc.version ?? '' })
+                : t('settings.notDetected')}
+            </code>
+
+            <div className="settings-row">
+              <span className="settings-row__label">{t('settings.typstPath')}</span>
+              <button
+                type="button"
+                className="settings-button"
+                onClick={() => void runtime.pickToolPath('typst')}
+              >
+                {t('settings.browse')}
+              </button>
+            </div>
+            <code className="settings-path">
+              {state.typst.available
+                ? t('settings.detected', { version: state.typst.version ?? '' })
+                : t('settings.notDetected')}
+            </code>
+          </section>
+
           <section className="settings-section">
             <h3>{t('settings.backup')}</h3>
             <div className="settings-row">
@@ -375,7 +420,8 @@ export function SettingsDialog({
           <section className="settings-section">
             <h3>{t('settings.configFile')}</h3>
             <div className="settings-row">
-              <span className="settings-row__label">settings.jsonc</span>
+              {/* 用常量而不是字面量：文件名改一处就够，别指望三处都记得 */}
+              <span className="settings-row__label">{SETTINGS_FILE}</span>
               <code className="settings-path">{settingsPath ?? t('settings.browserConfig')}</code>
             </div>
             <div className="settings-actions">

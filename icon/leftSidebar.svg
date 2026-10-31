@@ -1,4 +1,43 @@
-<?xml version="1.0" encoding="UTF-8"?>
-<svg class="icon" width="200" height="200" p-id="1579" t="1792207247438" version="1.1" viewBox="0 0 1024 1024" xmlns="http://www.w3.org/2000/svg">
- <path d="m372.36 118.91h651.64v744.73h-1024v-744.73zm558.55 651.64v-558.55h-558.55v558.55zm-837.82 0h186.18v-558.55h-186.18z" fill="#231815" p-id="1580"/>
+<?xml version="1.0" encoding="UTF-8" standalone="no"?>
+<svg
+   class="icon"
+   width="200"
+   height="200"
+   p-id="1579"
+   t="1792207247438"
+   version="1.1"
+   viewBox="0 0 1024 1024"
+   id="svg1"
+   sodipodi:docname="leftSidebar.svg"
+   inkscape:version="1.4.4 (dcaf3e7, 2026-05-05)"
+   xmlns:inkscape="http://www.inkscape.org/namespaces/inkscape"
+   xmlns:sodipodi="http://sodipodi.sourceforge.net/DTD/sodipodi-0.dtd"
+   xmlns="http://www.w3.org/2000/svg"
+   xmlns:svg="http://www.w3.org/2000/svg">
+  <defs
+     id="defs1" />
+  <sodipodi:namedview
+     id="namedview1"
+     pagecolor="#ffffff"
+     bordercolor="#000000"
+     borderopacity="0.25"
+     inkscape:showpageshadow="2"
+     inkscape:pageopacity="0.0"
+     inkscape:pagecheckerboard="0"
+     inkscape:deskcolor="#d1d1d1"
+     inkscape:zoom="6.2"
+     inkscape:cx="99.919355"
+     inkscape:cy="100"
+     inkscape:window-width="2880"
+     inkscape:window-height="1496"
+     inkscape:window-x="-12"
+     inkscape:window-y="-12"
+     inkscape:window-maximized="1"
+     inkscape:current-layer="svg1" />
+  <path
+     d="M 1024,118.91 V 863.64 H 0 V 118.91 Z M 930.91,770.55 V 212 H 372.36 v 558.55 z m -837.82,0 H 279.27 V 212 H 93.09 Z"
+     fill="#231815"
+     p-id="1580"
+     id="path1"
+     sodipodi:nodetypes="ccccccccccccccc" />
 </svg>

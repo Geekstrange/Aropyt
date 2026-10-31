@@ -1,1 +1,41 @@
-<?xml version="1.0" standalone="no"?><!DOCTYPE svg PUBLIC "-//W3C//DTD SVG 1.1//EN" "http://www.w3.org/Graphics/SVG/1.1/DTD/svg11.dtd"><svg t="1792989512804" class="icon" viewBox="0 0 1152 1024" version="1.1" xmlns="http://www.w3.org/2000/svg" p-id="11116" xmlns:xlink="http://www.w3.org/1999/xlink" width="225" height="200"><path d="M621.504 669.12L488.64 540.608l1.536-1.472a891.968 891.968 0 0 0 194.304-334.4h153.408V102.4H471.36V0H366.592v102.4H0v101.888h584.96A800.768 800.768 0 0 1 418.944 478.72a800.704 800.704 0 0 1-120.96-171.52H193.28a897.344 897.344 0 0 0 156.032 233.408l-266.624 257.088 74.368 72.64 261.888-256 162.816 159.232 39.744-104.448zM916.416 409.6h-104.832L576 1024h104.704l58.624-153.6h248.768l59.2 153.6H1152l-235.584-614.4v-0.064z m-137.28 358.4L864 546.24 948.864 768h-169.728z" p-id="11117"></path></svg>
+<?xml version="1.0" encoding="UTF-8" standalone="no"?>
+<svg
+   t="1792989512804"
+   class="icon"
+   viewBox="0 0 1152 1024"
+   version="1.1"
+   p-id="11116"
+   width="225"
+   height="200"
+   id="svg1"
+   sodipodi:docname="language.svg"
+   inkscape:version="1.4.4 (dcaf3e7, 2026-05-05)"
+   xmlns:inkscape="http://www.inkscape.org/namespaces/inkscape"
+   xmlns:sodipodi="http://sodipodi.sourceforge.net/DTD/sodipodi-0.dtd"
+   xmlns="http://www.w3.org/2000/svg"
+   xmlns:svg="http://www.w3.org/2000/svg">
+  <defs
+     id="defs1" />
+  <sodipodi:namedview
+     id="namedview1"
+     pagecolor="#ffffff"
+     bordercolor="#000000"
+     borderopacity="0.25"
+     inkscape:showpageshadow="2"
+     inkscape:pageopacity="0.0"
+     inkscape:pagecheckerboard="0"
+     inkscape:deskcolor="#d1d1d1"
+     inkscape:zoom="6.2"
+     inkscape:cx="112.5"
+     inkscape:cy="100"
+     inkscape:window-width="2880"
+     inkscape:window-height="1496"
+     inkscape:window-x="-12"
+     inkscape:window-y="-12"
+     inkscape:window-maximized="1"
+     inkscape:current-layer="svg1" />
+  <path
+     d="M621.504 669.12L488.64 540.608l1.536-1.472a891.968 891.968 0 0 0 194.304-334.4h153.408V102.4H471.36V0H366.592v102.4H0v101.888h584.96A800.768 800.768 0 0 1 418.944 478.72a800.704 800.704 0 0 1-120.96-171.52H193.28a897.344 897.344 0 0 0 156.032 233.408l-266.624 257.088 74.368 72.64 261.888-256 162.816 159.232 39.744-104.448zM916.416 409.6h-104.832L576 1024h104.704l58.624-153.6h248.768l59.2 153.6H1152l-235.584-614.4v-0.064z m-137.28 358.4L864 546.24 948.864 768h-169.728z"
+     p-id="11117"
+     id="path1" />
+</svg>

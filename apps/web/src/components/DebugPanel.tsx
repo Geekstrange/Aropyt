@@ -21,6 +21,7 @@ import {
   type LogEntry,
   type LogLevel,
 } from '../debug/debug-log';
+import { clearTimeline } from '../debug/timeline';
 
 /**
  * DEBUG 面板（F12）—— **底部停靠**，三个标签页。
@@ -424,7 +425,19 @@ export function DebugPanel({ runtime, version, onClose }: DebugPanelProps): JSX.
                   </button>
                 ))}
               </div>
-              <button type="button" className="settings-button" onClick={clearLogs}>
+              <button
+                type="button"
+                className="settings-button"
+                onClick={() => {
+                  /*
+                   * 连带清空操作轨迹：面板里"清空"的语义是"从现在开始观察"，
+                   * 只清日志会留下上一轮的轨迹 —— 复现一次之后按清空，
+                   * 报告里仍混着不相干的记录。
+                   */
+                  clearLogs();
+                  clearTimeline();
+                }}
+              >
                 {t('debug.clear')}
               </button>
             </div>

@@ -23,7 +23,7 @@ import { useCallback, useEffect, useRef, useState, useSyncExternalStore, type JS
 import { commandTitle, getLocale, subscribe, t } from '../i18n';
 
 import type { Disposable, Event, ViewContext } from '@aropyt/plugin-api';
-import { guardSync } from '@aropyt/core';
+import { guardSync, safeJsonParse } from '@aropyt/core';
 
 import type { ViewRegistration } from '../services.js';
 import type { AropytRuntime } from '../runtime.js';
@@ -233,7 +233,8 @@ function readCollapsedViewIds(location: string): ReadonlySet<string> {
   try {
     const raw = localStorage.getItem(`${COLLAPSE_STORAGE_KEY}.${location}`);
     if (!raw) return new Set();
-    const parsed: unknown = JSON.parse(raw);
+    /* 这里存的是本应用写进去的数组，但仍是"不可信输入"（可能来自旧版本） */
+    const parsed = safeJsonParse<unknown>(raw, null);
     if (!Array.isArray(parsed)) return new Set();
     return new Set(parsed.filter((item): item is string => typeof item === 'string'));
   } catch {

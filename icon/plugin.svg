@@ -1,4 +1,74 @@
-<?xml version="1.0" encoding="UTF-8"?>
-<svg class="icon" width="200" height="200" p-id="2546" t="1792055835033" version="1.1" viewBox="0 0 1024 1024" xmlns="http://www.w3.org/2000/svg">
- <path d="m451.33 36.501a189.08 189.08 0 0 1 187.6 165.43h190.52v190.57a189.08 189.08 0 0 1 0 375.19v190.57h-282.88l-0.051-70.964h-0.666a94.515 94.515 0 0 0-188.82-7.014l-0.154 4.198v73.728h-283.7v-282.32h70.86v-1.28a94.515 94.515 0 0 0 10.906-188.42h-81.766v-284.26h190.57a189.08 189.08 0 0 1 187.6-165.43zm0 94.566a94.566 94.566 0 0 0-94.361 87.45l-0.256 7.014h-0.256v70.964h-188.72v96a189.08 189.08 0 0 1 0 375.19v96.051h96.052a189.13 189.13 0 0 1 375.19 0h96v-187.39l70.861-0.05v-1.69a94.566 94.566 0 0 0 10.086-188.57l-80.947 0.102v-189.64h-188.93v-70.964h-0.153a94.464 94.464 0 0 0-94.567-94.464z" p-id="13817"/>
+<?xml version="1.0" encoding="UTF-8" standalone="no"?>
+<svg
+   class="icon"
+   width="200"
+   height="200"
+   p-id="2546"
+   t="1792055835033"
+   version="1.1"
+   viewBox="0 0 1024 1024"
+   id="svg1"
+   sodipodi:docname="plugin.svg"
+   inkscape:version="1.4.4 (dcaf3e7, 2026-05-05)"
+   xmlns:inkscape="http://www.inkscape.org/namespaces/inkscape"
+   xmlns:sodipodi="http://sodipodi.sourceforge.net/DTD/sodipodi-0.dtd"
+   xmlns="http://www.w3.org/2000/svg"
+   xmlns:svg="http://www.w3.org/2000/svg">
+  <defs
+     id="defs1" />
+  <sodipodi:namedview
+     id="namedview1"
+     pagecolor="#ffffff"
+     bordercolor="#000000"
+     borderopacity="0.25"
+     inkscape:showpageshadow="2"
+     inkscape:pageopacity="0.0"
+     inkscape:pagecheckerboard="0"
+     inkscape:deskcolor="#d1d1d1"
+     inkscape:zoom="12.4"
+     inkscape:cx="84.072581"
+     inkscape:cy="170.08065"
+     inkscape:window-width="2880"
+     inkscape:window-height="1496"
+     inkscape:window-x="-12"
+     inkscape:window-y="-12"
+     inkscape:window-maximized="1"
+     inkscape:current-layer="svg1"
+     showguides="true">
+    <sodipodi:guide
+       position="738.96765,347.65921"
+       orientation="0,-1"
+       id="guide1"
+       inkscape:locked="false" />
+    <sodipodi:guide
+       position="815.75488,522.98519"
+       orientation="1,0"
+       id="guide2"
+       inkscape:locked="false" />
+    <sodipodi:guide
+       position="894.87785,444.73812"
+       orientation="0,-1"
+       id="guide3"
+       inkscape:locked="false" />
+    <sodipodi:guide
+       position="441.39355,139.97419"
+       orientation="0,-1"
+       id="guide4"
+       inkscape:locked="false" />
+    <sodipodi:guide
+       position="546.27097,259.30323"
+       orientation="1,0"
+       id="guide5"
+       inkscape:locked="false" />
+    <sodipodi:guide
+       position="452.95484,361.70323"
+       orientation="1,0"
+       id="guide6"
+       inkscape:locked="false" />
+  </sodipodi:namedview>
+  <path
+     d="m 451.33,36.501 c 95.28347,-0.0025 175.68201,70.89482 187.6,165.43 h 190.52 v 190.57 c 94.53298,11.91815 165.42913,92.31372 165.42913,187.595 0,95.28128 -70.89615,175.67685 -165.42913,187.595 v 190.57 H 546.57 l -0.051,-74.164 c 2.16322,-39.12485 -27.80381,-89.64078 -91.66944,-92.01316 -57.61138,-2.14006 -96.19787,44.07404 -97.97056,92.39716 v 73.728 h -283.7 v -282.32 h 70.86 v -1.28 c 50.14974,0.0991 91.64594,-38.98729 94.54383,-89.0533 2.89789,-50.06602 -33.81156,-93.67907 -83.63783,-99.3667 H 73.179 v -284.26 h 190.57 c 11.91799,-94.53518 92.31653,-165.432466 187.6,-165.43 z m 0,94.566 c -49.83212,-0.0333 -92.54102,37.58535 -94.617,94.464 h -0.256 v 70.964 h -188.72 v 96 c 94.53298,11.91815 165.42913,92.31372 165.42913,187.595 0,95.28128 -70.89615,175.67685 -165.42913,187.595 v 96.051 h 96.052 c 12.09888,-94.38438 94.50286,-165.49556 189.65952,-165.49556 95.15666,0 173.4316,71.11118 185.53048,165.49556 h 96 v -187.39 l 80.62292,-0.57214 c 50.18488,-0.10955 83.24208,-45.82489 85.92248,-95.93824 2.6804,-50.11334 -35.71153,-88.33757 -85.5984,-93.79963 l -80.947,0.102 v -189.64 h -188.93 v -70.964 h -0.153 c 3e-5,-52.21128 -42.35575,-94.52093 -94.567,-94.464 z"
+     p-id="13817"
+     id="path1"
+     sodipodi:nodetypes="ccccsccccsccccccsccccccccccccscccsccccscccccccc" />
 </svg>

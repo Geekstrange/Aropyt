@@ -12,7 +12,9 @@
  */
 
 import { createRoot } from 'react-dom/client';
+import { installGlobalGuards } from '@aropyt/core';
 import { t } from './i18n';
+import { trace } from './debug/timeline';
 import { installDebugLog, loadPreviousSession } from './debug/debug-log';
 
 import { App } from './App.js';
@@ -29,6 +31,25 @@ if (!container) throw new Error(t('app.missingRoot'));
  * 拦截**永不卸载**：关闭面板之后发生的错误同样要能交出来。
  */
 installDebugLog();
+
+/*
+ * 兜底守卫：接在日志拦截之后、渲染之前。
+ *
+ * 它与 installDebugLog 分工不同 —— 后者记"发生了什么"（明细进面板），
+ * 前者记"我们没预料到的事发生了"（归到 failure 计数 + 操作轨迹）。
+ * 两者都不该缺：没有日志就没有上下文，没有计数就看不出"这个版本比上个
+ * 版本更容易崩"。
+ *
+ * `observeOnly: true` 是刻意的：某些 WebView 一旦对 error 调 preventDefault
+ * 就会彻底静默（连 devtools 都看不到），而这里的目标是**记录**，不是兜住。
+ */
+installGlobalGuards({
+  observeOnly: true,
+  onFailure: (error, kind) => {
+    const detail = error instanceof Error ? error.message : String(error);
+    trace('uncaught', `${kind} · ${detail.slice(0, 160)}`, { failed: true });
+  },
+});
 
 /*
  * 把上一次会话落盘的错误注回日志（异步，不阻塞首屏）。

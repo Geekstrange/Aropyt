@@ -59,7 +59,8 @@ export function clearTimeline(): void {
  * 维护者是按纯文本扫的。
  */
 export function formatTimeline(limit = 30): string {
-  const entries = buffer.slice(-limit);
+  /* 走公开接口读，别让"读轨迹"有两条路径 */
+  const entries = getTimeline().slice(-limit);
   if (entries.length === 0) return '无';
 
   const lines: string[] = [];

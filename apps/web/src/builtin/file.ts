@@ -29,12 +29,19 @@ const manifest: PluginManifest = {
        */
       { id: 'aropyt.file.closeWorkspace', title: '关闭工作区', category: '文件' },
       { id: 'aropyt.file.save', title: '保存', category: '文件', icon: 'save' },
+      { id: 'aropyt.file.export', title: '导出…', category: '文件', icon: 'export' },
     ],
     menus: {
       toolbar: [
         { command: 'aropyt.file.pickWorkspace', group: '1', order: 1 },
         { command: 'aropyt.file.openFile', group: '1', order: 2 },
         { command: 'aropyt.file.save', group: '1', order: 3 },
+        /*
+         * 导出紧跟在保存后面：两者是同一个心理动作（"把这篇东西弄出去"），
+         * 挨着才找得到。实现放在宿主（`aropyt.export.run`）—— 它要调原生
+         * pandoc，而插件 API 没有原生通道。
+         */
+        { command: 'aropyt.file.export', group: '1', order: 4 },
       ],
     },
   },
@@ -79,6 +86,15 @@ function activate(context: PluginContext): void {
     if (!document) return;
     await document.save();
   });
+
+  /*
+   * 导出：转发给宿主。
+   *
+   * 插件这一层什么都不做 —— 选格式、选路径、调 pandoc、报错提示全在
+   * `runtime.exportDocument()` 里（宿主才有原生通道）。这里存在的唯一
+   * 意义是让导出出现在工具栏与命令面板里，和其它文件类命令同组。
+   */
+  context.commands.register('aropyt.file.export', () => context.commands.execute('aropyt.export.run'));
 }
 
 export const filePlugin: LoadablePlugin = { manifest, activate };

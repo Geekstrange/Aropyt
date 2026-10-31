@@ -24,6 +24,8 @@ export * from './commands.js';
 // 编辑区本身即预览，没有并排的第二栏。
 export { inlineRender, type InlineRenderConfig } from './wysiwyg/inline-render.js';
 export * from './safety.js';
+// 纯函数，无依赖 —— 状态栏每次渲染都要用，必须留在根入口。
+export * from './text-stats.js';
 export * from './performance.js';
 // 语言识别属于内核职责（文档身份），渲染不属于 —— 见 languages.ts 的说明。
 export * from './languages.js';

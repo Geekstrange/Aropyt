@@ -47,6 +47,9 @@ const NAME_MAP = {
   openFolder: 'openFolder',
   openFile: 'openFile',
   save: 'save',
+  export: 'export',
+  defaultPlugin: 'defaultPlugin',
+  language: 'language',
   // 侧栏开关：普通态线框，激活态实心（同一形状的两种视觉重量）
   leftSidebar: 'sidebar',
   'leftSidebar-active': 'sidebarActive',
@@ -83,16 +86,26 @@ function convert(file) {
   const viewBox = /viewBox="([^"]+)"/.exec(raw)?.[1];
   if (!viewBox) return null;
 
-  // 取出所有 path 的 d。这个图标集只有 path，没有 circle/rect。
+  /*
+   * 取出所有 path 的 d **和 polygon 的 points**。
+   *
+   * `icon/` 里绝大多数是纯 path，但 `export.svg` 是「一个 path + 一个
+   * polygon」（箭头的三角是 polygon）—— 只取 path 会丢掉箭头，
+   * 界面上只剩一个信封形状的轮廓，看起来"缺了一块"（实测报障）。
+   */
   const paths = [...raw.matchAll(/<path[^>]*\sd="([^"]+)"[^>]*\/?>/g)].map((m) => m[1]);
-  if (paths.length === 0) return null;
+  const polygons = [...raw.matchAll(/<polygon[^>]*\spoints="([^"]+)"[^>]*\/?>/g)].map((m) => m[1]);
 
-  // 单个 path 直接输出；多个包一层 Fragment
-  if (paths.length === 1) {
-    return { viewBox, node: `<path d="${paths[0]}" fill="currentColor" />` };
-  }
+  const shapes = [
+    ...paths.map((d) => `<path d="${d}" fill="currentColor" />`),
+    ...polygons.map((points) => `<polygon points="${points}" fill="currentColor" />`),
+  ];
+  if (shapes.length === 0) return null;
 
-  const elements = paths.map((d) => `        <path d="${d}" fill="currentColor" />`);
+  // 单个图形直接输出；多个包一层 Fragment
+  if (shapes.length === 1) return { viewBox, node: shapes[0] };
+
+  const elements = shapes.map((shape) => `        ${shape}`);
   return { viewBox, node: `(\n      <>\n${elements.join('\n')}\n      </>\n    )` };
 }
 

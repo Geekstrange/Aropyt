@@ -18,7 +18,7 @@
  */
 
 import { STORE, idbGet, idbSet, type BudgetViolation } from '@aropyt/core';
-import { formatTimeline, sessionStartedAt } from './timeline';
+import { failedTraces, formatTimeline, sessionStartedAt } from './timeline';
 
 export type LogLevel = 'debug' | 'log' | 'info' | 'warn' | 'error';
 
@@ -637,7 +637,24 @@ export function formatReport(snapshot: DebugSnapshot): string {
     push(prevLines);
   }
 
-  /* ── 4. 操作轨迹：回答"用户在哪一步" ── */
+  /*
+   * ── 4. 失败动作：先看"哪一步炸了"，再看全景 ──
+   *
+   * 轨迹里失败项本来就带 **[失败]** 标记，但混在 30 条里要一行行扫。
+   * 单独提一段，是为了让维护者第一眼就定位到出问题的那一步 ——
+   * 报告的价值在于"最快看到要点"，不是"最全"。
+   */
+  const failures = failedTraces(10);
+  if (failures.length > 0) {
+    push([
+      `#### 失败动作（${String(failures.length)} 条）`,
+      '',
+      ...failures.map((entry) => `- ${timeOf(entry.at)} \`${entry.action}\` ${entry.detail}`),
+      '',
+    ]);
+  }
+
+  /* ── 5. 操作轨迹：回答"用户在哪一步" ── */
   push(['#### 操作轨迹（最近 30 条）', '', formatTimeline(30), '']);
 
   /* ── 5. 插件：功能不生效时最先要看的表 ── */

@@ -290,21 +290,7 @@ export function extractOutline(source: string): OutlineItem[] {
   return items;
 }
 
-export interface DocStats {
-  words: number;
-  chars: number;
-  lines: number;
-  readMinutes: number;
-}
-
-export function countStats(source: string): DocStats {
-  const chars = source.replace(/\s/g, '').length;
-  const cjk = (source.match(/[\u4e00-\u9fa5\u3040-\u30ff]/g) ?? []).length;
-  const words = (source.match(/[A-Za-z0-9_'-]+/g) ?? []).length + cjk;
-  return {
-    words,
-    chars,
-    lines: source ? source.split('\n').length : 0,
-    readMinutes: Math.max(1, Math.round(words / 300)),
-  };
-}
+/*
+ * 字数统计搬到了 `text-stats.ts`（根入口导出）—— 它不需要 markdown-it，
+ * 而本模块刻意不进首屏预算。需要 `countStats` 请从包根入口导入。
+ */

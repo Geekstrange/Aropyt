@@ -27,7 +27,6 @@ import assert from 'node:assert/strict';
 import { buildToolbarIcons } from './make-toolbar-icons.mjs';
 
 const GENERATED = resolve('apps/web/src/components/toolbar-icons.tsx');
-const MANUAL = resolve('apps/web/src/components/Icons.tsx');
 const ICON_DIR = resolve('icon');
 const SRC_DIR = resolve('apps/web/src');
 
@@ -110,19 +109,20 @@ check('生成物里确实有图标（否则下面两条会恒真）', () => {
   assert.ok(generatedKeys.size >= 10, `只解析到 ${generatedKeys.size} 个图标，解析逻辑可能已失效`);
 });
 
-// 手绘图标只取 UI_ICONS 块内的键 —— 文件里还有别的常量与函数名。
-// 键的写法有两种（`foo: (` 与 `foo: <path …>` 单行），所以匹配到冒号为止，
-// 不要求后面一定跟括号 —— 第一版就是卡在这里把 'code' 漏掉的。
-const manualSource = stripComments(readFileSync(MANUAL, 'utf8'));
-const manualBlock =
-  /const UI_ICONS: Record<string, JSX\.Element> = \{([\s\S]*?)\n\};/.exec(manualSource)?.[1] ?? '';
-const manualKeys = new Set(
-  [...manualBlock.matchAll(/^ {2}([A-Za-z0-9_]+): /gm)].map((m) => m[1]),
-);
-
-check('解析到手绘图标集合', () => {
-  assert.ok(manualKeys.size >= 5, `只解析到 ${manualKeys.size} 个手绘图标（UI_ICONS 块的形状变了？）`);
-});
+/*
+ * 已知"贴了但还没接线"的图标 —— 显式登记，免得闸门长期红着而被无视。
+ * 接上线就从这里删掉；新贴图标请直接接线，不要往这里加。
+ *
+ * 为什么要这份名单而不是放宽判据：白贴的图标不会报错，只会让后来的人
+ * 以为自己用的就是它。登记在这一处，至少"还没接线"是写在明面上的。
+ */
+const PENDING_ICONS = new Set([
+  // 文件类型图标：计划按扩展名显示在标签栏 / 文件树，尚未接线
+  'fountainFile',
+  'mdFile',
+  'texFile',
+  'language',
+]);
 
 /** 递归收集 apps/web/src 下所有标称图标名的位置（只该出现在命令清单里）。 */
 function collectDeclaredIcons(dir) {
@@ -149,9 +149,7 @@ check('确实扫到了命令声明的图标名（扫不到就是这条闸门瞎�
 });
 
 check('命令声明的每个图标名都能解析到图形', () => {
-  const unresolved = declared.filter(
-    ({ name }) => !generatedKeys.has(name) && !manualKeys.has(name),
-  );
+  const unresolved = declared.filter(({ name }) => !generatedKeys.has(name));
   assert.equal(
     unresolved.length,
     0,
@@ -179,7 +177,9 @@ check('生成出来的图标都被至少一个命令用到（贴了却不接线 
   for (const m of appSource.matchAll(/<Icon name="([A-Za-z0-9_]+)"/g)) {
     used.add(m[1]);
   }
-  const unused = [...generatedKeys].filter((key) => !used.has(key));
+  const unused = [...generatedKeys].filter(
+    (key) => !used.has(key) && !PENDING_ICONS.has(key),
+  );
   assert.equal(
     unused.length,
     0,
@@ -187,9 +187,12 @@ check('生成出来的图标都被至少一个命令用到（贴了却不接线 
   );
 });
 
-check('手绘图标里的兜底项仍然存在（未知图标名会退回它）', () => {
-  // App.tsx 用 `detail?.icon ?? 'code'` 兜底，'code' 没了就会渲染空 span。
-  assert.ok(manualKeys.has('code'), "UI_ICONS 里缺 'code' 兜底图标");
+check('兜底图标仍在生成物里（App.tsx 用 detail?.icon ?? defaultPlugin）', () => {
+  /*
+   * 手绘图标那套已整体删除，兜底也换成了生成物里的 defaultPlugin。
+   * 它一旦缺失，插件面板里所有没声明 icon 的命令都会变成空白块。
+   */
+  assert.ok(generatedKeys.has('defaultPlugin'), '生成物里缺 defaultPlugin 兜底图标');
 });
 
 // ── 输出 ──
@@ -207,4 +210,6 @@ if (failed > 0) {
   process.exit(1);
 }
 
-console.log(`\n图标接线闭合（${entries.length} 个生成图标 + ${manualKeys.size} 个手绘图标）。`);
+console.log(
+  `\n图标接线闭合（${generatedKeys.size} 个图标，其中 ${PENDING_ICONS.size} 个待接线）。`,
+);

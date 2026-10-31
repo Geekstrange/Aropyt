@@ -36,7 +36,7 @@ import { SettingsDialog } from './components/SettingsDialog.js';
 import { HistoryDialog } from './components/HistoryDialog.js';
 import { trace } from './debug/timeline';
 import { workspaceAccent } from './lib/workspace-color';
-import { languageLabelOf } from '@aropyt/core';
+import { countStats, languageLabelOf } from '@aropyt/core';
 
 export function App(): JSX.Element {
   const t = useT();
@@ -608,7 +608,6 @@ function Toolbar({ runtime, onOpenSettings, onOpenHistory, onOpenPlugins }: Tool
       ))}
       <span className="toolbar-spacer" />
 
-
       {/* 编辑历史 */}
       <button
         type="button"
@@ -817,13 +816,19 @@ function StatusBar({ runtime }: { readonly runtime: AropytRuntime }): JSX.Elemen
       )}
             <span className="status-bar__spacer" />
       {(() => {
-        const text = runtime.editor.getText();
-        const lines = text.length === 0 ? 1 : text.split('\n').length;
-        const words = (text.match(/[A-Za-z0-9_'-]+/g) ?? []).length;
-        const chars = (text.match(/[\u4e00-\u9fff]/g) ?? []).length;
+        /*
+         * 字数统计统一走 `countStats`（core 里那份）。
+         *
+         * 这里原来自己写了一遍正则，而且口径与 core 不同：把"词"只算英文、
+         * "字"只算中文。同一份文档在状态栏和别处（如未来的导出预览）会得到
+         * 两个数字，这种重复迟早分叉。现在统一成 core 的定义：
+         * 词 = 西文词 + 中日文字数，字 = 非空白字符数。
+         */
+        const stats = countStats(runtime.editor.getText());
         return (
           <span className="status-bar__stats" title={t('status.statsTitle')}>
-            {lines} {t('status.lines')} · {words} {t('status.words')} · {chars} {t('status.chars')}
+            {stats.lines} {t('status.lines')} · {stats.words} {t('status.words')} · {stats.chars}{' '}
+            {t('status.chars')}
           </span>
         );
       })()}

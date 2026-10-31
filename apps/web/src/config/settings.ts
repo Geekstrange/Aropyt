@@ -9,7 +9,7 @@
  * 3. **原子写**：先写 .tmp 再 rename，断电不会留下半截文件。
  * 4. **首次启动迁移**：文件不存在时把旧的 localStorage 值写进去，只做一次。
  */
-import { idbGet, idbSet, STORE } from '@aropyt/core';
+import { idbGet, idbSet, safeJsonParse, STORE } from '@aropyt/core';
 
 export type ThemePreference = 'light' | 'dark' | 'auto';
 
@@ -22,6 +22,15 @@ export interface AppSettings {
   sidebar: { open: boolean };
   /** 工具栏是否显示。隐藏后靠 Ctrl+Shift+H 或设置页开关唤回。 */
   toolbar: { open: boolean };
+  /**
+   * 导出相关。两个路径都为空时表示"自动探测"：先查 PATH，再查各平台
+   * 常见安装位置。留这个口子是因为用户完全可能装在别处（便携版、
+   * Chocolatey、scoop、cargo install），把搜索路径写死永远追不上。
+   *
+   * `typstPath` 只在导出 PDF 时用到 —— pandoc 自己不会排版 PDF，
+   * 需要外部引擎。
+   */
+  export: { pandocPath: string; typstPath: string };
   plugins: { disabled: string[] };
   /** 编辑历史。 */
   history: { limit: number; /** 自动保存版本（按间隔）。 */ autoSave: boolean; /** 间隔秒数。 */ autoSaveInterval: number };
@@ -38,6 +47,7 @@ export const DEFAULT_SETTINGS: AppSettings = {
   vim: { enabled: false },
   sidebar: { open: true },
   toolbar: { open: true },
+  export: { pandocPath: '', typstPath: '' },
   plugins: { disabled: [] },
   history: { limit: 50, autoSave: true, autoSaveInterval: 60 },
 };
@@ -182,6 +192,21 @@ export function normalizeSettings(raw: unknown): {
     if (typeof toolbar.open === 'boolean') settings.toolbar.open = toolbar.open;
     else invalidValues.push('toolbar.open');
   }
+  const exportSection = obj.export as Record<string, unknown> | undefined;
+  if (exportSection?.pandocPath !== undefined) {
+    if (typeof exportSection.pandocPath === 'string') {
+      settings.export.pandocPath = exportSection.pandocPath;
+    } else {
+      invalidValues.push('export.pandocPath');
+    }
+  }
+  if (exportSection?.typstPath !== undefined) {
+    if (typeof exportSection.typstPath === 'string') {
+      settings.export.typstPath = exportSection.typstPath;
+    } else {
+      invalidValues.push('export.typstPath');
+    }
+  }
   const plugins = obj.plugins as Record<string, unknown> | undefined;
   if (plugins?.disabled !== undefined) {
     if (Array.isArray(plugins.disabled) && plugins.disabled.every((v) => typeof v === 'string')) {
@@ -269,7 +294,8 @@ function readLegacy(): Partial<AppSettings> {
     if (vim === 'on' || vim === 'off') legacy.vim = { enabled: vim === 'on' };
     const disabled = localStorage.getItem('aropyt.disabledPlugins');
     if (disabled) {
-      const parsed = JSON.parse(disabled) as unknown;
+      /* 旧版本写的 localStorage：解析失败就当没写过，不能让启动挂掉 */
+      const parsed = safeJsonParse<unknown>(disabled, null);
       if (Array.isArray(parsed)) legacy.plugins = { disabled: parsed.filter((v) => typeof v === 'string') };
     }
   } catch {

@@ -1,7 +1,6 @@
 <?xml version="1.0" encoding="UTF-8"?>
-<svg version="1.1" viewBox="0 0 1024 1024" xmlns="http://www.w3.org/2000/svg">
- <!-- Generator: Adobe Illustrator 28.7.1, SVG Export Plug-In . SVG Version: 1.2.0 Build 142)  -->
+<svg version="1.1" viewBox="0 0 200 200" xmlns="http://www.w3.org/2000/svg">
  <g data-name="图层_1">
-  <path d="m692.4 46h-592.8v932h824.9v-700l-232-232zm140 840h-440s-92 0-92 0-75.3 0-75.3 0-33.5 0-33.5 0v-147h506.9v-93h-506.9v-146h640.9v386zm0-479h-640.8v-269h462.8l178.1 178.1v90.9z"/>
+  <path d="m144.6 4.3h-114.4v191.3h165.5v-139.7l-51.1-51.6zm5.2 29.9 20.4 20.6h-20.4v-20.6zm-102.2 144.1v-156.6h84.8v50.4h45.9v106.2h-130.7z"/>
  </g>
 </svg>

@@ -1,7 +1,41 @@
-<?xml version="1.0" encoding="UTF-8"?>
-<svg version="1.1" viewBox="0 0 1024 1024" xmlns="http://www.w3.org/2000/svg">
- <!-- Generator: Adobe Illustrator 28.7.1, SVG Export Plug-In . SVG Version: 1.2.0 Build 142)  -->
- <g data-name="图层_1">
-  <path d="M792,46H46v932h932V232l-186-186ZM698,883h-372v-119h372v119ZM886,886h-94v-206H232v206h-94V138h215v77h280v-77h120.9l132.1,132.1v615.9Z"/>
- </g>
+<?xml version="1.0" encoding="UTF-8" standalone="no"?>
+<svg
+   version="1.1"
+   viewBox="0 0 1024 1024"
+   id="svg1"
+   sodipodi:docname="save.svg"
+   inkscape:version="1.4.4 (dcaf3e7, 2026-05-05)"
+   xmlns:inkscape="http://www.inkscape.org/namespaces/inkscape"
+   xmlns:sodipodi="http://sodipodi.sourceforge.net/DTD/sodipodi-0.dtd"
+   xmlns="http://www.w3.org/2000/svg"
+   xmlns:svg="http://www.w3.org/2000/svg">
+  <defs
+     id="defs1" />
+  <sodipodi:namedview
+     id="namedview1"
+     pagecolor="#ffffff"
+     bordercolor="#000000"
+     borderopacity="0.25"
+     inkscape:showpageshadow="2"
+     inkscape:pageopacity="0.0"
+     inkscape:pagecheckerboard="0"
+     inkscape:deskcolor="#d1d1d1"
+     inkscape:zoom="1.2109375"
+     inkscape:cx="511.5871"
+     inkscape:cy="512"
+     inkscape:window-width="2880"
+     inkscape:window-height="1496"
+     inkscape:window-x="-12"
+     inkscape:window-y="-12"
+     inkscape:window-maximized="1"
+     inkscape:current-layer="g1" />
+  <!-- Generator: Adobe Illustrator 28.7.1, SVG Export Plug-In . SVG Version: 1.2.0 Build 142)  -->
+  <g
+     data-name="图层_1"
+     id="g1">
+    <path
+       d="M 792,46 H 46 V 978 H 978 V 232 Z M 698,883 H 326 V 764 h 372 z m 188,3 H 792 V 680 H 232 V 886 H 138 V 138 H 353 V 249 H 633 V 138 H 753.9 L 886,270.1 Z"
+       id="path1"
+       sodipodi:nodetypes="ccccccccccccccccccccccccc" />
+  </g>
 </svg>

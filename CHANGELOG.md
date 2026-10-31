@@ -48,6 +48,99 @@
   会从容器内第一个可聚焦元素重来（"打开文件后继续用 Tab 总是从第一个
   开始"），落回原行才会接着往下走。
 
+### Removed
+
+- **`Icons.tsx` 里的手绘图标全部删除**：`UI_ICONS` 那 7 个（`menu` / `close` /
+  `eye` / `code` / `sun` / `moon` / `autoTheme`）在源码里**零引用** ——
+  对应的按钮后来要么改用文字，要么切到了 `icon/*.svg` 生成的那一套。
+  现在图标只有一个来源（`icon/` + `scripts/make-toolbar-icons.mjs`），
+  不会再有"两套坐标系各画一份"的局面；未知图标名仍渲染**同尺寸空 span**
+  （按钮宽度与对齐依赖这个占位），兜底从手绘的 `code` 换成生成物里的
+  `defaultPlugin`。
+- `check:icons` 同步：删掉两条基于 `UI_ICONS` 的断言（解析手绘集合、
+  兜底项存在），"白贴"检查新增显式 `PENDING_ICONS` 名单 —— `export` 与
+  四个文件类型图标尚未接线，登记在这一处，而不是让闸门长期红着被无视。
+
+### Fixed
+
+- **`.tex` 文档导出只剩一行文件名**：`export_document` 把读入格式写死成
+  `markdown`，于是 LaTeX 源码里的 `\documentclass` / `\section` / `\begin{}`
+  全被当成普通文字吞掉 —— 实测 `test/basic-test.tex`（66 行）导出成 PDF
+  只剩一行 `% basic-test.tex`。现在新增 `source` 参数（`--from` 白名单：
+  `markdown` / `latex`），前端按扩展名传：`.tex` / `.latex` / `.ltx` →
+  `latex`，其余 → `markdown`。
+  顺带修好随之暴露的第二个坑：LaTeX 的 `\ref{}` 会被 pandoc 转成 typst 的
+  `@sec:…` 交叉引用，而 typst 要求被引用的标题**有编号**，否则直接报
+  `cannot reference heading without numbering`。latex 源现在带
+  `--number-sections`（LaTeX 文档本来默认就编号）。
+  同一份文件实测：markdown 读入 → 7984 字节（一行）；latex 读入 + 编号
+  → **56788 字节**（内容完整）。
+- **PDF 导出报 `path contains invalid component "C:"`**：`--pdf-engine` 传的是
+  **绝对路径**（设置里指定了 `C:\Opt\typst.exe`，它不在 PATH 上）。pandoc 用
+  `\\?\` 长路径前缀调起引擎，typst 因此把它**自己下载的图片缓存**
+  （`C:\…\Temp\media-…\<sha1>.png`）当成**相对路径**解析，直接失败。
+  同一台机器、同一个 typst 0.15.1 实测：`--pdf-engine typst`（名字）→ 成功，
+  `--pdf-engine=C:\Opt\typst.exe`（绝对路径）→ 必炸，报错逐字一致。
+  **与中文无关**：中文 PDF 实测 11KB、嵌入中文字体、退出码 0；docx / html /
+  rtf 也都不受影响 —— 只有 PDF 有引擎调用这一步。
+  也解释了"全英就能成功"：那份文档里没有图，typst 不会去加载缓存路径。
+  现在把引擎所在目录 **prepend 进子进程 PATH、只传名字**（prepend 而非
+  append：用户显式指定的那份应该优先）。另加一层防御：PDF 导出前把
+  `](C:/…)` / `](D:\…)` 改写成 `](file:///C:/…)`（反斜杠一并转正斜杠），
+  覆盖"文档里写死本地绝对路径"的情况 —— 只对 PDF 生效，因为 docx / html
+  里塞 `file:///` 链接，发给别人打不开，反而更糟。
+- **RTF 导出中文乱码**：`export_document` 没传 `--standalone`，pandoc 输出的是
+  **片段**而不是完整文档 —— RTF 以 `{\pard …}` 开头、没有 `{\rtf1\ansi…}`
+  文件头（实测：416 字节 vs 加 `-s` 后的 862 字节），任何 RTF 阅读器都会
+  把它当纯文本打开，于是 `\u20013 ?` 这类 Unicode 转义原样显示，看起来就是
+  乱码。**中文本身不是原因**：`\uN?` 正是 RTF 表示非 ASCII 字符的正确写法。
+  现在统一加 `--standalone`，HTML 一并受益（此前缺 `<!DOCTYPE>` 与
+  `<meta charset>`）；docx / epub 是容器格式，加不加无差别。
+- **导出图标缺了一半**：`icon/export.svg` 是「一个 `<path>` + 一个
+  `<polygon>`」（箭头的三角形用 polygon 画），而图标生成器只提取
+  `<path>` —— 生成出来的图标只剩信封轮廓、没有箭头。
+  生成器现在同时提取 `<polygon>`，`export` 的产物变成 path + polygon 两个图形。
+
+### Changed
+
+- **导出按钮挪到保存右边**：原先硬编码在工具栏右侧（`toolbar-spacer` 之后），
+  现在改由 `aropyt.file` 插件贡献（`aropyt.file.export`，group `1`、
+  order `4`），位置紧跟「保存」。实现仍在宿主（`aropyt.export.run`）——
+  插件拿不到原生通道，调不了 pandoc。这样"挨着保存"由菜单的
+  group/order 决定，而不是靠 JSX 里的摆放顺序。
+- **状态栏字数统计统一走 `countStats`**：原来 `App.tsx` 自己写了一遍正则
+  （"词"只算英文、"字"只算中文），与 core 的口径不同 —— 同一份文档会在
+  两个地方得到两个数字。现在统一成：词 = 西文词 + 中日文字数，
+  字 = 非空白字符数（与 Typora 一致）。**数字会与旧版不同**。
+- `countStats` 从 `markdown.ts` 挪到新的 `text-stats.ts` 并从包根入口导出：
+  `markdown.ts` 刻意不进首屏预算（带 markdown-it + highlight.js），
+  而状态栏每次重渲染都要算字数。
+- `safeJsonParse` 接上了两处裸 `JSON.parse`（视图折叠状态、旧版插件禁用
+  名单）：它们本来就是"解析失败就当没写过"，靠外层 try 兜着；
+  现在把意图写进函数名。
+
+### Removed
+
+- **`commands.ts` 里 15 个旧编辑命令**：`toggleBold` / `toggleHeading` /
+  `toggleItalic` / `toggleTaskList` / `insertLink` / `insertTable` /
+  `indentSelection` … 每个都在自己的实现里直接 dispatch 事务。插件早已
+  统一走 `EditorApi.wrapSelection` / `toggleLinePrefix` / `replaceSelection`
+  （有守卫、能归因到插件、覆盖同样的行为），这些函数于是全部零引用。
+  只留 `toggleLinePrefix` 与 `toggleWrap` —— `EditorApi` 正是拿它们实现的。
+  文件从 216 行降到 116 行。
+
+### Added
+
+- **全局兜底守卫接到启动流程**（`installGlobalGuards`，`observeOnly`）：
+  只记录、不拦截 —— 未捕获异常归入失败计数并留一条 `uncaught` 轨迹。
+  它与 `installDebugLog` 分工不同：后者记"发生了什么"（明细进面板），
+  前者记"我们没预料到的事发生了"（计数 + 轨迹）。
+- **空闲预热 katex / mermaid**：首次插入公式或图表时不必再等一次动态
+  import；用 `onIdle` 而不是启动即加载，避免和"打开第一个文件"抢带宽。
+- 诊断报告新增「失败动作」段：失败项本来混在 30 条轨迹里要一行行扫，
+  单独提出来让维护者第一眼看到是哪一步炸的；调试面板的「清空」连带
+  清空轨迹（只清日志会留下上一轮的记录）。
+
 ### Planned
 
 - 编辑历史的版本间 diff（v0.1.2 已完成单版本对比，尚缺版本间对比）
@@ -60,6 +153,23 @@
 
 ### Added
 
+- **文件导出（docx / pdf / html / odt / epub / rtf）**：工具栏「导出…」
+  （就在「保存」右边）→ 选格式 → 选位置，转换由 **pandoc** 完成。内容经
+  **stdin** 传入（不落临时文件，也就没有路径转义与清理问题），
+  `--resource-path` 指向工作区根 —— 否则 `![](assets/a.png)` 在 docx 里
+  全是断图。失败时把 pandoc 的 **stderr 原样**带出来（缺图、fenced div
+  未闭合这类问题只有它说得清），并对 120 秒超时兜底。
+  **PDF 走 typst**（`--pdf-engine=typst`）：单文件约 30MB，比 TeX Live
+  轻两个数量级。**引擎由用户自行安装，不随应用打包**（产品决策）；
+  缺 typst 时只有 PDF 不可用、其它格式照常，且在选择保存路径**之前**
+  就拦下 —— 否则用户选完位置、等几秒才被告知缺引擎，磁盘上还会留个空文件。
+  **不含** MediaWiki / reST / OPML：它们是"特定下游系统的交换格式"，
+  不是给人读的文档（wiki 大多直接吃 markdown），却要在菜单里占三个位置。
+- **pandoc / typst 路径可在设置里手动指定**：设置页新增「导出工具」一节，
+  两个「浏览…」按钮直接选可执行文件，旁边实时显示探测到的版本；路径留空
+  则自动查 PATH 与常见安装位置（Program Files、LocalAppData、cargo bin、
+  homebrew、/usr/local/bin）。改完路径**立刻重探**，不需要重启。
+  探测逻辑泛化为 `resolve_tool`（pandoc / typst 共用）。
 - **`Ctrl/Cmd+Shift+O` 打开工作区**：与工具栏「打开文件夹」走同一个命令
   （`aropyt.file.pickWorkspace`），并经 `runCommand` 复用那层"把真实错误
   带出来"的处理 —— 选目录失败时用户能看到原因，而不是静默无反应。

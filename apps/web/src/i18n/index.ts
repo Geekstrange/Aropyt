@@ -128,6 +128,7 @@ const COMMAND_TITLES: Record<string, TextKey> = {
   插入公式: 'toolbar.math',
   插入图像: 'toolbar.image',
   保存: 'toolbar.save',
+  '导出…': 'toolbar.export',
   '打开文件…': 'toolbar.openFile',
   '打开文件夹…': 'toolbar.openFolder',
   文件: 'panel.files',
