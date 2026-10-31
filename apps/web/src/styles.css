@@ -2520,9 +2520,27 @@ button {
   color: var(--md-faint);
 }
 
-.tree-item--focused {
-  outline: 1px solid var(--md-accent);
-  outline-offset: -1px;
+/*
+ * 键盘光标：**不用边框**，用左侧竖条 + 淡背景。
+ *
+ * 原来画的是 outline 框，而且焦点跑到编辑器之后框还挂着 —— 打开文件后
+ * 列表里一直吊着一个框，看起来像"这一行被选中了"，用户会以为它表示
+ * 别的意思（实测报障："打开了的侧栏文件不要加高亮框"）。
+ *
+ * 两个约束都要满足：
+ *  · 焦点不在树里时，不显示树里的光标（`:focus-within`）——
+ *    否则框会留在原地，让人误以为选中状态还在；
+ *  · 光标仍然要能看见 —— 键盘用户靠它判断"下一次 Enter 会打开哪个"，
+ *    完全去掉就成了盲操作。
+ *
+ * `.tree-item--focused:focus` 给"行自身被直接聚焦"兜底：那时容器未必
+ * 在祖先链上（例如行被单独 focus 出来）。
+ */
+.explorer-tree:focus-within .tree-item--focused,
+.tree-item--focused:focus {
+  background: var(--md-surface-2);
+  box-shadow: inset 2px 0 0 var(--md-accent);
+  color: var(--md-text);
 }
 
 /* ── Fountain 剧本 ───────────────────────────────────────────

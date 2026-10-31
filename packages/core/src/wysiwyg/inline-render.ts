@@ -1026,7 +1026,25 @@ function createBlockDecorationsField(
     syncReferences(state.doc);
 
     const tree = ensureSyntaxTree(state, state.doc.length, 100) ?? syntaxTree(state);
-    const headLine = state.doc.lineAt(state.selection.main.head).number;
+    /*
+     * 光标是否贴着某个块（含**块外一格**）。
+     *
+     * 块在渲染态时是一个整体替换区间，区间内部放不了光标 —— 于是
+     * Backspace / Delete 会把"整块"当成一个字符删掉：
+     *   · 光标在 `to`（块尾）：Delete 删的是整块；
+     *   · 光标在 `from - 1`（块首前一格）：Backspace 删的也是整块。
+     *
+     * 用户看到的是"点一下、按退格，整块没了"。所以紧贴的位置也要把块
+     * 切回源码 —— 只要块显形，删的就只是普通字符。
+     *
+     * 两边各放宽**一格**：`head - 1` 与 `head` 只要有一个落在 `[from, to]`
+     * 里就算命中。之所以不能只判断 `head`：块节点的 `to` 会包含尾部换行，
+     * 而用户在"块后空行"行首按 Backspace 时 `head` 正好等于 `to`（换行
+     * 之后那一格），删的却是块里的内容 —— 实测正是这一格导致列表整块消失。
+     */
+    const head = state.selection.main.head;
+    const huggingBlock = (from: number, to: number): boolean =>
+      head >= from - 1 && head <= to + 1;
 
     /*
      * 第一步：块级数学的整体识别（行级扫描，见 scanMathBlocks 的注释）。
@@ -1036,11 +1054,7 @@ function createBlockDecorationsField(
     const mathBlocks = scanMathBlocks(state.doc);
     const mathByFrom = new Map<number, { to: number; tex: string }>();
     for (const block of mathBlocks) {
-      const startLine = state.doc.lineAt(block.from).number;
-      const endLineNo = state.doc.lineAt(block.to).number;
-      const isActive = reveal
-        && (headLine === startLine || headLine === endLineNo
-          || (headLine > startLine && headLine < endLineNo));
+      const isActive = reveal && huggingBlock(block.from, block.to);
       if (!isActive) {
         const html = `<span class="aropyt-math-block" data-tex="${escapeAttr(block.tex)}"></span>`;
         ranges.push({
@@ -1076,12 +1090,12 @@ function createBlockDecorationsField(
       }
       const name = cursor.name;
       if (cursor.node.parent?.name === 'Document' && BLOCK_REPLACE_TYPES.has(name)) {
-        const startLine = state.doc.lineAt(cursor.from).number;
-        const endLine = state.doc.lineAt(cursor.to).number;
-        // 光标所在的块保持源码（要编辑）；跨行块用"块首/块尾/中间夹住"判断
-        const isActiveBlock = reveal
-          && (headLine === startLine || headLine === endLine
-            || (headLine > startLine && headLine < endLine));
+        /*
+         * 光标贴着这个块（含块外一格）就保持源码 —— 见 `huggingBlock`
+         * 的注释：渲染态的整块是一个不可分割的替换区间，Backspace /
+         * Delete 会把整块当成一个字符删掉。
+         */
+        const isActiveBlock = reveal && huggingBlock(cursor.from, cursor.to);
         if (!isActiveBlock) {
           /*
            * mermaid 代码块优先于 markdown-it：highlight.js 不认识 mermaid，

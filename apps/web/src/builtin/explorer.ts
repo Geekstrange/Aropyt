@@ -189,6 +189,8 @@ function mount(container: HTMLElement, context: PluginContext, viewContext: View
     row.className = 'tree-item' + (entry.path === activePath ? ' tree-item--active' : '');
     row.style.paddingLeft = `${10 + depth * 12}px`;
     row.type = 'button';
+    /* 整棵树每次刷新都会重建，路径是唯一稳定的身份 —— 用它恢复键盘光标 */
+    row.dataset.path = entry.path;
 
     /*
      * 折叠箭头。
@@ -257,6 +259,14 @@ function mount(container: HTMLElement, context: PluginContext, viewContext: View
      * 标签栏不会越点越长，只有最后看的那个留在那儿。
      */
     row.addEventListener('click', () => {
+      /*
+       * 鼠标点过的行也要成为**键盘光标**。
+       *
+       * 键盘导航（j/k、上下、Enter）只认 `focusedRow`，而它原来只在键盘
+       * 移动时赋值 —— 于是"点一行、然后按 Enter"什么都不发生：用户觉得
+       * Enter 根本打不开文件（实测报障）。点一下就当选中，两条路径才一致。
+       */
+      setFocus(row);
       if (isDir) {
         if (collapsed.has(entry.path)) collapsed.delete(entry.path);
         else collapsed.add(entry.path);
@@ -347,6 +357,16 @@ function mount(container: HTMLElement, context: PluginContext, viewContext: View
      * 且层级在所有视图之上。文件树内部再画一遍等于同一句话出现两次，
      * 而且它会被折叠进 Files 视图、看起来只是一个分组标题。
      */
+    /*
+     * 刷新前焦点是否在树里。
+     *
+     * 打开文件也会触发 refresh，而 refresh 会整棵树重建 —— 旧节点被移除，
+     * 浏览器把焦点还给 `<body>`，之后方向键 / Enter 全都到不了
+     * `.explorer-tree`（键盘导航整段失效）。只有焦点本来就在树里时才夺
+     * 回来，否则用户在编辑器里打字会被抢走。
+     */
+    const hadFocusInside = body.contains(document.activeElement);
+
     const staging = document.createElement('div');
 
     try {
@@ -355,6 +375,31 @@ function mount(container: HTMLElement, context: PluginContext, viewContext: View
       if (ticket !== refreshSeq || disposed) return;
 
       body.replaceChildren(...staging.childNodes);
+
+      /*
+       * 重建后把键盘光标找回来。
+       *
+       * 每次打开文件（activeFile 变化）都会 refresh，而 refresh 会整棵树
+       * 重建 —— `focusedRow` 于是指向一个已经脱离文档的节点，之后按
+       * Enter 没有任何反应。按路径找回是唯一稳妥的做法。
+       */
+      if (focusedPath) {
+        const restored = visibleRows().find((row) => row.dataset.path === focusedPath);
+        setFocus(restored ?? null);
+        if (hadFocusInside) {
+          /*
+           * 焦点还给**具体那一行**，不是容器。
+           *
+           * 还给容器（`body.focus()`）时，浏览器认为"焦点在这个可聚焦
+           * 容器上"，按 Tab 会从容器内**第一个**可聚焦元素重新开始 ——
+           * 用户实测："打开文件后继续用 Tab 选择文件总是从第一个开始"。
+           * 落回原来的行，Tab 才会接着往下走。
+           */
+          if (restored) restored.focus({ preventScroll: true });
+          else body.focus({ preventScroll: true });
+        }
+      }
+
       if (!body.querySelector('.tree-item')) {
         /*
          * 区分两种"空"。
@@ -395,6 +440,8 @@ function mount(container: HTMLElement, context: PluginContext, viewContext: View
    * 声明，键盘光标永远回到起点。
    */
   let focusedRow: HTMLElement | null = null;
+  /** 键盘光标所在行的路径 —— DOM 重建后靠它把光标找回来。 */
+  let focusedPath: string | null = null;
 
   const visibleRows = (): HTMLElement[] =>
     Array.from(body.querySelectorAll<HTMLElement>('.tree-item'));
@@ -402,9 +449,24 @@ function mount(container: HTMLElement, context: PluginContext, viewContext: View
   const setFocus = (row: HTMLElement | null): void => {
     focusedRow?.classList.remove('tree-item--focused');
     focusedRow = row;
+    focusedPath = row?.dataset.path ?? null;
     row?.classList.add('tree-item--focused');
     row?.scrollIntoView({ block: 'nearest' });
   };
+
+  /*
+   * 焦点以**任何方式**进入某一行，都同步成键盘光标。
+   *
+   * `click` 只覆盖鼠标；用 Tab 进来、或宿主代码调 `focus()` 时
+   * `focusedRow` 仍是 null —— 那样按 ↑↓ 会从第 0 行重新开始，Enter 也
+   * 可能落空。`focusin` 是唯一能覆盖全部入口的事件（它还冒泡）。
+   */
+  body.addEventListener('focusin', (event: Event) => {
+    const target = event.target;
+    if (!(target instanceof Element)) return;
+    const row = target.closest<HTMLElement>('.tree-item');
+    if (row && row !== focusedRow) setFocus(row);
+  });
 
   body.addEventListener('keydown', (event: KeyboardEvent) => {
     const rows = visibleRows();
@@ -420,9 +482,16 @@ function mount(container: HTMLElement, context: PluginContext, viewContext: View
       setFocus(rows[Math.max(index - 1, 0)] ?? rows[0]);
       return;
     }
-    if (event.key === 'Enter' && focusedRow) {
+    if (event.key === 'Enter') {
+      /*
+       * 兜底到第一行：`focusedRow` 可能因为树被整体重建（换工作区、
+       * 新建/删除文件、切活动文件都会 refresh）而失效。没有兜底时
+       * Enter 静默无反应，而"焦点在第一行"是它唯一合理的默认。
+       */
+      const target = focusedRow?.isConnected ? focusedRow : (rows[0] ?? null);
+      if (!target) return;
       event.preventDefault();
-      focusedRow.click();
+      target.click();
     }
   });
 

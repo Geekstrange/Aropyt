@@ -46,7 +46,7 @@ function buildSpaceDecorations(view: EditorView): DecorationSet {
  * 都执行、而且是同步代码无法超时，它是整个防挂起体系里最需要被盯住的入口。
  */
 
-import { Compartment, EditorState, Prec, type Extension,
+import { Compartment, EditorState, Prec, Transaction, type Extension,
   RangeSetBuilder,
 } from '@codemirror/state';
 import {
@@ -65,7 +65,13 @@ import {
   type DecorationSet,
   type ViewUpdate,
 } from '@codemirror/view';
-import { defaultKeymap, history, historyKeymap, indentWithTab } from '@codemirror/commands';
+import {
+  defaultKeymap,
+  history,
+  historyKeymap,
+  indentWithTab,
+  isolateHistory,
+} from '@codemirror/commands';
 import {
   LanguageDescription,
   bracketMatching,
@@ -872,8 +878,28 @@ export class EditorAdapter implements EditorApi {
     this.#view.focus();
   }
 
+  /**
+   * 换一整篇文档（切标签 / 打开文件）。
+   *
+   * ⚠️ 必须切断撤销历史，不能只 dispatch 一次整篇替换。
+   *
+   * 那样"把 A 换成 B"这一步本身会进 history，于是在 B 里按 Ctrl+Z 撤销
+   * 的就是这一步 —— 内容变回 **A**，标签却还是 B；一直按会一路退回之前
+   * 打开过的每一个文档（用户报的就是"文档内容变成之前打开的文档"）。
+   *
+   * 两个注解各管一半：
+   *  · `isolateHistory.of('before')` 在替换**之前**插一个历史边界，
+   *    撤销到不了边界另一侧 —— 旧文档的编辑记录不会再作用到新文档上；
+   *  · `Transaction.addToHistory.of(false)` 让替换本身不进栈，否则
+   *    第一次撤销仍然是"撤销打开文档"。
+   */
   replaceDocument(text: string): void {
-    this.#view.dispatch({ changes: { from: 0, to: this.#view.state.doc.length, insert: text } });
+    const view = this.#view;
+    view.dispatch({
+      changes: { from: 0, to: view.state.doc.length, insert: text },
+      selection: { anchor: 0 },
+      annotations: [isolateHistory.of('before'), Transaction.addToHistory.of(false)],
+    });
   }
 
   wrapSelection(prefix: string, suffix: string = prefix): void {
