@@ -14,6 +14,10 @@
 
 import { Compartment } from '@codemirror/state';
 import { t } from './i18n';
+import { createSyncBackend } from './sync/host';
+import { createRemoteDav, joinBaseUrl, type DavAuth } from './sync/dav';
+import { runSync } from './sync/runner';
+import { summarize } from './sync/engine';
 
 import {
   describeLimitations,
@@ -173,6 +177,29 @@ export interface RuntimeState {
    * 缺 typst 时只有 PDF 这一个格式不可用，其它照常。
    */
   readonly typst: { readonly available: boolean; readonly version: string | null };
+  /**
+   * 同步状态。状态栏图标读它：
+   * `clean` → sync.svg，`up` → syncUp.svg，`down` → syncDown.svg，
+   * `conflict` / `error` → 同一套图标 + 警示色。
+   */
+  readonly sync: {
+    readonly status: 'idle' | 'running' | 'clean' | 'conflict' | 'error';
+    /** 运行期间的方向（`syncUp` / `syncDown` 据此切换）；其它状态为 `null`。 */
+    readonly direction: 'up' | 'down' | null;
+    readonly message: string | null;
+  };
+  /**
+   * 同步的**配置**（地址 / 账号 / 远端目录）。
+   *
+   * 与 `sync`（运行状态）分开：设置页要回填输入框，状态栏只关心方向。
+   * 密码不在这里 —— 它只存在钥匙串里，读出来仅用于发请求。
+   */
+  readonly syncConfig: {
+    readonly enabled: boolean;
+    readonly url: string;
+    readonly username: string;
+    readonly remotePath: string;
+  };
   /** 恢复自草稿/崩溃日志的文件路径；null = 本次会话没有恢复过。状态栏黄点用它，且只在**当前激活**文件是它时才亮。 */
   readonly recoveredPath: string | null;
   /** 恢复来源所在的工作区 —— 与 recoveredPath 一起判断黄点（同名文件跨工作区不能互相点亮）。 */
@@ -304,6 +331,29 @@ export interface AropytRuntime {
    * （Ctrl+Shift+H）与设置页开关，别再删掉这两个中的一个。
    */
   toggleToolbar(): void;
+  /**
+   * 跑一次同步（手动触发）。
+   *
+   * 缺配置、缺密码、缺工作区都会先提示再返回 —— 不会发出注定失败的请求。
+   */
+  /**
+   * 跑一次同步。
+   *
+   * `silent: true` 用于自动触发（保存后 / 启动后）：缺配置、缺密码时
+   * **不弹提示**，否则每次保存都会跳一次"同步尚未配置"。失败与冲突
+   * 仍然会提示 —— 那两种需要人处理。
+   */
+  syncNow(options?: { silent?: boolean }): Promise<void>;
+  /** 保存同步配置：地址 / 账号 / 远端目录进 settings，密码进钥匙串。 */
+  saveSyncSettings(patch: {
+    enabled?: boolean;
+    url?: string;
+    username?: string;
+    remotePath?: string;
+    password?: string;
+  }): Promise<void>;
+  /** 测试连接。结果由调用方就地展示，不弹窗。 */
+  testSyncTarget(): Promise<{ ok: boolean; detail: string }>;
   /**
    * 导出当前文档。`format` 取 pandoc 的目标格式（docx / html / epub / rtf）。
    *
@@ -476,6 +526,8 @@ export function createRuntime(options: RuntimeOptions): AropytRuntime {
     toolbarOpen: currentSettings.toolbar.open,
     pandoc: pandocState,
     typst: typstState,
+    sync: syncState,
+    syncConfig: currentSettings.sync,
     recoveredPath: state.recoveredPath,
     recoveredWorkspaceId: state.recoveredWorkspaceId,
     plugins: host.records,
@@ -992,6 +1044,9 @@ export function createRuntime(options: RuntimeOptions): AropytRuntime {
     toggleVimMode,
     toggleToolbar,
     exportDocument,
+    syncNow,
+    saveSyncSettings,
+    testSyncTarget,
     pickToolPath,
     activateRelativeTab,
     openSettingsFile,
@@ -1560,7 +1615,8 @@ export function createRuntime(options: RuntimeOptions): AropytRuntime {
           },
         },
       ];
-      const isCurrent = state.activePath === path && state.activeWorkspaceId === workspaceId;
+      /* 走 `isActiveTab`：它已经为外部文件（`workspaceId === null`）开了例外 */
+      const isCurrent = isActiveTab(closing);
       if (isCurrent && !path.startsWith('__untitled__')) {
         actions.push({ label: t('rt.saveAndClose'), run: () => {} });
       }
@@ -1572,7 +1628,18 @@ export function createRuntime(options: RuntimeOptions): AropytRuntime {
       if (choice === t('rt.saveAndClose')) await saveActiveFile();
     }
 
-    const closingActive = state.activePath === path && state.activeWorkspaceId === workspaceId;
+    /*
+     * 是否关的是**当前激活**的标签 —— 必须走 `isActiveTab`。
+     *
+     * 这里原来自己写了一遍严格比较（`activePath === path &&
+     * activeWorkspaceId === workspaceId`），对**外部文件**永远为假：
+     * 单独打开的文件 `workspaceId` 是 `null`，而 `activeWorkspaceId`
+     * 仍指向某个项目（文件树要显示它）。
+     *
+     * 后果：关掉它时走"不是激活标签"的分支，只 `notify()` 就返回 ——
+     * 标签没了，编辑区里的内容还在（用户实测报障）。
+     */
+    const closingActive = isActiveTab(closing);
     // 关掉当前标签之前先把它缓冲区的修改存回来 ——
     // 虽然它马上要走了，但用户在它里面的修改不该凭空消失
     // （万一他反悔，草稿与缓冲区仍然是可用的证据）。
@@ -1983,6 +2050,33 @@ function validateContributions(manifest: PluginManifest): void {
     version: null,
   };
 
+  /**
+   * 同步状态。状态栏的三态图标直接读它。
+   *
+   * `running` 与 `error` 不是"方向"，而是过程状态 —— 混进 `SyncSummary`
+   * 会让"点一下重试"的语义变得含糊（失败到底是没同步，还是同步了一半）。
+   */
+  let syncState: {
+    /**
+     * 只有四种：
+     *  · `idle`     已配置、还没跑过
+     *  · `running`  正在跑（`direction` 决定显示上传还是下载箭头）
+     *  · `clean`    上一轮结束且没有需要留意的事
+     *  · `conflict` / `error`
+     *
+     * **没有 `up` / `down`**：`syncUp` / `syncDown` 是"正在进行"的图标，
+     * 任务结束后一律回到 `sync`。把"待上传"也做成单独状态，会让跑完一轮
+     * 之后图标停在箭头上，看起来像还没结束（实测报障）。
+     */
+    status: 'idle' | 'running' | 'clean' | 'conflict' | 'error';
+    /**
+     * 这一轮是往上还是往下。只在 `running` 时有意义 —— 决策做完才知道，
+     * 界面靠它决定运行期间显示 syncUp 还是 syncDown。
+     */
+    direction: 'up' | 'down' | null;
+    message: string | null;
+  } = { status: 'idle', direction: null, message: null };
+
   /** 把配置应用到运行时（启动与每次修改都走这里，保证单一入口）。 */
   function applySettings(next: AppSettings): void {
     currentSettings = next;
@@ -2021,6 +2115,7 @@ function validateContributions(manifest: PluginManifest): void {
       sidebar: { ...currentSettings.sidebar, ...(patch.sidebar ?? {}) },
       toolbar: { ...currentSettings.toolbar, ...(patch.toolbar ?? {}) },
       export: { ...currentSettings.export, ...(patch.export ?? {}) },
+      sync: { ...currentSettings.sync, ...(patch.sync ?? {}) },
       plugins: { ...currentSettings.plugins, ...(patch.plugins ?? {}) },
       history: { ...currentSettings.history, ...(patch.history ?? {}) },
     };
@@ -2334,6 +2429,260 @@ function validateContributions(manifest: PluginManifest): void {
     return ext === 'tex' || ext === 'latex' || ext === 'ltx' ? 'latex' : 'markdown';
   }
 
+  /* ── 同步 ─────────────────────────────────────────── */
+
+  /**
+   * 组装同步目标：配置里的地址与账号 + 钥匙串里的密码。
+   *
+   * 密码不读 `settings.jsonc`（那是纯文本）。读不到就提示去设置页补，
+   * 而不是带着空密码发一次必然 401 的请求。
+   */
+  async function resolveSyncTarget(silent = false): Promise<DavAuth | null> {
+    const config = currentSettings.sync;
+    if (!config.url.trim() || !config.username.trim()) {
+      if (!silent) {
+        await windowService.showMessage(t('rt.syncNotConfigured'), { level: 'warning' });
+      }
+      return null;
+    }
+
+    let password: string | null = null;
+    try {
+      password = await invokeNative<string | null>('secret_get', { key: 'webdav' });
+    } catch (error) {
+      /* 钥匙串不可用（Linux 没跑 secret-service）时不能静默失败，否则用户
+         只会看到一次没有原因的 401 */
+      console.info('[aropyt] 读取同步凭据失败', error);
+    }
+    if (!password) {
+      if (!silent) {
+        await windowService.showMessage(t('rt.syncNoPassword'), { level: 'warning' });
+      }
+      return null;
+    }
+
+    return {
+      url: joinBaseUrl(config.url, config.remotePath),
+      username: config.username.trim(),
+      password,
+    };
+  }
+
+  /**
+   * 保存同步配置。
+   *
+   * 密码单独走钥匙串，其余进 settings —— 落盘路径不同，所以不放在一次
+   * `updateSettings` 里。
+   */
+  async function saveSyncSettings(patch: {
+    enabled?: boolean;
+    url?: string;
+    username?: string;
+    remotePath?: string;
+    password?: string;
+  }): Promise<void> {
+    if (patch.password !== undefined) {
+      try {
+        await invokeNative('secret_set', { key: 'webdav', value: patch.password });
+      } catch (error) {
+        const detail = error instanceof Error ? error.message : String(error);
+        await windowService.showMessage(t('rt.syncTestFailed', { detail }), { level: 'error' });
+        return;
+      }
+    }
+
+    /*
+     * 只把**有值的**字段交给 updateSettings：展开 `undefined` 会把已有
+     * 配置清空（用户在设置页只改密码时，地址和账号会一起消失）。
+     */
+    const next: {
+      enabled?: boolean;
+      url?: string;
+      username?: string;
+      remotePath?: string;
+    } = {};
+    if (patch.enabled !== undefined) next.enabled = patch.enabled;
+    if (patch.url !== undefined) next.url = patch.url;
+    if (patch.username !== undefined) next.username = patch.username;
+    if (patch.remotePath !== undefined) next.remotePath = patch.remotePath;
+    if (Object.keys(next).length > 0) updateSettings({ sync: next });
+  }
+
+  /**
+   * 测试连接。**不弹 toast** —— 设置页就地显示结果，弹窗会把输入框挡住。
+   *
+   * 三种失败各自的措辞不同：没配、没密码、服务端拒绝。混成一句"测试失败"
+   * 等于把排查的起点又推回给用户。
+   */
+  async function testSyncTarget(): Promise<{ ok: boolean; detail: string }> {
+    const config = currentSettings.sync;
+    if (!config.url.trim() || !config.username.trim()) {
+      return { ok: false, detail: t('rt.syncNotConfigured') };
+    }
+
+    let password: string | null = null;
+    try {
+      password = await invokeNative<string | null>('secret_get', { key: 'webdav' });
+    } catch {
+      /* 钥匙串不可用：下面按"没有密码"处理，用户会看到明确的提示 */
+    }
+    if (!password) {
+      return { ok: false, detail: t('rt.syncNoPassword') };
+    }
+
+    try {
+      const auth: DavAuth = {
+        url: joinBaseUrl(config.url, config.remotePath),
+        username: config.username.trim(),
+        password,
+      };
+      const result = await invokeNative<string>('dav_test', { auth });
+      return { ok: true, detail: t('rt.syncTestOk', { detail: result }) };
+    } catch (error) {
+      const detail = error instanceof Error ? error.message : String(error);
+      return { ok: false, detail: t('rt.syncTestFailed', { detail }) };
+    }
+  }
+
+  /**
+   * 跑一次同步。
+   *
+   * 组装顺序有意义：先确认目标（缺配置 / 缺密码就地返回），再建后端。
+   * 反过来会先创建一堆闭包，然后才在第一次请求上撞 401。
+   */
+  /* ── 自动同步的调度状态 ───────────────────────────── */
+
+  /** 已有一轮在跑。同步不能并发：两轮同时写 base 会互相覆盖。 */
+  let syncInFlight = false;
+  /** 跑的过程中又被触发了 —— 结束后补一轮，否则这次改动要等下次触发。 */
+  let syncPending = false;
+  let autoSyncTimer: ReturnType<typeof setTimeout> | null = null;
+
+  /**
+   * 排一次"稍后自动同步"。
+   *
+   * 防抖 3 秒：连按 Ctrl+S 只跑一轮，且给"保存完立刻又要改一处"留出合并
+   * 窗口。同步是**静默**的 —— 成功不弹任何提示，"无感"的前提就是不打断；
+   * 失败与冲突仍然会提示，那两种状态需要人处理。
+   */
+  function scheduleAutoSync(delayMs = 3000): void {
+    /*
+     * **必须显式开启**。手动点云图标不受这条限制 —— 那是用户的明确动作，
+     * 而自动同步会在用户还没弄清地址填对没有的时候，就往网盘里写东西。
+     * 同步目前是 beta，这道闸门是它默认安全的唯一保证。
+     */
+    if (!currentSettings.sync.enabled) return;
+    /* 没配置就别安排：免得每次保存都去读一次钥匙串、再撞一次空地址 */
+    if (!currentSettings.sync.url.trim() || !currentSettings.sync.username.trim()) return;
+    if (autoSyncTimer) clearTimeout(autoSyncTimer);
+    autoSyncTimer = setTimeout(() => {
+      autoSyncTimer = null;
+      void syncNow({ silent: true });
+    }, delayMs);
+  }
+
+  async function syncNow(options?: { silent?: boolean }): Promise<void> {
+    /*
+     * 互斥 + 排队。并发会让两轮各自读写 base 快照，后写的覆盖先写的，
+     * 留下一份对不上磁盘的"已同步"记录。
+     */
+    if (syncInFlight) {
+      syncPending = true;
+      return;
+    }
+
+    const workspace = state.workspace;
+    if (!workspace) {
+      if (!options?.silent) {
+        await windowService.showMessage(t('rt.noWorkspace'), { level: 'warning' });
+      }
+      return;
+    }
+
+    const auth = await resolveSyncTarget(options?.silent === true);
+    if (!auth) return;
+
+    syncInFlight = true;
+    syncState = { status: 'running', direction: null, message: null };
+    notify();
+
+    const detailOf = (error: unknown): string =>
+      error instanceof Error ? error.message : typeof error === 'string' ? error : String(error);
+
+    try {
+      const backend = createSyncBackend({
+        local: {
+          list: (dir) => workspace.list(dir),
+          read: (path) => workspace.read(path),
+          write: (path, content) => workspace.write(path, content),
+          delete: (path) => workspace.remove(path),
+        },
+        remote: createRemoteDav(invokeNative, auth),
+        /* 快照按工作区分开：A 的哈希不能拿去判 B */
+        rootKey: workspace.id,
+      });
+
+      const result = await runSync(backend, Date.now, (summary) => {
+        /*
+         * 决策出来才知道方向：这一轮有上传就亮 syncUp，有下载就亮
+         * syncDown，都没有（无动作 / 冲突）就留 sync。
+         */
+        syncState = {
+          status: 'running',
+          direction: summary === 'up' ? 'up' : summary === 'down' ? 'down' : null,
+          message: null,
+        };
+        notify();
+      });
+      const failed = result.steps.filter((step) => !step.ok);
+      const summary = summarize(result.steps.map((step) => step.action));
+      const conflicts = result.steps.filter((step) => step.action.kind === 'conflict');
+
+      timeline(
+        'sync',
+        `${String(result.steps.length)} 个动作 · ${summary}${failed.length > 0 ? ` · ${String(failed.length)} 失败` : ''}`,
+        { failed: failed.length > 0 },
+      );
+
+      if (failed.length > 0) {
+        syncState = { status: 'error', direction: null, message: failed[0].error ?? null };
+        await windowService.showMessage(
+          t('rt.syncFailed', { detail: failed[0].error ?? '' }),
+          { level: 'error' },
+        );
+      } else if (conflicts.length > 0) {
+        syncState = { status: 'conflict', direction: null, message: null };
+        await windowService.showMessage(
+          t('rt.syncConflicts', { count: String(conflicts.length) }),
+          { level: 'warning' },
+        );
+      } else {
+        /*
+         * 跑完一律回到 `clean`（图标 `sync`），**不管这一轮是上传还是
+         * 下载**：箭头是"正在进行"的记号，结束后还挂着会让人以为没跑完。
+         *
+         * 成功**不弹提示**：自动同步每隔一会儿就静默跑一次，每次都跳一个
+         * "同步完成"的横幅，正常状态反而成了噪音。反馈交给图标与状态点。
+         */
+        syncState = { status: 'clean', direction: null, message: null };
+      }
+    } catch (error) {
+      syncState = { status: 'error', direction: null, message: detailOf(error) };
+      timeline('sync-fail', detailOf(error), { failed: true });
+      await windowService.showMessage(t('rt.syncFailed', { detail: detailOf(error) }), {
+        level: 'error',
+      });
+    } finally {
+      syncInFlight = false;
+      notify();
+      /* 跑的过程中又被触发过 —— 补一轮 */
+      if (syncPending) {
+        syncPending = false;
+        void syncNow({ silent: true });
+      }
+    }
+  }
+
   /** 导出用的默认文件名：当前文档名换扩展名。 */
   function exportFileName(format: string): string {
     const active = state.activePath;
@@ -2641,6 +2990,14 @@ function validateContributions(manifest: PluginManifest): void {
     syncActiveTabBuffer();
     notify();
     timeline('saved', path);
+
+    /*
+     * 保存成功 → 排一次自动同步。
+     *
+     * 挂在"保存成功"而不是"内容变化"：打字过程中每一秒都会变，
+     * 在那里触发等于持续同步；而保存是用户明确表达的"这一版就这样了"。
+     */
+    scheduleAutoSync();
 
     /*
      * 保存成功也必须有反馈。
@@ -2956,6 +3313,14 @@ function validateContributions(manifest: PluginManifest): void {
      * "打开启动文件"。探测完自己 notify。
      */
     void probeTools();
+
+    /*
+     * 启动后拉一次远端。
+     *
+     * 延迟 5 秒：让首屏、配置加载、外部工具探测先跑完 —— 启动瞬间就抢
+     * 网络会让"打开应用"变慢，而这个同步本来也不急。
+     */
+    scheduleAutoSync(5000);
 
     const launchFile = await invokeNative<string | null>('take_launch_file').catch(() => null);
     if (launchFile) await openExternalPath(launchFile);

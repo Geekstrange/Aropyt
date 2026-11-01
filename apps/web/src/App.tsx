@@ -608,6 +608,80 @@ function Toolbar({ runtime, onOpenSettings, onOpenHistory, onOpenPlugins }: Tool
       ))}
       <span className="toolbar-spacer" />
 
+      {/*
+       * 同步（WebDAV）。
+       *
+       * 放在工具栏而不是状态栏：它是**主动操作**（点一下才开始），和状态栏
+       * 那些只读信息不同类。实现直接调 `runtime.syncNow()` —— 插件拿不到
+       * runtime，因此这一颗按钮和导出不同，没法由插件贡献。
+       *
+       * 图标随状态换（sync / syncUp / syncDown），`running` 时转圈并禁用：
+       * 一次往返在 WAN 上要几秒，没有过程反馈用户会以为没点上、连点几次。
+       * `conflict` / `error` 只染色不加新图标 —— 工具栏宽度比状态栏还紧张。
+       */}
+      {(() => {
+        const status = state.sync.status;
+        const configured = state.syncConfig.url.trim().length > 0;
+
+        /*
+         * 没配好就别占位置。
+         *
+         * 工具栏宽度是稀缺资源，而一个"点了只会告诉你还没配置"的图标，
+         * 除了让人好奇点一下、然后去设置页之外没有任何作用 —— 那一步
+         * 用户本来就会去设置页做。配好之后它才出现。
+         */
+        if (!configured && status === 'idle') return null;
+
+        const label =
+          status === 'running'
+            ? t('status.syncRunning')
+            : status === 'error'
+              ? t('status.syncFailed')
+              : status === 'conflict'
+                ? t('sync.summary.conflict')
+                : status === 'clean'
+                  ? t('sync.summary.clean')
+                  : t('status.syncIdle');
+
+        /*
+         * 方向图标**只在运行期间**用：syncUp / syncDown 是"正在进行"的
+         * 记号，任务结束后一律回到 sync。
+         *
+         * 跑完还停在箭头上会让人以为没跑完 —— 上一版就是这样（实测报障：
+         * "上传完成后图标未回到默认状态"）。
+         */
+        const icon =
+          status === 'running'
+            ? state.sync.direction === 'up'
+              ? 'syncUp'
+              : state.sync.direction === 'down'
+                ? 'syncDown'
+                : 'sync'
+            : 'sync';
+
+        /*
+         * 颜色只表达一件事：**这一颗还不能用**。已配置但还没跑过时压暗
+         * （与其它禁用按钮同一套观感），其余情况一律跟随工具栏常规色 ——
+         * 用户要求"颜色与其他图标保持一致"，而冲突/失败的细节 title 里
+         * 已经写了，不值得让一颗图标独自变色。
+         */
+        const tone = status === 'idle' ? ' is-idle' : '';
+
+        return (
+          <button
+            type="button"
+            className={`tool-button tool-button--sync${tone}`}
+            title={state.sync.message ? `${label} · ${state.sync.message}` : label}
+            aria-label={label}
+            onClick={() => void runtime.syncNow()}
+            disabled={status === 'running'}
+          >
+            {/* 这颗图标的网格里内容偏小，20.5 才和其它 16px 图标视觉同高 */}
+            <Icon name={icon} size={20.5} />
+          </button>
+        );
+      })()}
+
       {/* 编辑历史 */}
       <button
         type="button"
@@ -769,13 +843,26 @@ function StatusBar({ runtime }: { readonly runtime: AropytRuntime }): JSX.Elemen
             className="status-bar__dot"
             aria-hidden="true"
             style={{
-              background: state.dirty
-                ? 'var(--md-state-red)'
-                : state.recoveredPath === state.activePath &&
-                    state.recoveredWorkspaceId === state.activeWorkspaceId &&
-                    state.recoveredPath !== null
-                  ? 'var(--md-state-yellow)'
-                  : 'var(--md-brand-green)',
+              /*
+               * 四态，优先级从高到低：
+               *  · 同步进行中 → 蓝（正在搬运，是最"活动"的状态）
+               *  · 有未保存修改 → 红
+               *  · 内容来自崩溃恢复 → 黄
+               *  · 其余 → 品牌绿（一切正常）
+               *
+               * 同步放最前：它在进行时其它状态都被覆盖，而且"正在上传/
+               * 下载"比"文件是干净的"更值得占用这一个像素。
+               */
+              background:
+                state.sync.status === 'running'
+                  ? 'var(--md-accent)'
+                  : state.dirty
+                    ? 'var(--md-state-red)'
+                    : state.recoveredPath === state.activePath &&
+                        state.recoveredWorkspaceId === state.activeWorkspaceId &&
+                        state.recoveredPath !== null
+                      ? 'var(--md-state-yellow)'
+                      : 'var(--md-brand-green)',
             }}
           />
         )}
@@ -832,6 +919,7 @@ function StatusBar({ runtime }: { readonly runtime: AropytRuntime }): JSX.Elemen
           </span>
         );
       })()}
+
     </>
   );
 }

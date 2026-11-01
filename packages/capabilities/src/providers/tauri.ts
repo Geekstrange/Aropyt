@@ -259,11 +259,22 @@ class NativeWorkspace implements Workspace {
     );
   }
 
-  /** 删除文件或目录。未接入。 */
+  /**
+   * 删除一个文件或**空**目录。
+   *
+   * 同步需要它：本地删了某个文件之后远端要跟着删，否则下一轮下载会把它
+   * 复活。
+   *
+   * `recursive` 被**忽略**：Rust 侧只删空目录。接口上留这个参数是为了与
+   * FSA / OPFS 两个 provider 对齐，但这里刻意不实现递归 —— 删掉一个文件
+   * 不该带走整棵子树，那种破坏不该藏在一个名字这么普通的方法里。
+   */
   async remove(path: string, options?: { readonly recursive?: boolean }): Promise<void> {
     assertSafePath(path);
     void options;
-    throw new Error('原生适配器尚未支持删除操作');
+    await invokeAs<void>(this.#api, 'workspace_delete', {
+      args: { rootId: this.id, path },
+    });
   }
 }
 

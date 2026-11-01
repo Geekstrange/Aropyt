@@ -2384,6 +2384,37 @@ button {
   border-color: var(--md-accent);
 }
 
+/*
+ * 工具栏上的同步按钮。
+ *
+ * 图标按状态换：运行期间显示这一轮的**方向**（syncUp / syncDown），
+ * 结束后一律回到 sync。不转圈 —— 箭头本身就在说"正在往上/往下走"，
+ * 一个转圈的云反而把方向信息盖掉了。
+ *
+ * 除了"还没跑过"那一档，**不染色**：图标已经表达了状态，再叠颜色只会
+ * 和工具栏其它按钮不一致。冲突与失败的原因在 title 里。
+ */
+.tool-button--sync {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+}
+
+/*
+ * 已配置但还没同步过。
+ *
+ * 用 `opacity: 0.4`，与 `.tool-button:disabled` 完全同一套观感 —— 用户
+ * 说"跟编辑历史不可点击时一致"，那就直接复用那条规则的值，而不是另挑
+ * 一个近似色。写死色值还有个副作用：深色主题下必须再补一份，否则浅灰
+ * 在深底上会变成亮斑。
+ *
+ * 注意它**仍然可以点击**：点下去就是第一次同步。这里只是"看起来还没
+ * 就绪"，不是真的禁用（真禁用会让首次同步没有入口）。
+ */
+.tool-button--sync.is-idle {
+  opacity: 0.4;
+}
+
 .status-bar__stats {
   flex: 0 0 auto;
   padding: 0 10px;

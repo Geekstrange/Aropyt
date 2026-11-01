@@ -28,6 +28,16 @@ tauri-plugin-opener = "2"
 serde = { version = "1", features = ["derive"] }
 serde_json = "1"
 
+# WebDAV 客户端。选 ureq 而不是 reqwest：后者拖进整个 tokio，
+# 而同步场景只需要"发一个请求、等一个响应"—— 同步 API 反而更简单。
+# 默认 feature 带 rustls，不依赖系统 OpenSSL。
+ureq = "2"
+
+# 凭据存储：Windows Credential Manager / macOS Keychain / Linux Secret Service。
+# 密码**不能**进 settings.jsonc —— 那是纯文本，会被截图、会被扔进 dotfiles 仓库。
+# 三个 feature 都是纯 Rust 实现（Linux 走 DBus，不需要 libsecret 开发包）。
+keyring = { version = "3", features = ["apple-native", "windows-native", "linux-native"] }
+
 # 自动更新默认关闭（可选依赖）。它需要 minisign 发布方密钥，
 # 没有真实密钥时开启只会得到一个静默失败的更新通道。
 # 要开启：`npm run tauri signer generate` 拿到密钥，填进 tauri.conf.json，

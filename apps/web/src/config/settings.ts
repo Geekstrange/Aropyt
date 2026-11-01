@@ -31,6 +31,27 @@ export interface AppSettings {
    * 需要外部引擎。
    */
   export: { pandocPath: string; typstPath: string };
+  /**
+   * 同步（WebDAV）。
+   *
+   * 这里**只有地址与账号**：密码走系统钥匙串（`secret_set` /
+   * `secret_get`），绝不进这个文件 —— 它是纯文本，会被截图、会被扔进
+   * dotfiles 仓库。
+   *
+   * `remotePath` 为空表示直接在服务根下同步；填了就同步到那个子目录，
+   * 方便把 Aropyt 的文件和网盘里别的资料分开。
+   */
+  /**
+   * 是否启用自动同步。**默认 false**。
+   *
+   * 关掉时不代表不能手动同步 —— 点工具栏的云图标永远有效，那是用户的
+   * 明确动作。这个开关只管"保存后 / 启动后自己跑不跑"：第一次配置的人
+   * 很可能还没弄清地址填对没有，让它自动往网盘里写是风险不对等的。
+   *
+   * 同步目前标在 **beta**：协议层只对着本地假服务验证过，没有连过真实
+   * 网盘（TLS、各家对 PROPFIND 的容忍度、中文路径编码都要真机试）。
+   */
+  sync: { enabled: boolean; url: string; username: string; remotePath: string };
   plugins: { disabled: string[] };
   /** 编辑历史。 */
   history: { limit: number; /** 自动保存版本（按间隔）。 */ autoSave: boolean; /** 间隔秒数。 */ autoSaveInterval: number };
@@ -48,6 +69,7 @@ export const DEFAULT_SETTINGS: AppSettings = {
   sidebar: { open: true },
   toolbar: { open: true },
   export: { pandocPath: '', typstPath: '' },
+  sync: { enabled: false, url: '', username: '', remotePath: '' },
   plugins: { disabled: [] },
   history: { limit: 50, autoSave: true, autoSaveInterval: 60 },
 };
@@ -205,6 +227,20 @@ export function normalizeSettings(raw: unknown): {
       settings.export.typstPath = exportSection.typstPath;
     } else {
       invalidValues.push('export.typstPath');
+    }
+  }
+  const syncSection = obj.sync as Record<string, unknown> | undefined;
+  for (const key of ['url', 'username', 'remotePath'] as const) {
+    const value = syncSection?.[key];
+    if (value === undefined) continue;
+    if (typeof value === 'string') settings.sync[key] = value.trim();
+    else invalidValues.push(`sync.${key}`);
+  }
+  if (syncSection?.enabled !== undefined) {
+    if (typeof syncSection.enabled === 'boolean') {
+      settings.sync.enabled = syncSection.enabled;
+    } else {
+      invalidValues.push('sync.enabled');
     }
   }
   const plugins = obj.plugins as Record<string, unknown> | undefined;

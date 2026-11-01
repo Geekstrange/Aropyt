@@ -48,6 +48,10 @@ const NAME_MAP = {
   openFile: 'openFile',
   save: 'save',
   export: 'export',
+  /* 同步三态：空闲 / 待下载 / 待上传 */
+  sync: 'sync',
+  syncDown: 'syncDown',
+  syncUp: 'syncUp',
   defaultPlugin: 'defaultPlugin',
   language: 'language',
   // 侧栏开关：普通态线框，激活态实心（同一形状的两种视觉重量）

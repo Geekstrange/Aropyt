@@ -16,7 +16,12 @@
 
 const DB_NAME = 'aropyt';
 // 2：新增 history store（v0.0.7）
-const DB_VERSION = 2;
+/**
+ * ⚠️ 新增 store 时必须 +1：`onupgradeneeded` 靠版本变化触发，
+ * 版本不变的话老用户的库里不会有新表，第一次访问就会抛
+ * "object store not found"。
+ */
+const DB_VERSION = 3;
 
 export const STORE = {
   kv: 'kv',
@@ -24,6 +29,13 @@ export const STORE = {
   drafts: 'drafts',
   /** 编辑历史（v0.0.7）：每个文件一条版本链。 */
   history: 'history',
+  /**
+   * 同步状态（v0.1.9）：上次同步成功时每个文件的哈希。
+   *
+   * 与草稿 / 历史分开存：它是"远端与本地何时一致"的证据，清掉草稿不该
+   * 顺手把它也清掉 —— 否则下一次同步会把全部文件当成新文件重新比对。
+   */
+  sync: 'sync',
 } as const;
 
 export type StoreName = (typeof STORE)[keyof typeof STORE];

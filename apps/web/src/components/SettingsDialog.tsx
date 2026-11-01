@@ -10,7 +10,13 @@
  *  - 还没接：把改动写回 settings.jsonc —— 需要先让配置成为"真源"
  *    （现在 theme/vim 仍读 localStorage），那一步单独做，避免半套同步。
  */
-import { useCallback, useSyncExternalStore, type JSX, type MouseEvent } from 'react';
+import {
+  useCallback,
+  useState,
+  useSyncExternalStore,
+  type JSX,
+  type MouseEvent,
+} from 'react';
 import type { AropytRuntime, RuntimeState } from '../runtime.js';
 import { setLocale } from '../i18n';
 import { useT } from '../i18n/useT';
@@ -73,6 +79,14 @@ export function SettingsDialog({
   const themePreference = state.themePreference;
   const localePreference = state.locale ?? 'auto';
   const vimMode = state.vimMode;
+
+  /**
+   * 同步「测试连接」的就地结果。
+   *
+   * 用组件内 state 而不是全局：它只属于这一次测试，关掉设置页就该忘掉。
+   * 弹 toast 会把正在编辑的输入框挡住，而测试往往是在填完地址后立刻点的。
+   */
+  const [probe, setProbe] = useState<{ ok: boolean; detail: string } | null>(null);
 
   /**
    * 接管链接左键点击：保留 `<a href>` 是为了右键"复制链接地址"、
@@ -301,6 +315,124 @@ export function SettingsDialog({
                 ? t('settings.detected', { version: state.typst.version ?? '' })
                 : t('settings.notDetected')}
             </code>
+          </section>
+
+          {/*
+           * 同步（WebDAV）。
+           *
+           * 密码单独一行、type="password"：它进系统钥匙串，**不进**
+           * settings.jsonc —— 那个文件是纯文本，会被截图、会被扔进
+           * dotfiles 仓库。
+           *
+           * 输入框用 onBlur 保存而不是 onChange：后者每敲一个字符就写一次盘，
+           * 打一个地址就是几十次写操作；blur 的语义也更准 —— "编辑完成"。
+           */}
+          <section className="settings-section">
+            <h3>{t('settings.sync')}</h3>
+
+            {/*
+             * 自动同步默认关闭。
+             *
+             * 手动点工具栏的云图标不受它影响 —— 那是用户的明确动作。
+             * 这个开关只管"保存后 / 启动后自己跑不跑"：同步还在 beta，
+             * 第一次配置的人很可能还没确认地址对不对。
+             */}
+            <div className="settings-row">
+              <span className="settings-row__label">{t('settings.syncEnabled')}</span>
+              <button
+                type="button"
+                className={`settings-switch${state.syncConfig.enabled ? ' is-on' : ''}`}
+                aria-pressed={state.syncConfig.enabled}
+                onClick={() =>
+                  void runtime.saveSyncSettings({ enabled: !state.syncConfig.enabled })
+                }
+              >
+                <span className="settings-switch__knob" />
+              </button>
+            </div>
+
+            <div className="settings-row">
+              <span className="settings-row__label">{t('settings.syncUrl')}</span>
+            </div>
+            <input
+              className="settings-input"
+              type="url"
+              spellCheck={false}
+              placeholder="https://dav.example.com/dav/"
+              defaultValue={state.syncConfig.url}
+              onBlur={(event) =>
+                void runtime.saveSyncSettings({ url: event.currentTarget.value.trim() })
+              }
+            />
+
+            <div className="settings-row">
+              <span className="settings-row__label">{t('settings.syncUsername')}</span>
+            </div>
+            <input
+              className="settings-input"
+              type="text"
+              spellCheck={false}
+              autoComplete="username"
+              defaultValue={state.syncConfig.username}
+              onBlur={(event) =>
+                void runtime.saveSyncSettings({ username: event.currentTarget.value.trim() })
+              }
+            />
+
+            <div className="settings-row">
+              <span className="settings-row__label">{t('settings.syncPassword')}</span>
+            </div>
+            <input
+              className="settings-input"
+              type="password"
+              autoComplete="current-password"
+              placeholder={t('settings.syncPasswordHint')}
+              onBlur={(event) => {
+                /* 空值 = 不改。留空保存不该把已有密码清掉 */
+                const value = event.currentTarget.value;
+                if (value.length === 0) return;
+                void runtime.saveSyncSettings({ password: value });
+                event.currentTarget.value = '';
+              }}
+            />
+
+            <div className="settings-row">
+              <span className="settings-row__label">{t('settings.syncRemotePath')}</span>
+              <button
+                type="button"
+                className="settings-button"
+                onClick={() => {
+                  setProbe({ ok: true, detail: t('settings.syncTesting') });
+                  void runtime
+                    .testSyncTarget()
+                    .then((result) => setProbe(result))
+                    .catch((error: unknown) =>
+                      setProbe({ ok: false, detail: String(error) }),
+                    );
+                }}
+              >
+                {t('settings.syncTest')}
+              </button>
+            </div>
+            <input
+              className="settings-input"
+              type="text"
+              spellCheck={false}
+              placeholder="aropyt"
+              defaultValue={state.syncConfig.remotePath}
+              onBlur={(event) =>
+                void runtime.saveSyncSettings({ remotePath: event.currentTarget.value.trim() })
+              }
+            />
+
+            {probe ? (
+              <code
+                className="settings-path"
+                style={{ color: probe.ok ? undefined : 'var(--md-danger)' }}
+              >
+                {probe.detail}
+              </code>
+            ) : null}
           </section>
 
           <section className="settings-section">

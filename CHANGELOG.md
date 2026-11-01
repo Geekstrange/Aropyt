@@ -8,12 +8,36 @@ Release notes for a single version (the GitHub Release body) live in
 `docs/releases/<tag>.md`; this file keeps the cumulative view of every
 release.
 
-## [0.1.7] - 2026-10-31
+## [Unreleased]
 
-> Release notes: `docs/releases/v0.1.8.md`.
-> 
 ### Fixed
 
+- **Closing a separately opened file left its content in the editor**:
+  `closeTab` decided "is this the active tab" with its own strict comparison
+  (`activePath === path && activeWorkspaceId === workspaceId`), which is never
+  true for an external file — its `workspaceId` is `null` while
+  `activeWorkspaceId` still points at a project, because the file tree needs
+  that to stay visible. The close therefore took the "not the active tab"
+  branch, called `notify()` and returned: the tab disappeared and the content
+  stayed. Both call sites now go through `isActiveTab`, which already had the
+  external-file exception and documented exactly this trap.
+- **Launching the app flashed a few console windows**: the release build is
+  compiled with `windows_subsystem = "windows"`, so the process itself has no
+  console — and Windows gives every console child process a brand-new black
+  window. Startup probes two tools (pandoc and typst) in parallel, so two
+  windows appeared before the UI did, with a third when exporting. All four
+  call sites now set `CREATE_NO_WINDOW` through a shared `hide_console`
+  helper. Dev builds never showed this: the parent has a console there and
+  children inherit it.
+- **PDF export in the Microsoft Store build reported only an exit code**:
+  stderr and stdout were drained after the process had already exited, and
+  under MSIX / AppContainer that read comes back empty — so "missing engine",
+  "path blocked by the sandbox" and "font not found" all looked identical.
+  Both pipes are now drained on their own threads while the child is still
+  running, which also removes a latent deadlock (a pipe buffer is about 64 KB;
+  a child writing more than that with nobody reading blocks forever). Failure
+  messages carry the exit code, stderr, stdout, the executable path and, for
+  PDF, the engine path.
 - **PDF export failed in the Microsoft Store build**: `--pdf-engine=typst`
   makes pandoc start typst, and inside an MSIX / AppContainer package that
   "grandchild process" is blocked — the same failure no matter which typst
@@ -23,6 +47,15 @@ release.
   root (typst requires the source to live under `--root`) and removed
   afterwards, on failure too. Dev builds never showed this, which is why it
   only surfaced once the Store package shipped.
+- **The two-step PDF path never actually ran**: `export_pdf` handed the `.typ`
+  path to typst as its first argument without the `compile` subcommand, so
+  typst 0.13+ parsed it as a subcommand name and exited with
+  `unrecognized subcommand 'C:\…\x.typ'`. An end-to-end test that invokes the
+  real pandoc and typst (`export_pdf_produces_a_real_file`, skipping cleanly
+  when either tool is absent) is what surfaced it — the earlier verification
+  used the equivalent shell commands, which naturally had `compile` in them.
+  This one was independent of the MSIX sandbox; it would have broken PDF
+  export everywhere.
 - **Opening a file outside the workspace logged "absolute path not
   accepted"**: `openFile` handed the path to the workspace file API, whose
   contract is a path *relative to the workspace root* — an absolute path is
@@ -31,14 +64,36 @@ release.
   (an external file's draft key *is* its absolute path), and host code
   calling `openFile` directly. They are now routed to `openExternalPath`,
   which reads through `read_external_file`.
-- **Launching the app flashed a few console windows**: the release build is
-  compiled with `windows_subsystem = "windows"`, so the process itself has no
-  console — and Windows gives every console child process a brand-new black
-  window. Startup probes two tools (pandoc and typst) in parallel, so two
-  windows appeared before the UI did, with a third when exporting. All four
-  call sites now set `CREATE_NO_WINDOW` through a shared `hide_console`
-  helper. Dev builds never showed this: the parent has a console there and
-  children inherit it.
+
+### Added
+
+- **WebDAV sync (beta)**: bring your own server — Jianguoyun, Nextcloud,
+  Synology, anything that speaks RFC 4918. Seven commands cover what syncing
+  a directory needs (`PROPFIND`, `GET`, `PUT`, `HEAD`, `MKCOL`, `DELETE`),
+  written against the spec with no per-vendor branches. **Off by default**:
+  the switch in Settings → Sync has to be turned on before a single request is
+  made. Credentials live in the system keychain, never in `settings.jsonc`.
+- **Sync engine**: a pure function compares local, remote and last-synced
+  hashes and returns upload / download / delete / conflict actions. Without
+  the last-synced snapshot those two cases are indistinguishable — "local
+  edited, remote untouched" and "remote edited, local untouched" both just
+  look like "the two differ". Conflicts are surfaced, never resolved: every
+  "remote wins" policy can silently erase hours of writing on another machine.
+- **Sync runs on its own**: a successful save schedules one after 3 s, startup
+  schedules one after 5 s, and runs are mutually exclusive (a trigger arriving
+  mid-run sets a pending flag and re-runs once, rather than being dropped).
+  Success is silent — an occasional "sync finished" banner turns the normal
+  state into noise; failures and conflicts still speak up.
+- **Status dot and toolbar icon** reflect sync: blue dot while a run is in
+  flight, `syncUp` / `syncDown` while moving bytes, plain `sync` when done.
+  The toolbar icon only appears once a server address is configured.
+
+## [0.1.8] - 2026-10-31
+
+> Release notes: `docs/releases/v0.1.8.md`.
+> 
+### Fixed
+
 - **Backspace deleted an entire block**: a rendered block is one indivisible
   replacement range, so no cursor fits inside it. With the cursor hugging the
   boundary — especially the cell holding the block's trailing newline —
@@ -213,6 +268,160 @@ release.
 
 ### Added
 
+- **Sync decision engine**: `planSync` takes local, remote and last-synced
+  hashes and returns a list of actions — `upload`, `download`,
+  `deleteRemote`, `deleteLocal`, `conflict`. It is a pure function: no files,
+  no network, because the interesting question is not "how do we move bytes"
+  but **which side changed**. Without the last-synced snapshot those two cases
+  are indistinguishable: "local edited, remote untouched" and "remote edited,
+  local untouched" both just look like "the two differ".
+  Conflict resolution is deliberately absent. Every "remote wins" / "local
+  wins" policy can silently erase hours of writing on the other machine, so
+  conflicts are surfaced and left for a human.
+  Hashing is FNV-1a 32-bit: the question is "are these two texts identical",
+  where a 32-bit hash is plenty for a few thousand files, and a crypto hash
+  would turn a pure function into an async one for no benefit.
+- **Local delete, for sync**: `workspace_delete` removes a file or an **empty**
+  directory, sharing `WorkspaceRoot::resolve`'s traversal checks and surfaced
+  as `WorkspaceFileSystem.delete()`. Recursive deletion is deliberately not
+  offered: a sync run removing one file must not be able to take the subtree
+  above it with it.
+- **Credentials live in the system keychain**: `secret_set` / `secret_get` /
+  `secret_delete` wrap `keyring` — Windows Credential Manager, macOS Keychain
+  and Linux Secret Service, all pure Rust with no libsecret headers. Nothing
+  of the sort goes into `settings.jsonc`: that file is plain text, ends up in
+  screenshots and dotfiles repos, and would be read by parts of the app that
+  have nothing to do with sync. A missing entry reads as `None` rather than an
+  error, because "not configured yet" is the normal first-run state.
+- **The sync button only appears once it is configured**: an icon whose only
+  message is "not configured yet" costs toolbar width and teaches nothing —
+  the user ends up in the settings page either way. It is also drawn at 20.5px
+  rather than 16: the cloud glyph fills less of its 1024 grid than the other
+  icons, so at 16 it reads visibly smaller than its neighbours.
+  `syncUp` / `syncDown` mean **in progress**, not "there is something to
+  upload": a run that finishes leaves the icon on plain `sync`, because an
+  arrow left behind reads as "not finished yet" (reported after the first real
+  run). The arrow also replaced the spinner, which said the same thing while
+  hiding the direction. The direction only
+  becomes known once the plan is computed, so `runSync` gained an `onPlanned`
+  callback — without it the UI could only show a directionless icon while
+  running.
+  Colour is uniform with the rest of the toolbar: only "configured but never
+  run" dims the button, reusing `opacity: 0.4` from `.tool-button:disabled`
+  rather than a hand-picked grey (a fixed colour would need a second value for
+  the dark theme, where a light grey becomes a bright spot). It stays
+  clickable — that first click *is* the first sync. Conflicts and failures are
+  described in the tooltip instead of tinting one icon.
+- **Sync runs on its own**: a successful save schedules one after 3 s, and
+  startup schedules one after 5 s. The delay is a debounce — holding Ctrl+S
+  must not start four rounds — and it also gives "save, then immediately fix
+  one more thing" a window to merge into a single run.
+  Runs are mutually exclusive. Two concurrent rounds would each read and write
+  the snapshot, the later write erasing the earlier one and leaving a
+  "synced" record that does not match the disk. A trigger arriving mid-run
+  sets a pending flag and re-runs once, so that change is not deferred to the
+  next incidental trigger.
+  Success is **silent** — no toast. An occasional banner reading "sync
+  finished" turns the normal state into noise; feedback lives in the toolbar
+  icon and the status dot. Failures and conflicts still speak up, because both
+  need a human. Automatic triggers also pass `silent: true`, which suppresses
+  the "not configured" and "no password" prompts that would otherwise pop on
+  every save.
+- **The status dot turns blue during a sync**: it used to encode only
+  saved / dirty / recovered, so a sync in flight looked exactly like an idle
+  editor apart from the toolbar icon. Blue now outranks the other three —
+  "moving bytes right now" is the most active state, and the one worth the
+  pixel.
+- **The toolbar carries the sync button**: `sync` / `syncUp` / `syncDown`
+  follow the last run's outcome, the icon spins while a run is in flight, and
+  conflicts or failures tint it rather than adding another glyph — toolbar
+  width is scarce, and neither state is something to keep staring at. Clicking
+  runs a sync, and the button is disabled while one is already running: a
+  round trip takes seconds on a WAN, and people click again when nothing seems
+  to happen. It sits with the toolbar rather than the status bar because it is
+  an **action**, not a read-only indicator; it is hard-coded in `App.tsx`
+  because it calls `runtime.syncNow()`, which plugins cannot reach.
+- **Settings gained a Sync section**: address, user name, password and an
+  optional remote folder, plus a **Test connection** button. Three deliberate
+  details. The password field is `type="password"` and writes straight to the
+  keychain, where leaving it empty means "keep the current one" — editing the
+  address must not silently wipe the stored password. Inputs save on blur
+  rather than on change: writing on every keystroke means dozens of disk
+  writes while a URL is being typed. And Test connection reports in place
+  instead of by toast, because a toast covers the field you were about to fix;
+  the three failures ("not configured", "no password", "server refused") get
+  distinct wording, since merging them into "test failed" hands the diagnosis
+  back to the user.
+- **Sync is wired into the host**: `syncNow()` resolves the target (address and
+  account from settings, password from the keychain), builds the backend, runs
+  the engine and projects the outcome onto `state.sync` for the status bar.
+  `dav.ts` turns an `href` into a path **through `URL`**, not string prefixing:
+  the three legal shapes (absolute URL, absolute path, relative) and the
+  trailing-slash question are all the parser's job, and a cross-origin entry
+  is ignored rather than mistaken for one of our files. Missing settings or a
+  missing password prompt *before* any request goes out, so an unconfigured
+  account cannot produce a bare 401.
+- **Sync backend wiring**: `createSyncBackend` connects `runSync` to a real
+  file system and network through two small interfaces (`LocalFs` /
+  `RemoteDav`) rather than importing runtime. Runtime is three thousand lines
+  of state, and welding sync onto it would make the whole flow untestable.
+  WebDAV's `href` shapes (absolute URL, absolute path, trailing slash) stay
+  inside `RemoteDav`; the sync layer only ever sees `notes/a.md`.
+  Text files only — `md / markdown / txt / tex / latex / ltx / fountain`.
+  Images would need base64 transport plus a size-first comparison, which is a
+  different cost model from "one character changed".
+  `settings.sync` stores the address and account name; the password lives in
+  the keychain. The snapshot sits in a new IndexedDB store (`sync`, schema
+  version 2 → 3) keyed per workspace root, so two projects cannot judge each
+  other's hashes.
+- **Sync runner**: `runSync` turns the decision list into actions — read local
+  files, pull every remote file to hash it (WebDAV exposes no content digest),
+  then apply upload / download / delete / conflict one at a time. It depends
+  on a `SyncBackend` interface instead of calling Tauri directly, which is what
+  makes the whole flow testable against an in-memory backend — no packaging,
+  no real server.
+  Two rules are load-bearing:
+  **the snapshot only records actions that succeeded** (writing it first would
+  leave a "synced" claim after a mid-run failure, and the next run would read
+  both sides as unchanged — the file stays stale on one machine with no
+  warning), and **conflict copies keep a real extension**
+  (`note.conflict-20261101T081500.md`) so they open as documents, with the base
+  entry left untouched so an unresolved conflict keeps being reported.
+  Files identical on both sides produce no action but are still recorded, and
+  the snapshot is flushed once more at the end — testing caught that both of
+  those cases otherwise saved nothing at all.
+- **Sync messages are translatable**: the engine returns a structured `cause`
+  (`localChanged`, `bothChanged`, `remoteDeletedDirty`, …) rather than a
+  sentence; `actionKey()` / `causeKey()` / `summaryKey()` build the i18n keys
+  and all nineteen strings exist in the eight locales. A decision layer that
+  embeds one language's sentences cannot be read by users of the others, and
+  rewording would mean editing the same text in two places.
+- **WebDAV client (protocol layer)**: seven commands — `dav_test`, `dav_list`,
+  `dav_get`, `dav_put`, `dav_head`, `dav_mkcol`, `dav_delete` — covering what
+  syncing a directory needs. Written against **RFC 4918 only**: no per-vendor
+  branches, no host-name special cases, no "this provider needs an extra
+  header" exceptions.
+  Three protocol details that are easy to get wrong and expensive to debug:
+  `MKCOL` returning 405 means "already exists" (§9.3.1) and counts as success,
+  so a sync run needs no PROPFIND round-trip to check first; `DELETE` returning
+  404 also counts as success, because "it is no longer there" is the same
+  target state as "we just removed it"; and `DELETE` on a collection is
+  **recursive** (§9.6), so `delete_entry` refuses an empty path — `join_url`
+  would turn that into the service root and one slip would wipe the whole sync
+  directory. `getlastmodified` is returned verbatim rather than parsed, since
+  conflict resolution keys on content hashes and a date library would be
+  bought for nothing.
+  No LOCK / MOVE / COPY: single-user sync does not need them, and each drags
+  in lock-token lifetimes. Two deliberate decoding choices: **no XML library**
+  (the `multistatus` shape is fixed and only leaf text nodes are read), and
+  **namespace prefixes are ignored** — RFC 4918 does not prescribe them, so
+  `D:` / `d:` / `lp1:` / `ns0:` are all equally valid and matching on the
+  prefix would encode a server's implementation detail into the decoder.
+  Credentials are passed per call and never cached in the process, and
+  `Settings` is not an option for them — `settings.jsonc` is plain text and
+  ends up in screenshots and dotfiles repos. `ureq` rather than `reqwest`:
+  the sync path is one request and one response, where reqwest's tokio
+  dependency would cost more than it buys.
 - **Document export (docx / pdf / html / odt / epub / rtf)**: the toolbar's
   **Export…** button (right next to Save) asks for a format, asks for a
   location, and hands the conversion to **pandoc**. Content goes in over
@@ -1190,7 +1399,8 @@ Other fixes:
 - Editor core, command registry, keybinding parsing, theme system
 - Light and dark palettes and first-paint bundle budget gate
 
-[Unreleased]: https://github.com/Geekstrange/Aropyt/compare/v0.1.7...HEAD
+[Unreleased]: https://github.com/Geekstrange/Aropyt/compare/v0.1.8...HEAD
+[0.1.8]: https://github.com/Geekstrange/Aropyt/compare/v0.1.7...v0.1.8
 [0.1.7]: https://github.com/Geekstrange/Aropyt/compare/v0.1.6...v0.1.7
 [0.1.6]: https://github.com/Geekstrange/Aropyt/compare/v0.1.5...v0.1.6
 [0.1.5]: https://github.com/Geekstrange/Aropyt/compare/v0.1.4...v0.1.5

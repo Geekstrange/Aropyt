@@ -20,6 +20,10 @@ use serde::Deserialize;
 use std::sync::Mutex;
 use tauri::{Manager, State};
 
+/// WebDAV 客户端（同步用）。放在独立文件里：lib.rs 已经足够长，
+/// 而这一块与工作区文件系统没有任何共享状态。
+pub mod webdav;
+
 /*
  * ── 为什么要有文件日志 ──────────────────────────────────
  * 桌面应用最难受的处境是"用户说不好用，而开发者看不到任何线索"：
@@ -173,6 +177,22 @@ impl Workspace {
         // 兜底：解析结果必须仍在根目录内。用正规化后的根比较，
         // 因为符号链接可能让逻辑判断与物理路径不一致。
         Ok(resolved)
+    }
+
+    /// 删除一个文件或**空**目录。
+    ///
+    /// 走 `resolve` 的同一套越界检查。目录刻意用 `remove_dir` 而不是
+    /// `remove_dir_all`：同步时删掉一个文件不该顺带清空它的父目录，
+    /// 那是一次不可撤销的、范围远超预期的破坏。
+    fn delete(&self, relative: &str) -> Result<(), String> {
+        let path = self.resolve(relative)?;
+        let meta =
+            fs::metadata(&path).map_err(|error| format!("无法读取 {relative}：{error}"))?;
+        if meta.is_dir() {
+            fs::remove_dir(&path).map_err(|error| format!("删除目录失败：{error}"))
+        } else {
+            fs::remove_file(&path).map_err(|error| format!("删除文件失败：{error}"))
+        }
     }
 
     fn read_to_string(&self, relative: &str) -> Result<String, String> {
@@ -520,6 +540,14 @@ pub struct WriteArgs {
     pub content: String,
 }
 
+/// 删除的参数。只要根标识与相对路径。
+#[derive(Debug, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct DeleteArgs {
+    pub root_id: String,
+    pub path: String,
+}
+
 /// 二进制写入的参数。内容以 base64 传递而不是 `Vec<u8>`：
 /// serde 把字节数组序列化成 JSON 数字数组时，一个字节要占 3~4 个字符，
 /// base64 只有 1.33 个 —— 图片走这条路，差的是好几倍的内存与体积。
@@ -582,6 +610,24 @@ fn workspace_write(state: State<'_, WorkspaceState>, args: WriteArgs) -> Result<
     let result = state.with(&args.root_id, |ws| ws.write_atomic(&args.path, &args.content));
     if let Err(error) = &result {
         log_line(&format!("workspace_write 失败：{error}"));
+    }
+    result
+}
+
+/// 删除工作区里的文件或空目录。
+///
+/// 同步需要它：本地删了某个文件之后，远端也要跟着删，否则下一轮下载会把
+/// 它复活。只删空目录（见 `Workspace::delete`）—— 递归删除不该藏在一个
+/// 名字这么普通的命令里。
+#[tauri::command]
+fn workspace_delete(state: State<'_, WorkspaceState>, args: DeleteArgs) -> Result<(), String> {
+    log_line(&format!(
+        "workspace_delete root={:?} path={:?}",
+        args.root_id, args.path
+    ));
+    let result = state.with(&args.root_id, |ws| ws.delete(&args.path));
+    if let Err(error) = &result {
+        log_line(&format!("workspace_delete 失败：{error}"));
     }
     result
 }
@@ -1050,6 +1096,51 @@ fn backup_write(path: String, text: String) -> Result<(), String> {
         let _ = fs::remove_file(&file);
     }
     fs::rename(&tmp, &file).map_err(|error| format!("替换失败: {}", error))
+}
+
+// ── 凭据（系统钥匙串） ──────────────────────────────────────
+
+/// 凭据条的服务名。所有条目都挂在它下面，能成组清理。
+const SECRET_SERVICE: &str = "aropyt";
+
+/// 打开一条凭据。
+///
+/// `key` 由调用方决定（`webdav` 之类）。用固定服务名 + 可变键，而不是把
+/// 键拼进服务名：钥匙串的管理界面上，同一服务下的条目会归在一起，
+/// 用户卸载应用时更容易找到并清干净。
+fn secret_entry(key: &str) -> Result<keyring::Entry, String> {
+    keyring::Entry::new(SECRET_SERVICE, key).map_err(|error| format!("系统凭据存储不可用：{error}"))
+}
+
+/// 写一条凭据。
+///
+/// 密码**只走这里**，不进 `settings.jsonc`：那是纯文本，会被截图、会被
+/// 扔进 dotfiles 仓库，而且在同步之外的地方也会被读到。
+#[tauri::command]
+fn secret_set(key: String, value: String) -> Result<(), String> {
+    secret_entry(&key)?
+        .set_password(&value)
+        .map_err(|error| format!("保存凭据失败：{error}"))
+}
+
+/// 读一条凭据。不存在返回 `Ok(None)` —— 首次配置是正常状态，不是错误。
+#[tauri::command]
+fn secret_get(key: String) -> Result<Option<String>, String> {
+    match secret_entry(&key)?.get_password() {
+        Ok(value) => Ok(Some(value)),
+        Err(keyring::Error::NoEntry) => Ok(None),
+        Err(error) => Err(format!("读取凭据失败：{error}")),
+    }
+}
+
+/// 删一条凭据。不存在也算成功（目标状态已达成）。
+#[tauri::command]
+fn secret_delete(key: String) -> Result<(), String> {
+    match secret_entry(&key)?.delete_credential() {
+        Ok(()) => Ok(()),
+        Err(keyring::Error::NoEntry) => Ok(()),
+        Err(error) => Err(format!("删除凭据失败：{error}")),
+    }
 }
 
 // ── 导出（pandoc） ──────────────────────────────────────────
@@ -1535,7 +1626,18 @@ fn export_pdf(
     }
 
     /* ── 第二步：编译 ── */
+    /*
+     * ⚠️ `compile` 子命令不能省。typst 0.13 起 CLI 是
+     * `typst compile <input> <output>`，缺少它时第一个参数会被当成
+     * 子命令名，报：
+     *
+     *   error: unrecognized subcommand 'C:\…\x.typ'
+     *   Usage: typst [OPTIONS] <COMMAND>
+     *
+     * 真实测试抓到的（`export_pdf_produces_a_real_file`）。
+     */
     let args: Vec<String> = vec![
+        "compile".to_string(),
         typ_path.to_string_lossy().into_owned(),
         target.to_string(),
         "--root".to_string(),
@@ -1825,7 +1927,18 @@ pub fn run() {
             typst_probe,
             pick_binary,
             pick_export_path,
-            export_document
+            export_document,
+            webdav::dav_test,
+            webdav::dav_list,
+            webdav::dav_get,
+            webdav::dav_put,
+            webdav::dav_head,
+            webdav::dav_mkcol,
+            webdav::dav_delete,
+            workspace_delete,
+            secret_set,
+            secret_get,
+            secret_delete
         ])
         .setup(|app| {
             app.manage(PendingOpen(Mutex::new(launch_file_from_args())));
@@ -1871,6 +1984,56 @@ pub fn run() {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    /*
+     * PDF 两步法的真实端到端测试。
+     *
+     * 会**真的**启动 pandoc 和 typst —— 没有它们的环境直接跳过而不是失败：
+     * CI 上不一定装了这两个工具，但本机跑一次就能证明"pandoc 只出 typst 源、
+     * 由应用自己编译"这条路真的通了。
+     *
+     * 这正是商店版那个 bug 的核心假设：pandoc 不启动引擎（沙箱拦孙进程），
+     * 换成应用来启动（与启动 pandoc 同级权限）。
+     */
+    #[test]
+    fn export_pdf_produces_a_real_file() {
+        let (pandoc, typst) = match (resolve_pandoc(None), resolve_tool("typst", None)) {
+            (Ok(pandoc), Ok(typst)) => (pandoc, typst),
+            _ => {
+                eprintln!("跳过：本机没有 pandoc 或 typst");
+                return;
+            }
+        };
+
+        let dir = std::env::temp_dir().join(format!("aropyt-pdf-{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&dir);
+        std::fs::create_dir_all(&dir).expect("创建临时目录失败");
+
+        let target = dir.join("out.pdf");
+        export_pdf(
+            &pandoc,
+            &typst,
+            "markdown",
+            "# 中文标题\n\n这是一段正文，用来确认字体能被渲染出来。\n",
+            &target.to_string_lossy(),
+            Some(&dir.to_string_lossy()),
+        )
+        .expect("PDF 导出失败");
+
+        let size = std::fs::metadata(&target).map(|meta| meta.len()).unwrap_or(0);
+        assert!(size > 2000, "PDF 只有 {size} 字节，太小了");
+
+        /* 临时 .typ 必须被清掉：失败时不清会越积越多 */
+        let leftovers: Vec<String> = std::fs::read_dir(&dir)
+            .expect("读临时目录失败")
+            .filter_map(|entry| entry.ok())
+            .map(|entry| entry.file_name().to_string_lossy().to_string())
+            .filter(|name| name.ends_with(".typ"))
+            .collect();
+        assert!(leftovers.is_empty(), "残留了临时文件：{leftovers:?}");
+
+        let _ = std::fs::remove_dir_all(&dir);
+    }
     use std::time::{SystemTime, UNIX_EPOCH};
 
     /// 建一个唯一的临时工作区目录。用时间戳避免并行测试互相踩。
