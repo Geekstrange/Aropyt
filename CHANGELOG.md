@@ -14,6 +14,31 @@ release.
 > 
 ### Fixed
 
+- **PDF export failed in the Microsoft Store build**: `--pdf-engine=typst`
+  makes pandoc start typst, and inside an MSIX / AppContainer package that
+  "grandchild process" is blocked — the same failure no matter which typst
+  path is configured, because it is never attempted. PDF now runs in two
+  steps: pandoc converts to typst source (no engine involved), then the app
+  itself compiles it with typst. The `.typ` is written inside the workspace
+  root (typst requires the source to live under `--root`) and removed
+  afterwards, on failure too. Dev builds never showed this, which is why it
+  only surfaced once the Store package shipped.
+- **Opening a file outside the workspace logged "absolute path not
+  accepted"**: `openFile` handed the path to the workspace file API, whose
+  contract is a path *relative to the workspace root* — an absolute path is
+  refused by `WorkspaceRoot::resolve`. Three paths arrive with absolute
+  paths: a local link clicked inside the editor, the crash-recovery prompt
+  (an external file's draft key *is* its absolute path), and host code
+  calling `openFile` directly. They are now routed to `openExternalPath`,
+  which reads through `read_external_file`.
+- **Launching the app flashed a few console windows**: the release build is
+  compiled with `windows_subsystem = "windows"`, so the process itself has no
+  console — and Windows gives every console child process a brand-new black
+  window. Startup probes two tools (pandoc and typst) in parallel, so two
+  windows appeared before the UI did, with a third when exporting. All four
+  call sites now set `CREATE_NO_WINDOW` through a shared `hide_console`
+  helper. Dev builds never showed this: the parent has a console there and
+  children inherit it.
 - **Backspace deleted an entire block**: a rendered block is one indivisible
   replacement range, so no cursor fits inside it. With the cursor hugging the
   boundary — especially the cell holding the block's trailing newline —

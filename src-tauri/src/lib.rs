@@ -1095,6 +1095,24 @@ struct ExportReport {
     bytes: u64,
 }
 
+/// 让子进程在 Windows 上**不要弹控制台窗口**。
+///
+/// 打包版编译时带 `windows_subsystem = "windows"`，进程本身没有控制台；
+/// 这时启动 console 程序（pandoc / typst 都是），Windows 会给每个子进程
+/// 新建一个黑框。启动时要探两个工具，用户看到的就是"打开软件先闪几个终端"。
+///
+/// dev 模式下父进程带控制台、子进程继承它，所以本地永远复现不出来 ——
+/// 这个坑只在安装包里出现。
+fn hide_console(command: &mut std::process::Command) -> &mut std::process::Command {
+    #[cfg(windows)]
+    {
+        use std::os::windows::process::CommandExt;
+        const CREATE_NO_WINDOW: u32 = 0x0800_0000;
+        command.creation_flags(CREATE_NO_WINDOW);
+    }
+    command
+}
+
 /// 找到一个**能跑起来**的外部工具（pandoc / typst / …）。
 ///
 /// 顺序：显式配置的路径 → PATH → 各平台常见安装位置。
@@ -1144,12 +1162,13 @@ fn resolve_tool(name: &str, override_path: Option<&str>) -> Result<String, Strin
 
     let mut tried: Vec<String> = Vec::new();
     for candidate in candidates {
-        match std::process::Command::new(&candidate)
+        let mut probe = std::process::Command::new(&candidate);
+        probe
             .arg("--version")
             .stdout(std::process::Stdio::null())
-            .stderr(std::process::Stdio::null())
-            .status()
-        {
+            .stderr(std::process::Stdio::null());
+        hide_console(&mut probe);
+        match probe.status() {
             Ok(status) if status.success() => return Ok(candidate),
             _ => tried.push(candidate),
         }
@@ -1173,8 +1192,10 @@ fn resolve_pandoc(override_path: Option<&str>) -> Result<String, String> {
 async fn pandoc_probe(override_path: Option<String>) -> Result<ToolInfo, String> {
     tauri::async_runtime::spawn_blocking(move || {
         let path = resolve_pandoc(override_path.as_deref())?;
-        let output = std::process::Command::new(&path)
-            .arg("--version")
+        let mut probe = std::process::Command::new(&path);
+        probe.arg("--version");
+        hide_console(&mut probe);
+        let output = probe
             .output()
             .map_err(|error| format!("无法执行 {}：{error}", path))?;
         let stdout = String::from_utf8_lossy(&output.stdout);
@@ -1198,8 +1219,10 @@ async fn pandoc_probe(override_path: Option<String>) -> Result<ToolInfo, String>
 async fn typst_probe(override_path: Option<String>) -> Result<ToolInfo, String> {
     tauri::async_runtime::spawn_blocking(move || {
         let path = resolve_tool("typst", override_path.as_deref())?;
-        let output = std::process::Command::new(&path)
-            .arg("--version")
+        let mut probe = std::process::Command::new(&path);
+        probe.arg("--version");
+        hide_console(&mut probe);
+        let output = probe
             .output()
             .map_err(|error| format!("无法执行 {}：{error}", path))?;
         let stdout = String::from_utf8_lossy(&output.stdout);
@@ -1345,6 +1368,189 @@ fn rewrite_local_paths_as_urls(markdown: &str) -> String {
     out
 }
 
+/// 子进程运行结果。
+struct ChildRun {
+    success: bool,
+    code: Option<i32>,
+    stderr: String,
+    stdout: String,
+}
+
+/// 跑一个子进程：写 stdin、并发读 stderr/stdout、带超时。
+///
+/// 抽出来是因为 PDF 要跑**两次**（pandoc 生成 typst 源 → typst 编译），
+/// 而"并发读管道"与"超时后杀掉"这两件事任何一次都不能省：
+///  · 进程退出后才读管道，在 MSIX / AppContainer 里读回空字符串；
+///  · 管道缓冲区约 64KB，没人读的一端会让子进程永久阻塞在 write 上。
+fn run_child(
+    exe: &str,
+    args: &[String],
+    stdin_text: Option<&str>,
+    timeout: std::time::Duration,
+) -> Result<ChildRun, String> {
+    use std::io::{Read, Write};
+
+    let mut command = std::process::Command::new(exe);
+    hide_console(&mut command);
+    command
+        .args(args)
+        .stdin(std::process::Stdio::piped())
+        .stdout(std::process::Stdio::piped())
+        .stderr(std::process::Stdio::piped());
+
+    let mut child = command
+        .spawn()
+        .map_err(|error| format!("无法启动 {exe}：{error}"))?;
+
+    let stderr_pipe = child.stderr.take();
+    let stderr_reader = std::thread::spawn(move || {
+        let mut buffer = String::new();
+        if let Some(mut pipe) = stderr_pipe {
+            let _ = pipe.read_to_string(&mut buffer);
+        }
+        buffer
+    });
+    let stdout_pipe = child.stdout.take();
+    let stdout_reader = std::thread::spawn(move || {
+        let mut buffer = String::new();
+        if let Some(mut pipe) = stdout_pipe {
+            let _ = pipe.read_to_string(&mut buffer);
+        }
+        buffer
+    });
+
+    if let Some(text) = stdin_text {
+        if let Some(mut stdin) = child.stdin.take() {
+            // 写完必须关闭 stdin：pandoc 读到 EOF 才开始转换。
+            stdin
+                .write_all(text.as_bytes())
+                .map_err(|error| format!("写入 {exe} 的输入失败：{error}"))?;
+        }
+    }
+
+    let deadline = std::time::Instant::now() + timeout;
+    let status = loop {
+        match child.try_wait() {
+            Ok(Some(status)) => break status,
+            Ok(None) => {
+                if std::time::Instant::now() > deadline {
+                    let _ = child.kill();
+                    let _ = child.wait();
+                    return Err(format!(
+                        "{exe} 超过 {} 秒仍未完成，已中止",
+                        timeout.as_secs()
+                    ));
+                }
+                std::thread::sleep(std::time::Duration::from_millis(50));
+            }
+            Err(error) => return Err(format!("等待 {exe} 失败：{error}")),
+        }
+    };
+
+    Ok(ChildRun {
+        success: status.success(),
+        code: status.code(),
+        stderr: stderr_reader.join().unwrap_or_default(),
+        stdout: stdout_reader.join().unwrap_or_default(),
+    })
+}
+
+/// 把失败结果整理成一句能定位问题的话。
+fn describe_failure(label: &str, run: &ChildRun, exe: &str) -> String {
+    let mut parts: Vec<String> = vec![format!("{label}：退出码 {:?}", run.code)];
+    let err = run.stderr.trim();
+    if err.is_empty() {
+        parts.push("(没有输出任何错误信息)".to_string());
+    } else {
+        parts.push(err.chars().take(700).collect());
+    }
+    let out = run.stdout.trim();
+    if !out.is_empty() {
+        parts.push(format!("stdout: {}", out.chars().take(300).collect::<String>()));
+    }
+    parts.push(format!("可执行文件：{exe}"));
+    parts.join("\n")
+}
+
+/// PDF：pandoc 生成 typst 源，**应用自己**调 typst 编译。
+///
+/// 为什么不直接 `--pdf-engine=typst` —— 在 Microsoft Store（MSIX /
+/// AppContainer）包里，pandoc 再去启动 typst 属于"孙进程"，会被沙箱拦住。
+/// 现象是 `pandoc 退出码 1` 且 stderr 为空，**换哪个 typst 路径都一样**，
+/// 因为它根本没被尝试启动（实测：dev 版正常，商店版必失败）。
+/// 应用自己启动 typst 与启动 pandoc 是同一级权限，绕开这一层。
+///
+/// `.typ` 必须落在 `--root` 之内（否则 typst 报
+/// `source file must be contained in project root`），所以写在**工作区根**；
+/// 没有工作区（外部文件）就退到输出目录。编译完立刻删掉，失败也删。
+fn export_pdf(
+    pandoc: &str,
+    typst: &str,
+    reader: &str,
+    content: &str,
+    target: &str,
+    base_dir: Option<&str>,
+) -> Result<(), String> {
+    let timeout = std::time::Duration::from_secs(120);
+
+    let work_dir = base_dir
+        .filter(|dir| !dir.trim().is_empty())
+        .map(std::path::PathBuf::from)
+        .or_else(|| {
+            std::path::Path::new(target)
+                .parent()
+                .filter(|dir| !dir.as_os_str().is_empty())
+                .map(|dir| dir.to_path_buf())
+        })
+        .ok_or_else(|| "无法确定 PDF 的临时目录".to_string())?;
+
+    let typ_path = work_dir.join(format!(".aropyt-export-{}.typ", std::process::id()));
+    let typ_arg = typ_path.to_string_lossy().into_owned();
+
+    /* ── 第一步：只做格式转换，不碰任何排版引擎 ── */
+    let mut args: Vec<String> = vec![
+        "--from".to_string(),
+        reader.to_string(),
+        "--to".to_string(),
+        "typst".to_string(),
+        "--standalone".to_string(),
+        "--output".to_string(),
+        typ_arg,
+    ];
+    if let Some(dir) = base_dir.filter(|dir| !dir.trim().is_empty()) {
+        args.push("--resource-path".to_string());
+        args.push(dir.to_string());
+    }
+
+    let generated = match run_child(pandoc, &args, Some(content), timeout) {
+        Ok(run) => run,
+        Err(error) => {
+            let _ = std::fs::remove_file(&typ_path);
+            return Err(format!("生成 typst 源失败：{error}"));
+        }
+    };
+    if !generated.success {
+        let _ = std::fs::remove_file(&typ_path);
+        return Err(describe_failure("生成 typst 源失败", &generated, pandoc));
+    }
+
+    /* ── 第二步：编译 ── */
+    let args: Vec<String> = vec![
+        typ_path.to_string_lossy().into_owned(),
+        target.to_string(),
+        "--root".to_string(),
+        work_dir.to_string_lossy().into_owned(),
+    ];
+    let compiled = run_child(typst, &args, None, timeout);
+    let _ = std::fs::remove_file(&typ_path);
+
+    let compiled = compiled?;
+    if !compiled.success {
+        return Err(describe_failure("typst 编译失败", &compiled, typst));
+    }
+    Ok(())
+}
+
 /// 用 pandoc 把 markdown 导出成别的格式。
 ///
 /// 三个实现要点：
@@ -1423,7 +1629,24 @@ async fn export_document(
             None => None,
         };
 
+        /*
+         * PDF 走两步：pandoc 生成 typst 源，再由应用自己调 typst 编译。
+         * 其余格式 pandoc 一步到位，不涉及第二个进程。
+         */
+        if format == "pdf" {
+            let engine = engine_path
+                .as_deref()
+                .ok_or_else(|| "PDF 导出缺少排版引擎（typst）".to_string())?;
+            export_pdf(&exe, engine, &reader, &content, &target, base_dir.as_deref())?;
+
+            let bytes = std::fs::metadata(&target)
+                .map(|meta| meta.len())
+                .unwrap_or(0);
+            return Ok(ExportReport { target, bytes });
+        }
+
         let mut command = std::process::Command::new(&exe);
+        hide_console(&mut command);
         command
             .args([
                 "--from",
@@ -1468,41 +1691,10 @@ async fn export_document(
             command.arg("--number-sections");
         }
 
-        if let Some(engine) = engine_path.as_deref() {
-            /*
-             * ⚠️ 不能写成 `--pdf-engine=<绝对路径>`。
-             *
-             * pandoc 用 `\\?\` 长路径前缀调起引擎，typst 因此把它自己下载的
-             * 图片缓存（`C:\…\Temp\media-…\x.png`）当成**相对路径**解析，
-             * 直接报：
-             *
-             *   error: failed to load file (path contains invalid component "C:")
-             *     ┌─ \\?\E:\…\toP29A3.typ:207:14
-             *
-             * 同一台机器、同一个 typst 0.15.1，传名字就正常、传绝对路径就
-             * 必炸 —— 这也是"全英文档能导、带图就失败"的真实原因。
-             *
-             * 所以把引擎所在目录 prepend 进子进程 PATH，只传名字。
-             * prepend 而不是 append：用户显式指定的那份应该优先。
-             */
-            let path = std::path::Path::new(engine);
-            let name = path
-                .file_stem()
-                .and_then(|stem| stem.to_str())
-                .unwrap_or(engine);
-            if path.is_absolute() {
-                if let Some(dir) = path.parent() {
-                    let mut dirs = vec![dir.to_path_buf()];
-                    if let Some(existing) = std::env::var_os("PATH") {
-                        dirs.extend(std::env::split_paths(&existing));
-                    }
-                    if let Ok(joined) = std::env::join_paths(dirs) {
-                        command.env("PATH", joined);
-                    }
-                }
-            }
-            command.args(["--pdf-engine", name]);
-        }
+        /*
+         * 这里不需要 `--pdf-engine`：PDF 已经在上面走两步法了。
+         * 其余格式不涉及引擎，`engine_path` 只会是 None。
+         */
         if let Some(dir) = base_dir.as_deref() {
             if !dir.trim().is_empty() {
                 command.arg("--resource-path").arg(dir);
@@ -1512,6 +1704,34 @@ async fn export_document(
         let mut child = command
             .spawn()
             .map_err(|error| format!("无法启动 pandoc（{exe}）：{error}"))?;
+
+        /*
+         * stderr / stdout 必须在**子进程还活着的时候**并发读走。
+         *
+         * 原实现是「先 `try_wait` 轮询，进程退出后再 `read_to_string`」，
+         * 在 Microsoft Store（MSIX / AppContainer）包里读回来是空字符串 ——
+         * 报错只剩一句「pandoc 退出码 Some(1)」，真正的原因（找不到排版
+         * 引擎、路径被沙箱拦住、字体缺失）全丢了，用户和我们都无从下手。
+         *
+         * 顺带解决另一个隐患：管道缓冲区约 64KB，pandoc 若输出较多，
+         * 不读的一端会让它阻塞在 write 上，看起来就是"导出卡住"。
+         */
+        let stderr_pipe = child.stderr.take();
+        let stderr_reader = std::thread::spawn(move || {
+            let mut buffer = String::new();
+            if let Some(mut pipe) = stderr_pipe {
+                let _ = pipe.read_to_string(&mut buffer);
+            }
+            buffer
+        });
+        let stdout_pipe = child.stdout.take();
+        let stdout_reader = std::thread::spawn(move || {
+            let mut buffer = String::new();
+            if let Some(mut pipe) = stdout_pipe {
+                let _ = pipe.read_to_string(&mut buffer);
+            }
+            buffer
+        });
 
         if let Some(mut stdin) = child.stdin.take() {
             // 写完必须关闭 stdin：pandoc 读到 EOF 才开始转换，
@@ -1537,18 +1757,31 @@ async fn export_document(
             }
         };
 
-        let mut stderr = String::new();
-        if let Some(mut pipe) = child.stderr.take() {
-            let _ = pipe.read_to_string(&mut stderr);
-        }
+        let stderr = stderr_reader.join().unwrap_or_default();
+        let stdout = stdout_reader.join().unwrap_or_default();
 
         if !status.success() {
-            let detail = stderr.trim();
-            return Err(if detail.is_empty() {
-                format!("pandoc 退出码 {:?}", status.code())
+            /*
+             * 失败信息带上**能定位问题的一切**：退出码、stderr、stdout、
+             * 以及实际用的可执行文件。在打包环境里，「pandoc 没装对」
+             * 「引擎启动被拦」「参数拼错」在只看退出码时长得一模一样。
+             */
+            let mut parts: Vec<String> = vec![format!("pandoc 退出码 {:?}", status.code())];
+            let err = stderr.trim();
+            if !err.is_empty() {
+                parts.push(err.chars().take(700).collect());
             } else {
-                detail.chars().take(800).collect()
-            });
+                parts.push("(pandoc 没有输出任何错误信息)".to_string());
+            }
+            let out = stdout.trim();
+            if !out.is_empty() {
+                parts.push(format!("stdout: {}", out.chars().take(300).collect::<String>()));
+            }
+            parts.push(format!("可执行文件：{exe}"));
+            if let Some(engine) = engine_path.as_deref() {
+                parts.push(format!("排版引擎：{engine}"));
+            }
+            return Err(parts.join("\n"));
         }
 
         let bytes = std::fs::metadata(&target)

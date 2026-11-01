@@ -265,8 +265,7 @@ export const browserSettingsIo: SettingsIo = {
 
 export function serializeSettings(settings: AppSettings): string {
   return `/*
- * Aropyt 用户配置（JSONC：允许注释与尾逗号）。
- * 修改后重启应用生效；界面里改的配置会立即写回这个文件。
+ * aropyt.com
  */
 ${JSON.stringify(settings, null, 2)}
 `;

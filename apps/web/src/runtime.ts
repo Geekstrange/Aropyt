@@ -355,6 +355,17 @@ interface DraftRecord {
 
 const API_VERSION = '^0.1.0';
 const DRAFT_KEY = '__untitled__';
+
+/**
+ * 是不是绝对路径（Windows 盘符 / UNC / POSIX 根）。
+ *
+ * 用来区分"工作区内的相对路径"与"工作区外的绝对路径" —— 两者的打开通道
+ * 完全不同：前者走 `workspace.read`（由 Rust 侧再做一次路径穿越检查），
+ * 后者走 `read_external_file`。混用的结果是 `不接受绝对路径：E:\…`。
+ */
+function isAbsolutePath(path: string): boolean {
+  return /^[A-Za-z]:[\\/]/.test(path) || path.startsWith('\\\\') || path.startsWith('/');
+}
 /**
  * "上次是正常退出"的标记键（localStorage，同步）。
  *
@@ -1176,6 +1187,23 @@ export function createRuntime(options: RuntimeOptions): AropytRuntime {
     options?: { readonly preview?: boolean },
   ): Promise<void> {
     timeline('open', String(path ?? ''));
+
+    /*
+     * 绝对路径 = 工作区之外的文件。
+     *
+     * 三条路会走到这里：编辑器里点了指向本地文件的链接、崩溃恢复提示里的
+     * 「打开最近草稿」（草稿键对外部文件就是绝对路径）、以及宿主代码直接
+     * 调 `openFile`。工作区文件 API 的契约是**相对根目录**，把绝对路径交给
+     * 它只会被 `WorkspaceRoot::resolve` 拒绝 —— 日志里留下一条
+     * `不接受绝对路径：E:\…`，文件打不开。
+     *
+     * 外部文件本来就有自己的通道，转过去即可。
+     */
+    if (isAbsolutePath(path)) {
+      await openExternalPath(path);
+      return;
+    }
+
     const workspace = state.workspace;
     if (!workspace) {
       await windowService.showMessage(t('rt.noWorkspace'), { level: 'warning' });
