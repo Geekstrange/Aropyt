@@ -1563,6 +1563,152 @@ fn describe_failure(label: &str, run: &ChildRun, exe: &str) -> String {
     parts.join("\n")
 }
 
+/// 退出时清理临时产物的守卫。
+///
+/// 用 RAII 而不是在每条 `return Err` 前手写删除：`export_pdf` 有五个返回点，
+/// 漏一个就会在用户的工作区里留下 `.aropyt-*` 垃圾 —— 而工作区正是他们
+/// 会看到的地方。
+struct Cleanup {
+    paths: Vec<std::path::PathBuf>,
+}
+
+impl Cleanup {
+    fn new() -> Self {
+        Self { paths: Vec::new() }
+    }
+
+    fn push(&mut self, path: &std::path::Path) {
+        self.paths.push(path.to_path_buf());
+    }
+}
+
+impl Drop for Cleanup {
+    fn drop(&mut self) {
+        for path in &self.paths {
+            let _ = if path.is_dir() {
+                std::fs::remove_dir_all(path)
+            } else {
+                std::fs::remove_file(path)
+            };
+        }
+    }
+}
+
+/// 把 markdown 里的**远程图片**下载到工作区，改写成本地相对路径。
+///
+/// ── 为什么需要 ─────────────────────────────────────────────
+/// typst 在 MSIX / AppContainer 里**没有网络权限**（它自己的提示是
+/// `network access is not supported`）。文档里只要有一张 `https://` 图，
+/// typst 就会把 URL 当成本地文件名去打开，报
+/// `os error 123（文件名、目录名或卷标语法不正确）`，**整份文档编译失败**。
+///
+/// 应用进程自己可以联网，所以先把图抓下来放进工作区（`--root` 之内），
+/// 再让 typst 读本地文件。
+///
+/// ── 下载失败就整段移除 ────────────────────────────────────
+/// 留着一个 typst 加载不了的引用，等于让一张外链图把整份 PDF 拖垮；
+/// 而缺图在成品里一眼可见，比"导不出来"好得多。移除的是整个
+/// `![alt](url)`，不留下悬空的 alt 文字。
+///
+/// 返回改写后的 markdown 与临时目录（一张也没下成功时为 `None`）。
+fn localize_remote_images(
+    markdown: &str,
+    work_dir: &std::path::Path,
+) -> (String, Option<std::path::PathBuf>) {
+    use std::io::Read;
+
+    let dir_name = format!(".aropyt-media-{}", std::process::id());
+    let media_dir = work_dir.join(&dir_name);
+
+    let mut out = String::with_capacity(markdown.len());
+    let mut cursor = 0;
+    let mut downloaded = 0usize;
+
+    while let Some(offset) = markdown[cursor..].find("![") {
+        let start = cursor + offset;
+        out.push_str(&markdown[cursor..start]);
+
+        /* `![alt](src "title")` —— 没有 `](` 就说明这不是一张图，原样放过 */
+        let Some(bracket) = markdown[start..].find("](") else {
+            out.push_str(&markdown[start..]);
+            return (out, None);
+        };
+        let src_start = start + bracket + 2;
+        let Some(paren) = markdown[src_start..].find(')') else {
+            out.push_str(&markdown[start..]);
+            return (out, None);
+        };
+        let src_end = src_start + paren;
+        let raw = &markdown[src_start..src_end];
+
+        /* `src "title"` —— 只处理 URL 本身，title 原样保留 */
+        let src = raw.split_whitespace().next().unwrap_or(raw);
+        let title = &raw[src.len()..];
+
+        if !src.starts_with("http://") && !src.starts_with("https://") {
+            /* 本地图片：原样保留，交给 pandoc 的 --resource-path 解析 */
+            out.push_str(&markdown[start..src_end + 1]);
+            cursor = src_end + 1;
+            continue;
+        }
+
+        let extension = src
+            .split(['?', '#'])
+            .next()
+            .unwrap_or(src)
+            .rsplit('.')
+            .next()
+            .unwrap_or("png");
+        let extension = if extension.len() <= 5
+            && !extension.is_empty()
+            && extension.chars().all(|c| c.is_ascii_alphanumeric())
+        {
+            extension.to_ascii_lowercase()
+        } else {
+            "png".to_string()
+        };
+        let file_name = format!("{downloaded}.{extension}");
+
+        /* 20 秒单张：一张图挂住不该让整次导出停在 120 秒的超时上 */
+        let agent = ureq::AgentBuilder::new()
+            .timeout(std::time::Duration::from_secs(20))
+            .build();
+        let fetched = agent.get(src).call().ok().and_then(|response| {
+            let mut bytes = Vec::new();
+            response
+                .into_reader()
+                /* 16 MB 上限：外链图不该把内存撑爆 */
+                .take(16 * 1024 * 1024)
+                .read_to_end(&mut bytes)
+                .ok()?;
+            if bytes.is_empty() {
+                return None;
+            }
+            std::fs::create_dir_all(&media_dir).ok()?;
+            std::fs::write(media_dir.join(&file_name), &bytes).ok()?;
+            Some(())
+        });
+
+        match fetched {
+            Some(()) => {
+                downloaded += 1;
+                out.push_str(&markdown[start..src_start]);
+                /* 相对 `--root` 的路径，typst 才解析得到 */
+                out.push_str(&format!("{dir_name}/{file_name}"));
+                out.push_str(title);
+                out.push(')');
+            }
+            None => {
+                /* 整段丢弃：连同 `![alt](...)` 一起，不留悬空文字 */
+            }
+        }
+        cursor = src_end + 1;
+    }
+
+    out.push_str(&markdown[cursor..]);
+    (out, if downloaded > 0 { Some(media_dir) } else { None })
+}
+
 /// PDF：pandoc 生成 typst 源，**应用自己**调 typst 编译。
 ///
 /// 为什么不直接 `--pdf-engine=typst` —— 在 Microsoft Store（MSIX /
@@ -1595,8 +1741,22 @@ fn export_pdf(
         })
         .ok_or_else(|| "无法确定 PDF 的临时目录".to_string())?;
 
+    /*
+     * 远程图片本地化。必须在 pandoc **之前**：改写的是 markdown 源，
+     * 一旦转成 typst 就只剩 `image("https://…")`，那时改不动了。
+     */
+    let (content, media_dir) = localize_remote_images(content, &work_dir);
+    let content = content.as_str();
+
     let typ_path = work_dir.join(format!(".aropyt-export-{}.typ", std::process::id()));
     let typ_arg = typ_path.to_string_lossy().into_owned();
+
+    /* 五个返回点统一由 guard 清理，不手写 remove_file */
+    let mut cleanup = Cleanup::new();
+    cleanup.push(&typ_path);
+    if let Some(dir) = media_dir.as_deref() {
+        cleanup.push(dir);
+    }
 
     /* ── 第一步：只做格式转换，不碰任何排版引擎 ── */
     let mut args: Vec<String> = vec![
@@ -1615,13 +1775,9 @@ fn export_pdf(
 
     let generated = match run_child(pandoc, &args, Some(content), timeout) {
         Ok(run) => run,
-        Err(error) => {
-            let _ = std::fs::remove_file(&typ_path);
-            return Err(format!("生成 typst 源失败：{error}"));
-        }
+        Err(error) => return Err(format!("生成 typst 源失败：{error}")),
     };
     if !generated.success {
-        let _ = std::fs::remove_file(&typ_path);
         return Err(describe_failure("生成 typst 源失败", &generated, pandoc));
     }
 
@@ -1643,10 +1799,7 @@ fn export_pdf(
         "--root".to_string(),
         work_dir.to_string_lossy().into_owned(),
     ];
-    let compiled = run_child(typst, &args, None, timeout);
-    let _ = std::fs::remove_file(&typ_path);
-
-    let compiled = compiled?;
+    let compiled = run_child(typst, &args, None, timeout)?;
     if !compiled.success {
         return Err(describe_failure("typst 编译失败", &compiled, typst));
     }
@@ -1995,6 +2148,27 @@ mod tests {
      * 这正是商店版那个 bug 的核心假设：pandoc 不启动引擎（沙箱拦孙进程），
      * 换成应用来启动（与启动 pandoc 同级权限）。
      */
+    /// 远程图片下载失败时必须**整段移除**，而不是把坏引用留给 typst。
+    ///
+    /// `127.0.0.1:1` 必然连接被拒 —— 用它模拟失败，不依赖外网，
+    /// 也就不会让这个用例随网络状态随机变红。
+    #[test]
+    fn remote_images_are_dropped_when_download_fails() {
+        let dir = std::env::temp_dir().join(format!("aropyt-media-test-{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&dir);
+        std::fs::create_dir_all(&dir).expect("创建目录失败");
+
+        let source = "# 标题\n\n前文 ![占位图](http://127.0.0.1:1/x.png \"标题\") 后文\n\n![本地](assets/a.png)\n";
+        let (out, media) = localize_remote_images(source, &dir);
+
+        assert!(!out.contains("127.0.0.1"), "下载失败的图片必须整段移除：{out}");
+        assert!(out.contains("前文") && out.contains("后文"), "正文不能丢：{out}");
+        assert!(out.contains("assets/a.png"), "本地图片必须原样保留：{out}");
+        assert!(media.is_none(), "一张也没下成功时不该留下临时目录");
+
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
     #[test]
     fn export_pdf_produces_a_real_file() {
         let (pandoc, typst) = match (resolve_pandoc(None), resolve_tool("typst", None)) {
