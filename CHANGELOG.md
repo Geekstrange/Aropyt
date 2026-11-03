@@ -24,6 +24,12 @@ release.
 
 ### Fixed
 
+- **Saving an untitled document left a blank tab behind**: the save-as path
+  built the tab list with `[...state.tabs, {…}]` — appending rather than
+  replacing. The `__untitled__-N` tab stayed in the strip while the saved file
+  got a second one, so what read as "a new blank tab appeared" was the old tab,
+  whose content had just been adopted by the new one. The old path is filtered
+  out first.
 - **Two machines synced into two different remote folders**: the remote
   directory was `<workspace name>-<hash of its absolute path>`, so the same
   project produced `test-9wxtej` on one machine and `test-1uskj7` on the

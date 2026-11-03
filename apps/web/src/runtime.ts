@@ -3069,6 +3069,14 @@ function validateContributions(manifest: PluginManifest): void {
         return;
       }
 
+      /*
+       * 另存为之前先记下旧身份。
+       *
+       * `state.activePath` 马上就要换成文件名，而那个未命名标签还要按
+       * 旧路径找回来替换掉。
+       */
+      const previousPath = state.activePath;
+
       workspace = opened;
       state.workspaces = [...state.workspaces.filter((item) => item.id !== opened.id), opened];
       setActiveWorkspace(opened.id);
@@ -3082,9 +3090,14 @@ function validateContributions(manifest: PluginManifest): void {
        * 之前它没有标签（未命名文档不在标签栏里），现在它是磁盘上一个
        * 真实的文件了 —— 而且不该是预览标签：用户刚刚明确选了保存位置，
        * 下一次单击文件树不该把它顶掉。
+       *
+       * ⚠️ **替换**那个未命名标签，不是追加。
+       * 早先是 `[...state.tabs, 新标签]`，于是保存成功后旧标签留在原地、
+       * 新的追加在后面 —— 用户看到的是"多了一个空白标签"，而那个空白
+       * 正是已经失去内容的旧未命名标签（实测报障）。
        */
       state.tabs = [
-        ...state.tabs,
+        ...state.tabs.filter((tab) => tab.path !== previousPath),
         {
           workspaceId: state.activeWorkspaceId,
           path,
