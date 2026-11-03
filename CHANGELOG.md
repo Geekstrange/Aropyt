@@ -24,6 +24,15 @@ release.
 
 ### Fixed
 
+- **Saving a new document added its folder to the workspace list**: save-as
+  went through `openNativeFolderAsWorkspace` and then wrote a relative path,
+  because the workspace API only accepts paths relative to a root. Every first
+  save therefore registered a new project — the user wanted somewhere to put a
+  file, not another entry in their project list. It now writes the absolute
+  path through `write_external_file`, which is the decision "open a single
+  file" already made for the same reason. The tab afterwards carries
+  `workspaceId: null`, so it behaves like any other externally opened file:
+  no file tree, no workspace switching.
 - **Saving an untitled document left a blank tab behind**: the save-as path
   built the tab list with `[...state.tabs, {…}]` — appending rather than
   replacing. The `__untitled__-N` tab stayed in the strip while the saved file
