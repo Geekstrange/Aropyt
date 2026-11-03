@@ -3106,6 +3106,32 @@ button {
 }
 
 /*
+/*
+ * 搜索面板里的「全部选中」按钮：隐藏。
+ *
+ * 它调用 CodeMirror 的 `selectMatches`，只在**当前选区**里遍历 —— 光标是
+ * 空选区，于是最多命中一处，行为与「全部」这个词完全不符（实测报障）。
+ * 面板是内置 DOM，没有替换处理函数的入口，所以只能让它消失；全文选中
+ * 改由 `Ctrl+Shift+L` 提供。
+ *
+ * 同一节里插一个匹配计数（`.cm-search-count`），回答用户真正想知道的事：
+ * 这个词在全文里出现了几次。
+ */
+.cm-panel.cm-search button[name='select'] {
+  display: none;
+}
+
+.cm-search-count {
+  display: inline-block;
+  min-width: 20px;
+  padding: 0 4px;
+  font-size: 12px;
+  font-variant-numeric: tabular-nums;
+  color: var(--md-muted);
+  text-align: center;
+}
+
+/*
  * 日志搜索框 —— 逐条照抄 theme.ts 里 `.cm-panel.cm-search input`：
  *   font: inherit（面板 13px / --font-sans）、background --md-surface-1、
  *   border 1px --md-border、border-radius 0、padding 3px 8px、

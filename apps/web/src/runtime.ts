@@ -2677,6 +2677,16 @@ function validateContributions(manifest: PluginManifest): void {
     if (!currentSettings.sync.enabled) return;
     /* 没配置就别安排：免得每次保存都去读一次钥匙串、再撞一次空地址 */
     if (!currentSettings.sync.url.trim() || !currentSettings.sync.username.trim()) return;
+
+    /*
+     * 只同步**工作区里**的文件。
+     *
+     * 外部文件（另存为到项目之外、文件关联打开）的 `activePath` 是绝对
+     * 路径，它不在 `readLocal` 的遍历范围里 —— 本来就不会被上传。这条
+     * 检查是第二道闸：排一轮什么都不做的同步白费一次往返，而"存到桌面
+     * 的草稿被传上去"是绝对不能发生的事，宁可在两个地方各拦一次。
+     */
+    if (state.activePath && isAbsolutePath(state.activePath)) return;
     if (autoSyncTimer) clearTimeout(autoSyncTimer);
     autoSyncTimer = setTimeout(() => {
       autoSyncTimer = null;

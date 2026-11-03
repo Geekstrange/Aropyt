@@ -1,6 +1,6 @@
 {
   "name": "aropyt",
-  "version": "0.1.9",
+  "version": "0.2.0",
   "private": true,
   "description": "跨平台 Markdown 编辑器",
   "license": "AGPL-3.0-or-later",
@@ -26,6 +26,7 @@
     "check:icons": "node scripts/check-icons.mjs",
     "check:visual": "node scripts/verify-visual.mjs",
     "check:selection": "node scripts/check-selection.mjs",
+    "check:sync": "node scripts/check-sync.mjs",
     "shot": "node scripts/cdp-shot.mjs",
     "build:exe": "tauri build --no-bundle",
     "build:installer": "tauri build",

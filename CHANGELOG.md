@@ -12,18 +12,41 @@ release.
 
 ### Planned
 
-- Image and attachment sync: only text travels today, so `![](assets/a.png)`
-  arrives on the second machine as a broken image with no error
 - Version-to-version diff in edit history (single-version comparison shipped
   in v0.1.2)
 - Touch targets in the toolbar (about 26px today, below the 44px guideline)
+- Sync has still only met a local test server; a real provider will find
+  things (TLS behind a corporate proxy, per-vendor PROPFIND quirks, paths with
+  unusual characters)
 
-## [0.2.0] - 2026-11-02
+## [0.2.0] - 2026-11-03
 
 > Release notes: `docs/releases/v0.2.0.md`.
 
 ### Fixed
 
+- **The search panel shows a match count instead of "Select all"**: that
+  button is CodeMirror's own `selectMatches`, which walks
+  `query.getCursor(state, main.from, main.to)` — the *current selection*. With
+  a cursor (an empty selection) it can match at most one place, so "select
+  all" behaved like "select here". Selecting every match is not a workflow
+  this editor has (what would you do with a few hundred disjoint selections
+  in a document?), so rather than fixing the button it is hidden with CSS and
+  a `.cm-search-count` badge takes its place, answering the question the
+  button was standing in for: how many times does this appear.
+  The panel is built-in DOM — no hook exists for swapping the handler, which
+  is why this is CSS plus an injected badge rather than a replacement button.
+  Documents over 200 KB skip the count: a per-keystroke full scan at that size
+  costs more than the number is worth.
+- **A document saved outside the workspace could still be uploaded**: a
+  downstream effect of save-as registering the target folder as a workspace —
+  once `D:\草稿` became a workspace, every file in it was inside *some*
+  workspace and therefore in sync's reach. Removing that registration (the
+  entry below) removes the cause.
+  A second guard sits in `scheduleAutoSync` regardless: it returns early when
+  the active path is absolute, because an external file is outside
+  `readLocal`'s walk anyway — the round would be a no-op, and "a draft on the
+  desktop got uploaded" is not a failure worth leaving to a single check.
 - **Saving a new document added its folder to the workspace list**: save-as
   went through `openNativeFolderAsWorkspace` and then wrote a relative path,
   because the workspace API only accepts paths relative to a root. Every first

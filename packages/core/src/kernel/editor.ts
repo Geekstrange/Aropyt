@@ -4,6 +4,44 @@
  * 为什么用 mark + CSS 而不是 replace：replace 会改变文本语义（不可编辑），
  * 空格必须始终可以正常输入/删除。CSS 画点对文档零影响。
  */
+/**
+ * 在搜索面板里显示**匹配总数**。
+ *
+ * CM6 的面板没有这个信息，而「全部选中」那个按钮只在当前选区里找 —— 两者
+ * 加起来让用户没法回答一个最基本的问题：这个词在全文里出现了几次。
+ *
+ * 实现方式是把一个 `<span>` 插进 `.cm-search` 里，每次视图更新重算。全文
+ * 遍历没有更便宜的写法：CM6 的 query 是即时求值的，没有缓存的命中列表。
+ * 超过 200 KB 的文档直接不显示 —— 那种规模的逐键全文扫描会拖慢输入，而
+ * 这不是一个值得用输入延迟换的数字。
+ */
+function searchMatchCount(): Extension {
+  const LIMIT = 200 * 1024;
+
+  return EditorView.updateListener.of((update) => {
+    const panel = update.view.dom.querySelector('.cm-search');
+    if (!panel) return;
+
+    let badge = panel.querySelector<HTMLElement>('.cm-search-count');
+    if (!badge) {
+      badge = document.createElement('span');
+      badge.className = 'cm-search-count';
+      panel.appendChild(badge);
+    }
+
+    const text = update.state.doc.length > LIMIT ? '' : (() => {
+      const query = getSearchQuery(update.state);
+      if (!query.valid) return '';
+      let count = 0;
+      const cursor = query.getCursor(update.state, 0, update.state.doc.length);
+      for (let next = cursor.next(); !next.done; next = cursor.next()) count += 1;
+      return count > 0 ? String(count) : '0';
+    })();
+
+    if (badge.textContent !== text) badge.textContent = text;
+  });
+}
+
 function showWhitespace(): Extension {
   return ViewPlugin.fromClass(
     class {
@@ -82,7 +120,13 @@ import {
 import { markdown, markdownLanguage } from '@codemirror/lang-markdown';
 import { languages } from '@codemirror/language-data';
 import { autocompletion, closeBrackets, closeBracketsKeymap, completionKeymap } from '@codemirror/autocomplete';
-import { highlightSelectionMatches, openSearchPanel, search, searchKeymap } from '@codemirror/search';
+import {
+  getSearchQuery,
+  highlightSelectionMatches,
+  openSearchPanel,
+  search,
+  searchKeymap,
+} from '@codemirror/search';
 
 import type {
   CapabilitySnapshot,
@@ -221,7 +265,12 @@ export class EditorAdapter implements EditorApi {
     }));
     this.#view.dispatch({
       effects: this.#keymapSlot.reconfigure(
-        keymap.of([...pluginBindings, ...historyKeymap, { key: 'Mod-f', preventDefault: true, run: openSearchPanel }, indentWithTab]),
+        keymap.of([
+          ...pluginBindings,
+          ...historyKeymap,
+          { key: 'Mod-f', preventDefault: true, run: openSearchPanel },
+          indentWithTab,
+        ]),
       ),
     });
   }
@@ -354,6 +403,7 @@ export class EditorAdapter implements EditorApi {
            * phrases 把按钮文案换成中文（CM6 官方支持的本地化入口）。
            */
           search({ top: true }),
+          searchMatchCount(),
           /*
            * 面板文案走 EditorState.phrases（CM6 的全局文案 facet）——
            * 键名是 CM6 search 内部调用 phrase() 时用的英文原文，
