@@ -128,7 +128,15 @@ export function HistoryDialog({ runtime, path, onClose }: HistoryDialogProps): J
                 <li key={version.id} className="history-item">
                   <div className="history-item__main">
                     <span className="history-item__time">{formatTime(version.createdAt)}</span>
-                    {version.label ? <span className="history-item__label">{version.label}</span> : null}
+                    {/*
+                     * 云端版本与手动命名的里程碑共用标签位：两者都是
+                     * "这一条不是普通的自动快照"，用一个视觉元素就够。
+                     */}
+                    {version.source === 'remote' ? (
+                      <span className="history-item__label">{t('history.remote')}</span>
+                    ) : version.label ? (
+                      <span className="history-item__label">{version.label}</span>
+                    ) : null}
                     {index === 0 ? <span className="history-item__badge">{t('history.latest')}</span> : null}
                     <span className="history-item__meta">{Math.round(version.size / 1024) || 1} KB</span>
                   </div>

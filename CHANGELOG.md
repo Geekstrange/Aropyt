@@ -10,8 +10,95 @@ release.
 
 ## [Unreleased]
 
+### Planned
+
+- Image and attachment sync: only text travels today, so `![](assets/a.png)`
+  arrives on the second machine as a broken image with no error
+- Version-to-version diff in edit history (single-version comparison shipped
+  in v0.1.2)
+- Touch targets in the toolbar (about 26px today, below the 44px guideline)
+
+## [0.2.0] - 2026-11-02
+
+> Release notes: `docs/releases/v0.2.0.md`.
+
 ### Fixed
 
+- **Two machines synced into two different remote folders**: the remote
+  directory was `<workspace name>-<hash of its absolute path>`, so the same
+  project produced `test-9wxtej` on one machine and `test-1uskj7` on the
+  other — two directories that cannot see each other. Every run reported
+  success and nothing ever converged. The hash is gone; the folder is named
+  after the workspace alone. Two same-named projects would then share one
+  folder, which is visible and fixable by setting a remote folder per project;
+  a per-machine folder is neither.
+- **Non-ASCII file names reached the server as mojibake**: `join_url` appended
+  the path verbatim, and the raw bytes go into the request line where the
+  server decodes them as ISO-8859-1 — `Aropyt额外权益草案.md` landed as
+  `Aropytå¥é¤ææçèæ¡.md`. Paths are percent-encoded now, keeping only
+  unreserved characters and `/` (encoding `/` would make it part of the name).
+- **Every file write sent its own MKCOL**: `ensureDir` ran once per file, so a
+  13-file upload produced twelve extra 405 responses. Directory creation is
+  memoised for the duration of a run.
+- **An empty remote blocked the sync instead of filling it**: a gate added
+  after the data-loss incident aborted the run whenever the remote directory
+  was empty while the snapshot remembered files. That is exactly the situation
+  where the correct action is "upload everything" — the gate turned a
+  recoverable mistake (files landing in the wrong folder) into a permanent one
+  (sync never runs again). An empty remote now ignores the snapshot for that
+  run, so every local file is uploaded. Local deletion stays blocked by
+  `keep`, so the cost of uploading is a duplicate copy, not lost content.
+- **The per-workspace remote subtree was never created**: `writeRemote` only
+  called `ensureDir` when the parent path was non-empty, and a file at the
+  workspace root has an empty parent — which is exactly the subtree itself.
+  The first PROPFIND therefore always returned 404, and every PUT would have
+  been rejected with 409. `ensureDir('')` now creates that layer.
+- **Sync could delete local files**: `planSync` mapped "present locally,
+  present in the snapshot, absent remotely" to `deleteLocal`, on the
+  assumption that the user had removed the file elsewhere. Over WebDAV that
+  assumption has four indistinguishable counterexamples — the drive was
+  emptied, the address points somewhere else, the account changed, or the
+  provider's trash policy hid the files — and in every one of them the local
+  copy is the user's only copy while `std::fs::remove_file` does not go to the
+  recycle bin.
+  The mapping is now `keep`: nothing on disk is touched, the path is recorded
+  in a separate `kept` set, and the snapshot entry stays so the file is not
+  uploaded again next round. Deletion only propagates local → remote, where
+  the user performed an explicit action. The runner refuses `deleteLocal` even
+  if it is produced.
+  A second gate aborts the run outright when the remote directory is empty
+  while the snapshot remembers files: that is the signature of "this is not
+  our directory any more", and the message says so instead of silently
+  syncing nothing.
+- **Two workspaces could sync into each other**: the remote directory came
+  straight from `settings.sync.remotePath`, so every project pushed into the
+  same folder — project A's files appeared in B's remote listing and B pulled
+  them down into its own directory. No error surfaced anywhere; the sync
+  simply reported success. Each workspace now gets its own subtree, named
+  `<folder>-<hash of the absolute path>`: the basename alone is not enough
+  (two projects can share a name) and the hash alone is unreadable in a cloud
+  drive, while together they are both unique and recognisable. The hash covers
+  the path rather than the name, since only the path identifies a project.
+  Test connection still probes the **root** the user typed — the per-workspace
+  subtree does not exist until the first sync, so probing it would always 404
+  and look like a wrong address.
+- **A brand-new workspace could never complete its first sync**: each project
+  now syncs into its own remote subtree (`test-9wxtej/`), but that directory
+  does not exist until something creates it — and `listRemote` runs first, so
+  the very first PROPFIND came back 404 and aborted the whole run. A directory
+  that does not exist and an empty directory mean the same thing to a sync, so
+  `RemoteDav.list` now returns an empty set on 404 rather than propagating it.
+  `ensureDir` also creates parents one level at a time now: RFC 4918's MKCOL is
+  single-level and returns 409 when the parent is missing, so `a/b/c` needed
+  three calls.
+- **A sync that downloaded files left the interface untouched**: the file tree
+  holds a directory snapshot and only re-reads it on a workspace-change
+  event, which this path never sent — so the second machine reported "sync
+  finished" with an empty tree until the app was restarted. Open tabs were
+  worse: their text is an in-memory copy, so the disk had the new version
+  while the editor still showed the old one, and the next save would have
+  silently overwritten the remote update. Downloads now emit a workspace
+  change and refresh any tab for that file that has no unsaved edits.
 - **Closing a separately opened file left its content in the editor**:
   `closeTab` decided "is this the active tab" with its own strict comparison
   (`activePath === path && activeWorkspaceId === workspaceId`), which is never
@@ -47,6 +134,20 @@ release.
   root (typst requires the source to live under `--root`) and removed
   afterwards, on failure too. Dev builds never showed this, which is why it
   only surfaced once the Store package shipped.
+- **PDF export died on remote images inside the sandbox**: typst reports
+  `network access is not supported` under MSIX / AppContainer — it has no
+  network permission of its own, so `#figure(image("https://…"))` is treated
+  as a local file name and fails with `os error 123`. Documents without
+  images exported fine, which is why this read like a font or engine problem.
+  Before pandoc runs, the app now downloads every remote image into
+  `.aropyt-media-<pid>/` inside the workspace (which is typst's `--root`) and
+  rewrites the markdown to point at it. A `Cleanup` guard removes that
+  directory afterwards: `export_pdf` has five return points, and missing one
+  would leave `.aropyt-*` debris in the user's workspace.
+  Images that fail to download are **dropped entirely** (`![alt](url)` and
+  all). Leaving a reference typst cannot load means one dead external link
+  takes down the whole export, while a missing image in the finished PDF is
+  visible at a glance.
 - **The two-step PDF path never actually ran**: `export_pdf` handed the `.typ`
   path to typst as its first argument without the `compile` subcommand, so
   typst 0.13+ parsed it as a subcommand name and exited with
@@ -65,8 +166,74 @@ release.
   calling `openFile` directly. They are now routed to `openExternalPath`,
   which reads through `read_external_file`.
 
+### Changed
+
+- **Sync only downloads remote files that changed**: `listRemote` used to
+  return a set of paths, so every run pulled every file down just to compute
+  a hash — a directory of a few hundred notes spent seconds on downloads
+  before the first action even ran, which is why automatic sync felt heavy.
+  It now returns size and modification time from PROPFIND, and files whose
+  metadata matches the snapshot reuse the stored hash instead of being
+  fetched. A steady-state run costs one PROPFIND and nothing else.
+  The snapshot therefore stores `{ hash, size, modified }` per file. Old
+  snapshots (plain hash strings) read as "no metadata", which costs one extra
+  download per file and then self-corrects.
+  Uploads record only the hash: the remote size and mtime are decided by the
+  server and cannot be predicted locally, so the next run verifies that one
+  file once rather than trusting a guess.
+- **Conflicts land in the edit history, not in the workspace**: a conflict
+  used to write `note.conflict-20261101T081500.md` beside the original. That
+  copy appeared in the file tree, and the next sync uploaded it as a new file
+  — so every conflict bred another conflict. The remote version is now
+  recorded as a history entry marked `source: 'remote'` and the file tree
+  stays exactly as the user left it.
+  Only the newest remote entry per file is kept. That entry answers one
+  question — "what does the server have right now" — and one per run would
+  fill the list with noise. It is exempt from `history.limit`, which governs
+  local edits.
+- **The history dialog marks remote versions**: the badge shares the slot used
+  by manual milestones, since both mean "this entry is not an ordinary
+  automatic snapshot".
+
 ### Added
 
+- **Workspace-wide search**: `Ctrl+Alt+F` opens a panel that searches every
+  text file in the workspace and jumps to the matching line on click.
+  `search_workspace` walks the tree once in Rust and returns
+  `{ path, line, text }` per matching line — case-insensitive, capped at 1 MB
+  per file and 200 hits. It lives in the native side because walking from the
+  front end means one IPC call per file, each serialising the whole document;
+  a project of a few hundred notes would spend more time marshalling than
+  reading. Files are filtered by the same extension list the sync layer uses,
+  so "syncs but is not searchable" cannot happen.
+  Typing is debounced by 250 ms and responses carry a sequence number — with
+  "abc" in flight, a late "ab" result must not overwrite it. Escape closes.
+  **The shortcut is `Ctrl+Alt+F`, not `Ctrl+Shift+F`**: the latter is
+  CodeMirror's own find-with-options variant, and its keymap also listens in
+  the capture phase, so both panels appeared at once (observed in testing).
+- **Images sync too**: `SyncBackend` now moves **bytes** rather than strings —
+  `readLocal` / `writeLocal` / `readRemote` / `writeRemote` all take
+  `Uint8Array`. Text travels as its UTF-8 bytes, which is why a single code
+  path serves both. A PNG through a `string` (the previous contract) is
+  corrupted by UTF-8 decoding, and worse, the decode **reports success** — the
+  damage only shows up as a broken image later.
+  Over WebDAV the transfer goes through `dav_put_bytes` / `dav_get_bytes`
+  (base64 on the wire, since JSON IPC only carries strings; a round-trip test
+  covers `0x00` / `0xFF` and multi-byte UTF-8). Locally it uses
+  `workspace_read_base64` / `workspace_write_base64`, which already existed
+  for image rendering.
+  The extension list gained `png` / `jpg` / `jpeg` / `gif` / `webp` / `svg` /
+  `bmp` / `avif`.
+  Hashing moved from `charCodeAt` to bytes (`hashBytes`), so **old snapshots
+  no longer match**: every file looks changed on the first run after
+  upgrading. That costs one full upload pass and is harmless — nothing is
+  deleted, and `keep` still protects files absent from the remote.
+  Binary conflicts cannot enter the edit history (its body column is `text`,
+  and the decode uses `fatal: true` rather than inserting replacement
+  characters). The remote copy is dropped, but the local file is untouched.
+- **The sync button reports when it last ran**: automatic sync is silent by
+  design, which made "it has not run in an hour" indistinguishable from "it is
+  stuck". The timestamp lives in the button's tooltip instead of on screen.
 - **WebDAV sync (beta)**: bring your own server — Jianguoyun, Nextcloud,
   Synology, anything that speaks RFC 4918. Seven commands cover what syncing
   a directory needs (`PROPFIND`, `GET`, `PUT`, `HEAD`, `MKCOL`, `DELETE`),
@@ -1399,7 +1566,8 @@ Other fixes:
 - Editor core, command registry, keybinding parsing, theme system
 - Light and dark palettes and first-paint bundle budget gate
 
-[Unreleased]: https://github.com/Geekstrange/Aropyt/compare/v0.1.8...HEAD
+[Unreleased]: https://github.com/Geekstrange/Aropyt/compare/v0.2.0...HEAD
+[0.2.0]: https://github.com/Geekstrange/Aropyt/compare/v0.1.8...v0.2.0
 [0.1.8]: https://github.com/Geekstrange/Aropyt/compare/v0.1.7...v0.1.8
 [0.1.7]: https://github.com/Geekstrange/Aropyt/compare/v0.1.6...v0.1.7
 [0.1.6]: https://github.com/Geekstrange/Aropyt/compare/v0.1.5...v0.1.6

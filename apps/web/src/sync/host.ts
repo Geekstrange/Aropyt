@@ -9,8 +9,9 @@
  * （绝对 URL / 绝对路径 / 带尾斜杠）是协议细节，不该漏到同步逻辑里。
  */
 
-import { idbGet, idbSet, STORE } from '@aropyt/core';
-import type { SyncBackend } from './runner.js';
+import { idbGet, idbSet, recordRemoteVersion, STORE } from '@aropyt/core';
+import type { RemoteDav } from './dav.js';
+import type { BaseEntry, RemoteMeta, SyncBackend } from './runner.js';
 
 /**
  * 参与同步的扩展名。
@@ -26,6 +27,16 @@ const SYNC_EXTENSIONS = new Set([
   'latex',
   'ltx',
   'fountain',
+  /* 图片：文档里的 `![](assets/a.png)` 到了另一台机器必须是能显示的图，
+     而不是一条断链。传输走 base64（见 `dav_put_bytes`）。 */
+  'png',
+  'jpg',
+  'jpeg',
+  'gif',
+  'webp',
+  'svg',
+  'bmp',
+  'avif',
 ]);
 
 /** 存 base 快照的键。一张表只放一条 —— 多工作区并存时按根路径分键。 */
@@ -39,25 +50,13 @@ export interface LocalEntry {
 
 export interface LocalFs {
   list(dir: string): Promise<readonly LocalEntry[]>;
-  read(path: string): Promise<string>;
-  write(path: string, content: string): Promise<void>;
+  /** 读原始字节。文本文件就是它的 UTF-8 序列。 */
+  readBytes(path: string): Promise<Uint8Array>;
+  writeBytes(path: string, data: Uint8Array): Promise<void>;
   delete(path: string): Promise<void>;
 }
 
-export interface RemoteEntry {
-  /** 相对服务根的路径（`notes/a.md`），没有前导斜杠。 */
-  readonly path: string;
-  readonly isDir: boolean;
-}
-
-export interface RemoteDav {
-  list(path: string): Promise<readonly RemoteEntry[]>;
-  read(path: string): Promise<string | null>;
-  write(path: string, content: string): Promise<void>;
-  remove(path: string): Promise<void>;
-  /** 建目录（已存在视为成功）。写文件前用它保证父目录在。 */
-  ensureDir(path: string): Promise<void>;
-}
+/* `RemoteDav` 的形状由 `dav.ts` 定义（它握着 href 的转换），这里直接用。 */
 
 function extensionOf(path: string): string {
   const dot = path.lastIndexOf('.');
@@ -80,10 +79,12 @@ export function createSyncBackend(options: {
 }): SyncBackend {
   const { local, remote, rootKey } = options;
   const baseStoreKey = `${BASE_PREFIX}${rootKey}`;
+  /* 与 base 分键：一个描述内容，一个描述"这些文件我们决定不删" */
+  const keptStoreKey = `kept:${rootKey}`;
 
   return {
     async readLocal() {
-      const files = new Map<string, string>();
+      const files = new Map<string, Uint8Array>();
 
       /* 递归走目录：`list` 只给一层，而同步要的是整棵树 */
       const walk = async (dir: string): Promise<void> => {
@@ -95,7 +96,7 @@ export function createSyncBackend(options: {
           }
           if (!SYNC_EXTENSIONS.has(extensionOf(entry.path))) continue;
           try {
-            files.set(entry.path, await local.read(entry.path));
+            files.set(entry.path, await local.readBytes(entry.path));
           } catch {
             /*
              * 单个文件读不出来（编码不支持、被占用）不该让整轮同步失败：
@@ -111,8 +112,8 @@ export function createSyncBackend(options: {
       return files;
     },
 
-    async writeLocal(path, content) {
-      await local.write(path, content);
+    async writeLocal(path, bytes) {
+      await local.writeBytes(path, bytes);
     },
 
     async deleteLocal(path) {
@@ -120,7 +121,7 @@ export function createSyncBackend(options: {
     },
 
     async listRemote() {
-      const paths = new Set<string>();
+      const metas = new Map<string, RemoteMeta>();
 
       const walk = async (dir: string): Promise<void> => {
         const entries = await remote.list(dir);
@@ -132,27 +133,31 @@ export function createSyncBackend(options: {
             continue;
           }
           if (!SYNC_EXTENSIONS.has(extensionOf(entry.path))) continue;
-          paths.add(entry.path);
+          metas.set(entry.path, { size: entry.size, modified: entry.modified });
         }
       };
 
       await walk('');
-      return paths;
+      return metas;
     },
 
     async readRemote(path) {
-      return remote.read(path);
+      return remote.readBytes(path);
     },
 
-    async writeRemote(path, content) {
+    async writeRemote(path, bytes) {
       /*
        * 父目录不存在时 PUT 会被服务端拒绝（409）。自顶向下的同步通常
        * 已经建好了目录，但"本地新建了一个文件夹里的文件"这一轮里
        * 目录还没建过，所以这里补一次 —— 405（已存在）在 Rust 侧算成功。
        */
-      const parent = parentOf(path);
-      if (parent) await remote.ensureDir(parent);
-      await remote.write(path, content);
+      /*
+       * `parentOf('a.md')` 是空字符串（文件就在工作区根下），而那一层
+       * 恰恰是最需要建的：每棵子树第一次被使用时都还没存在。传空串给
+       * `ensureDir`，它会 MKCOL 子树本身。
+       */
+      await remote.ensureDir(parentOf(path) ?? '');
+      await remote.writeBytes(path, bytes);
     },
 
     async deleteRemote(path) {
@@ -160,14 +165,58 @@ export function createSyncBackend(options: {
     },
 
     async loadBase() {
-      const stored = await idbGet<Record<string, string>>(STORE.sync, baseStoreKey).catch(
-        () => undefined,
-      );
-      return new Map(Object.entries(stored ?? {}));
+      const stored = await idbGet<Record<string, BaseEntry | string>>(
+        STORE.sync,
+        baseStoreKey,
+      ).catch(() => undefined);
+
+      const out = new Map<string, BaseEntry>();
+      for (const [path, value] of Object.entries(stored ?? {})) {
+        /*
+         * 兼容旧快照：早先存的是纯哈希字符串。当成"没有元信息"处理 ——
+         * 表现是下一轮多下载一次，而不是把它误判成"没变"。
+         */
+        if (typeof value === 'string') out.set(path, { hash: value });
+        else if (value && typeof value.hash === 'string') out.set(path, value);
+      }
+      return out;
     },
 
     async saveBase(base) {
       await idbSet(STORE.sync, baseStoreKey, Object.fromEntries(base));
+    },
+
+    async loadKept() {
+      const stored = await idbGet<string[]>(STORE.sync, keptStoreKey).catch(() => undefined);
+      return new Set(Array.isArray(stored) ? stored : []);
+    },
+
+    async saveKept(kept) {
+      await idbSet(STORE.sync, keptStoreKey, [...kept]);
+    },
+
+    async saveConflict(path, bytes, at) {
+      /*
+       * 写进编辑历史，标 `source: 'remote'` —— 不落在工作区。
+       *
+       * 落成 `.conflict-….md` 的旧做法会让副本出现在文件树里、下一轮
+       * 同步再把它传上去，于是冲突会自我繁殖；历史面板本来就是"找回
+       * 旧内容"的地方。
+       */
+      /*
+       * 历史表的正文列是 `text`，二进制进不去。
+       *
+       * 图片冲突时**远端那一份不保留**——但本地文件没动，用户的内容
+       * 不会丢，只是没有"另一个版本"可对比。`fatal: true` 让解码失败
+       * 抛错而不是悄悄产出替换字符。
+       */
+      let text: string;
+      try {
+        text = new TextDecoder('utf-8', { fatal: true }).decode(bytes);
+      } catch {
+        return;
+      }
+      await recordRemoteVersion(path, text, at);
     },
   };
 }

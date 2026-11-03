@@ -83,6 +83,16 @@ import {
 } from './config/settings.js';
 import { createTauriSettingsIo, hasTauri, invokeNative } from './config/tauri-io.js';
 
+/** 全工作区搜索的一条结果（与 Rust 侧 `SearchHit` 一一对应）。 */
+export interface SearchHit {
+  /** 相对工作区根的路径。 */
+  readonly path: string;
+  /** 1 起算，与编辑器行号一致。 */
+  readonly line: number;
+  /** 该行内容，已截断到 200 字符。 */
+  readonly text: string;
+}
+
 export interface ToolbarItem {
   readonly command: string;
   readonly pluginId: string | null;
@@ -179,14 +189,22 @@ export interface RuntimeState {
   readonly typst: { readonly available: boolean; readonly version: string | null };
   /**
    * 同步状态。状态栏图标读它：
-   * `clean` → sync.svg，`up` → syncUp.svg，`down` → syncDown.svg，
-   * `conflict` / `error` → 同一套图标 + 警示色。
+   * 图标恒定 `sync`；`running` 时状态点变蓝，`conflict` / `error`
+   * 的原因写在 `title` 里。
+   */
+  /**
+   * 同步状态。
+   *
+   * 只有"有没有在跑"和"有没有需要人看的东西"，**没有方向**：那一轮
+   * 在拉还是在推，用户在自动同步的语境下既看不到也用不上，而一个带
+   * 箭头的云很容易被读成"点它上传/下载"。方向交给状态点（蓝 = 正在
+   * 工作）和 title。
    */
   readonly sync: {
     readonly status: 'idle' | 'running' | 'clean' | 'conflict' | 'error';
-    /** 运行期间的方向（`syncUp` / `syncDown` 据此切换）；其它状态为 `null`。 */
-    readonly direction: 'up' | 'down' | null;
     readonly message: string | null;
+    /** 上一次跑完的时间戳；从未跑过为 `null`。 */
+    readonly lastAt: number | null;
   };
   /**
    * 同步的**配置**（地址 / 账号 / 远端目录）。
@@ -361,6 +379,10 @@ export interface AropytRuntime {
    * 原因（pandoc 的 stderr 原样带回），不会静默。
    */
   exportDocument(format?: string): Promise<void>;
+  /** 全工作区搜索：大小写不敏感的逐行匹配。 */
+  searchAcross(query: string): Promise<SearchHit[]>;
+  /** 打开文件并跳到指定行（1 起算）。 */
+  openAt(path: string, line: number): Promise<void>;
   /** 选择外部工具（pandoc / typst）的可执行文件并写进配置。 */
   pickToolPath(kind: 'pandoc' | 'typst'): Promise<void>;
   /**
@@ -1044,6 +1066,8 @@ export function createRuntime(options: RuntimeOptions): AropytRuntime {
     toggleVimMode,
     toggleToolbar,
     exportDocument,
+    searchAcross,
+    openAt,
     syncNow,
     saveSyncSettings,
     testSyncTarget,
@@ -1235,6 +1259,39 @@ export function createRuntime(options: RuntimeOptions): AropytRuntime {
     emitWorkspaceChange();
     notify();
     return imported;
+  }
+
+  /**
+   * 全工作区搜索。
+   *
+   * 走原生命令而不是在 `readLocal` 之上自己遍历：一个几百文件的项目
+   * 会走几百次 IPC，每次都要把整个文件序列化一遍；Rust 侧一次遍历就够。
+   *
+   * 失败时返回空数组而不是抛错 —— 搜索是"顺带看一眼"，让它把整个界面
+   * 变成错误弹窗不值得。失败记一条日志即可。
+   */
+  async function searchAcross(query: string): Promise<SearchHit[]> {
+    const workspace = state.workspace;
+    if (!workspace || query.trim().length === 0) return [];
+    try {
+      return await invokeNative<SearchHit[]>('search_workspace', {
+        args: { rootId: workspace.id, query },
+      });
+    } catch (error) {
+      console.error('[aropyt] 搜索失败', error);
+      return [];
+    }
+  }
+
+  /**
+   * 打开文件并跳到指定行（1 起算）。
+   *
+   * 两个动作合成一个入口，因为调用方（搜索、大纲、Fountain 场景列表）
+   * 永远是一起做的：只打开不跳转 = 用户还得自己找。
+   */
+  async function openAt(path: string, line: number): Promise<void> {
+    await openFile(path);
+    editor.revealLine(line);
   }
 
   async function openFile(
@@ -2060,22 +2117,24 @@ function validateContributions(manifest: PluginManifest): void {
     /**
      * 只有四种：
      *  · `idle`     已配置、还没跑过
-     *  · `running`  正在跑（`direction` 决定显示上传还是下载箭头）
+     *  · `running`  正在跑（状态点变蓝）
      *  · `clean`    上一轮结束且没有需要留意的事
      *  · `conflict` / `error`
      *
-     * **没有 `up` / `down`**：`syncUp` / `syncDown` 是"正在进行"的图标，
-     * 任务结束后一律回到 `sync`。把"待上传"也做成单独状态，会让跑完一轮
-     * 之后图标停在箭头上，看起来像还没结束（实测报障）。
+     * 也**没有方向**：这一轮在拉还是在推，自动同步的语境下用户既看不到
+     * 也用不上 —— 同步常常几十毫秒就结束，而一个带箭头的云更容易被读成
+     * "点它上传/下载"。
      */
     status: 'idle' | 'running' | 'clean' | 'conflict' | 'error';
     /**
      * 这一轮是往上还是往下。只在 `running` 时有意义 —— 决策做完才知道，
-     * 界面靠它决定运行期间显示 syncUp 还是 syncDown。
+
      */
-    direction: 'up' | 'down' | null;
+
     message: string | null;
-  } = { status: 'idle', direction: null, message: null };
+    /** 上一次跑完的时间戳；从未跑过为 `null`。 */
+    lastAt: number | null;
+  } = { status: 'idle', message: null, lastAt: null };
 
   /** 把配置应用到运行时（启动与每次修改都走这里，保证单一入口）。 */
   function applySettings(next: AppSettings): void {
@@ -2437,7 +2496,44 @@ function validateContributions(manifest: PluginManifest): void {
    * 密码不读 `settings.jsonc`（那是纯文本）。读不到就提示去设置页补，
    * 而不是带着空密码发一次必然 401 的请求。
    */
-  async function resolveSyncTarget(silent = false): Promise<DavAuth | null> {
+  /**
+   * 某个工作区在远端的根目录。
+   *
+   * **每个工作区必须有自己的一棵子树。** 所有工作区共用一个远端目录时，
+   * A 的文件会出现在 B 的远端列表里，B 同步时把它们下载到本地 —— 两个
+   * 项目互相污染，而且**不报任何错**（实测报障：不在同一工作区的文件被
+   * 同步到了同一个工作区）。
+   *
+   * 名字取目录 basename + 路径哈希后缀（`notes-a3f9c1`）：
+   *  · 只用 basename，两个都叫 `notes` 的项目会撞在一起；
+   *  · 只用哈希，网盘里就是一堆看不懂的字母。
+   *
+   * 哈希的是工作区的**绝对路径**而不是名字 —— 只有路径能唯一确定一个
+   * 项目，而名字可以重复。
+   */
+  function syncRemoteRoot(workspaceId: string): string {
+    const base = currentSettings.sync.remotePath.trim();
+    const segments = workspaceId.split(/[\\/]/).filter(Boolean);
+    const raw = segments[segments.length - 1] ?? 'workspace';
+    const name = raw.replace(/[^\w\u4e00-\u9fff.-]+/g, '-').slice(0, 40) || 'workspace';
+    /*
+     * **只用工区名，不拼哈希。**
+     *
+     * 早先加了 `hashText(绝对路径)` 的 6 位后缀，想让两个同名工作区不撞车 ——
+     * 但绝对路径在两台机器上必然不同，于是同一个项目被分到
+     * `test-9wxtej` 和 `test-1uskj7` 两个目录，**互相看不见**，同步永远
+     * 不可能成功（实测日志：两台机器各传一批，谁也拉不到对方的）。
+     *
+     * 撞名的代价是两个同名项目混进同一个远端目录 —— 能看见、能手动分开；
+     * 而跨机器不一致的代价是同步根本不工作，且不报错。两害相权取前者。
+     */
+    return [base, name].filter(Boolean).join('/');
+  }
+
+  async function resolveSyncTarget(
+    workspaceId: string,
+    silent = false,
+  ): Promise<DavAuth | null> {
     const config = currentSettings.sync;
     if (!config.url.trim() || !config.username.trim()) {
       if (!silent) {
@@ -2462,7 +2558,7 @@ function validateContributions(manifest: PluginManifest): void {
     }
 
     return {
-      url: joinBaseUrl(config.url, config.remotePath),
+      url: joinBaseUrl(config.url, syncRemoteRoot(workspaceId)),
       username: config.username.trim(),
       password,
     };
@@ -2531,6 +2627,13 @@ function validateContributions(manifest: PluginManifest): void {
     }
 
     try {
+      /*
+       * 测的是用户填的**根**，不是某个工作区的子树（`syncRemoteRoot`）。
+       *
+       * 子树要到第一次同步时才由 `writeRemote` 的 `ensureDir` 建出来，
+       * 配置阶段去 PROPFIND 它必然 404 —— 那会让人以为"地址填错了"，
+       * 而实际上只是还没同步过。
+       */
       const auth: DavAuth = {
         url: joinBaseUrl(config.url, config.remotePath),
         username: config.username.trim(),
@@ -2599,11 +2702,11 @@ function validateContributions(manifest: PluginManifest): void {
       return;
     }
 
-    const auth = await resolveSyncTarget(options?.silent === true);
+    const auth = await resolveSyncTarget(workspace.id, options?.silent === true);
     if (!auth) return;
 
     syncInFlight = true;
-    syncState = { status: 'running', direction: null, message: null };
+    syncState = { status: 'running', message: null, lastAt: syncState.lastAt };
     notify();
 
     const detailOf = (error: unknown): string =>
@@ -2613,8 +2716,9 @@ function validateContributions(manifest: PluginManifest): void {
       const backend = createSyncBackend({
         local: {
           list: (dir) => workspace.list(dir),
-          read: (path) => workspace.read(path),
-          write: (path, content) => workspace.write(path, content),
+          /* 一律走字节：图片和文本走同一条链路，避免二进制被 UTF-8 解码损坏 */
+          readBytes: (path) => workspace.readBytes(path),
+          writeBytes: (path, data) => workspace.writeBytes(path, data),
           delete: (path) => workspace.remove(path),
         },
         remote: createRemoteDav(invokeNative, auth),
@@ -2622,18 +2726,7 @@ function validateContributions(manifest: PluginManifest): void {
         rootKey: workspace.id,
       });
 
-      const result = await runSync(backend, Date.now, (summary) => {
-        /*
-         * 决策出来才知道方向：这一轮有上传就亮 syncUp，有下载就亮
-         * syncDown，都没有（无动作 / 冲突）就留 sync。
-         */
-        syncState = {
-          status: 'running',
-          direction: summary === 'up' ? 'up' : summary === 'down' ? 'down' : null,
-          message: null,
-        };
-        notify();
-      });
+      const result = await runSync(backend);
       const failed = result.steps.filter((step) => !step.ok);
       const summary = summarize(result.steps.map((step) => step.action));
       const conflicts = result.steps.filter((step) => step.action.kind === 'conflict');
@@ -2645,13 +2738,13 @@ function validateContributions(manifest: PluginManifest): void {
       );
 
       if (failed.length > 0) {
-        syncState = { status: 'error', direction: null, message: failed[0].error ?? null };
+        syncState = { status: 'error', message: failed[0].error ?? null, lastAt: Date.now() };
         await windowService.showMessage(
           t('rt.syncFailed', { detail: failed[0].error ?? '' }),
           { level: 'error' },
         );
       } else if (conflicts.length > 0) {
-        syncState = { status: 'conflict', direction: null, message: null };
+        syncState = { status: 'conflict', message: null, lastAt: Date.now() };
         await windowService.showMessage(
           t('rt.syncConflicts', { count: String(conflicts.length) }),
           { level: 'warning' },
@@ -2664,10 +2757,67 @@ function validateContributions(manifest: PluginManifest): void {
          * 成功**不弹提示**：自动同步每隔一会儿就静默跑一次，每次都跳一个
          * "同步完成"的横幅，正常状态反而成了噪音。反馈交给图标与状态点。
          */
-        syncState = { status: 'clean', direction: null, message: null };
+        syncState = { status: 'clean', message: null, lastAt: Date.now() };
+
+        /*
+         * 有文件落到或离开本地时，界面必须跟着变两处：
+         *
+         *  1. **文件树**：它持有的是目录快照，不会自己发现新文件。
+         *     少了这一步，用户看到的是"同步说完成了，但树还是空的"，
+         *     只能重启（实测报障）。
+         *  2. **已打开的标签**：`tab.text` 是内存中的副本，磁盘被同步
+         *     覆盖后它仍是旧内容 —— 而保存一次就会把远端更新覆盖回去，
+         *     比树空白更隐蔽。
+         */
+        const downloaded = result.steps.filter(
+          (step) => step.ok && step.action.kind === 'download',
+        );
+        const removedLocally = result.steps.some(
+          (step) => step.ok && step.action.kind === 'deleteLocal',
+        );
+        if (downloaded.length > 0 || removedLocally) {
+          emitWorkspaceChange();
+        }
+
+        for (const step of downloaded) {
+          const path = step.action.path;
+          const tab = state.tabs.find(
+            (item) => item.path === path && item.workspaceId === workspace.id,
+          );
+          /*
+           * 走到这里的标签按定义都没有未保存修改 —— `planSync` 只在
+           * "远端变了、本地没变"时发下载动作，本地改过的一律记为冲突、
+           * 不会出现在 `downloaded` 里。
+           *
+           * 这条判断是**防御**：如果将来同步策略变了（比如允许"远端
+           * 优先"），它能让用户的编辑不至于被无声覆盖。
+           */
+          if (!tab || tab.dirty) continue;
+
+          let text: string;
+          try {
+            text = await workspace.read(path);
+          } catch {
+            continue;
+          }
+          if (text === tab.text) continue;
+
+          state.tabs = state.tabs.map((item) =>
+            item === tab ? { ...item, text, dirty: false } : item,
+          );
+          if (isActiveTab(tab)) {
+            loadingDocument = true;
+            try {
+              editor.replaceDocument(text);
+            } finally {
+              loadingDocument = false;
+            }
+            state.dirty = false;
+          }
+        }
       }
     } catch (error) {
-      syncState = { status: 'error', direction: null, message: detailOf(error) };
+      syncState = { status: 'error', message: detailOf(error), lastAt: Date.now() };
       timeline('sync-fail', detailOf(error), { failed: true });
       await windowService.showMessage(t('rt.syncFailed', { detail: detailOf(error) }), {
         level: 'error',

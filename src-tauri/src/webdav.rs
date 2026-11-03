@@ -56,6 +56,62 @@ fn base64_encode(input: &[u8]) -> String {
     out
 }
 
+/// 标准 base64 解码。只接受合法输入（含 `=` 填充），非法时返回错误。
+///
+/// 与 `base64_encode` 对称：前端把二进制转成 base64 传进来（JSON 通道只能
+/// 走字符串），这里还原成字节再交给 `send_bytes`。
+fn base64_decode(input: &str) -> Result<Vec<u8>, String> {
+    fn value_of(byte: u8) -> Option<u8> {
+        match byte {
+            b'A'..=b'Z' => Some(byte - b'A'),
+            b'a'..=b'z' => Some(byte - b'a' + 26),
+            b'0'..=b'9' => Some(byte - b'0' + 52),
+            b'+' => Some(62),
+            b'/' => Some(63),
+            _ => None,
+        }
+    }
+
+    let trimmed: Vec<u8> = input
+        .bytes()
+        .filter(|byte| !byte.is_ascii_whitespace())
+        .collect();
+    if trimmed.len() % 4 != 0 {
+        return Err("base64 长度不是 4 的倍数".to_string());
+    }
+
+    let mut out = Vec::with_capacity(trimmed.len() / 4 * 3);
+    for chunk in trimmed.chunks(4) {
+        let mut block = [0u8; 4];
+        let mut padding = 0;
+        for (index, byte) in chunk.iter().enumerate() {
+            if *byte == b'=' {
+                /* `=` 只允许出现在末尾两位 */
+                if index < 2 {
+                    return Err("base64 填充位置非法".to_string());
+                }
+                padding += 1;
+                block[index] = 0;
+            } else {
+                block[index] = value_of(*byte).ok_or_else(|| "base64 含非法字符".to_string())?;
+            }
+        }
+
+        let triple = ((block[0] as u32) << 18)
+            | ((block[1] as u32) << 12)
+            | ((block[2] as u32) << 6)
+            | (block[3] as u32);
+        out.push((triple >> 16) as u8);
+        if padding < 2 {
+            out.push((triple >> 8) as u8);
+        }
+        if padding < 1 {
+            out.push(triple as u8);
+        }
+    }
+    Ok(out)
+}
+
 /* ── 数据结构 ────────────────────────────────────────────── */
 
 /// 连接参数。`url` 是服务根（例如 `https://dav.jianguoyun.com/dav/`）。
@@ -88,13 +144,32 @@ pub struct DavEntry {
 /* ── 协议层 ──────────────────────────────────────────────── */
 
 /// 拼接 `base_url` 与相对路径，保证中间只有一个斜杠。
+/// 把相对路径编码成 URL 片段。
+///
+/// 只保留 RFC 3986 的 unreserved 字符与 `/`：中文、空格、`#`、`?` 都必须
+/// 编码。不编码时 `ureq` 把原始字节直接拼进请求行，服务端按 ISO-8859-1
+/// 解读，落盘的文件名就是乱码 —— 实测日志里 `Aropyt额外权益草案.md`
+/// 变成了 `Aropytå¥é¤ææçèæ¡.md`。
+fn encode_path(path: &str) -> String {
+    let mut out = String::with_capacity(path.len());
+    for byte in path.as_bytes() {
+        match byte {
+            b'A'..=b'Z' | b'a'..=b'z' | b'0'..=b'9' | b'-' | b'_' | b'.' | b'~' | b'/' => {
+                out.push(*byte as char);
+            }
+            _ => out.push_str(&format!("%{byte:02X}")),
+        }
+    }
+    out
+}
+
 fn join_url(base: &str, path: &str) -> String {
     let base = base.trim_end_matches('/');
     let path = path.trim_start_matches('/');
     if path.is_empty() {
         format!("{base}/")
     } else {
-        format!("{base}/{path}")
+        format!("{base}/{}", encode_path(path))
     }
 }
 
@@ -353,6 +428,67 @@ pub async fn dav_head(auth: DavAuth, path: String) -> Result<Option<DavEntry>, S
         .map_err(|error| format!("探测线程异常：{error}"))?
 }
 
+/// 上传二进制。内容以 base64 传入 —— JSON 通道只能走字符串，
+/// 而 `serde` 把 `Vec<u8>` 序列化成数字数组时一个字节要占三四个字符。
+///
+/// 不走 `dav_call`：那个函数收发 `String`，这里要原始字节。
+#[tauri::command]
+pub async fn dav_put_bytes(auth: DavAuth, path: String, base64: String) -> Result<(), String> {
+    tauri::async_runtime::spawn_blocking(move || {
+        let bytes = base64_decode(&base64)?;
+        let url = join_url(&auth.url, &path);
+        let token = base64_encode(format!("{}:{}", auth.username, auth.password).as_bytes());
+        let result = ureq::request("PUT", &url)
+            .set("Authorization", &format!("Basic {token}"))
+            .set("Content-Type", "application/octet-stream")
+            .send_bytes(&bytes);
+
+        match result {
+            Ok(response) if (200..300).contains(&response.status()) => Ok(()),
+            Ok(response) => Err(format!("HTTP {}（{} 字节）", response.status(), bytes.len())),
+            Err(ureq::Error::Status(status, _)) => Err(describe_status(status, "")),
+            Err(ureq::Error::Transport(error)) => Err(format!("无法连接到服务器：{error}")),
+        }
+    })
+    .await
+    .map_err(|error| format!("上传线程异常：{error}"))?
+}
+
+/// 下载二进制，返回 base64。文件不存在返回 `Ok(None)`。
+#[tauri::command]
+pub async fn dav_get_bytes(auth: DavAuth, path: String) -> Result<Option<String>, String> {
+    tauri::async_runtime::spawn_blocking(move || {
+        use std::io::Read;
+
+        let url = join_url(&auth.url, &path);
+        let token = base64_encode(format!("{}:{}", auth.username, auth.password).as_bytes());
+        let result = ureq::request("GET", &url)
+            .set("Authorization", &format!("Basic {token}"))
+            .call();
+
+        match result {
+            Ok(response) => {
+                if response.status() == 404 {
+                    return Ok(None);
+                }
+                let mut bytes = Vec::new();
+                response
+                    .into_reader()
+                    /* 64 MB 上限：单张图片远小于这个数，但一个坏响应不该撑爆内存 */
+                    .take(64 * 1024 * 1024)
+                    .read_to_end(&mut bytes)
+                    .map_err(|error| format!("读取响应失败：{error}"))?;
+                Ok(Some(base64_encode(&bytes)))
+            }
+            Err(ureq::Error::Status(404, _)) => Ok(None),
+            Err(ureq::Error::Status(status, _)) => Err(describe_status(status, "")),
+            Err(ureq::Error::Transport(error)) => Err(format!("无法连接到服务器：{error}")),
+        }
+    })
+    .await
+    .map_err(|error| format!("下载线程异常：{error}"))?
+}
+
 /// 建目录。已存在视为成功（见 `create_dir` 的注释）。
 #[tauri::command]
 pub async fn dav_mkcol(auth: DavAuth, path: String) -> Result<(), String> {
@@ -413,6 +549,22 @@ mod tests {
     use super::*;
 
     #[test]
+    fn base64_round_trips_binary() {
+        /* 0x00 / 0xFF 这类字节最容易在实现里被当成字符串处理坏掉 */
+        let raw: Vec<u8> = vec![0x00, 0xFF, 0x89, b'P', b'N', b'G', 0x0D, 0x0A, 0x1A, 0x0A, 0x7F];
+        let encoded = base64_encode(&raw);
+        assert_eq!(base64_decode(&encoded).unwrap(), raw);
+
+        /* 中文（UTF-8 多字节）同样要能还原 */
+        let text = "中文图片".as_bytes().to_vec();
+        assert_eq!(base64_decode(&base64_encode(&text)).unwrap(), text);
+
+        /* 长度不是 4 的倍数、含非法字符时拒绝而不是静默截断 */
+        assert!(base64_decode("abc").is_err());
+        assert!(base64_decode("!!!!").is_err());
+    }
+
+    #[test]
     fn base64_matches_rfc4648_vectors() {
         assert_eq!(base64_encode(b""), "");
         assert_eq!(base64_encode(b"f"), "Zg==");
@@ -430,6 +582,21 @@ mod tests {
         assert_eq!(join_url("https://x/dav/", ""), "https://x/dav/");
         assert_eq!(join_url("https://x/dav", "notes/a.md"), "https://x/dav/notes/a.md");
         assert_eq!(join_url("https://x/dav/", "/notes/a.md"), "https://x/dav/notes/a.md");
+    }
+
+    #[test]
+    fn join_url_encodes_non_ascii() {
+        /* 不编码时服务端收到的文件名是乱码（实测：额外权益草案 → å¥é¤æ…） */
+        assert_eq!(
+            join_url("https://x/dav", "笔记/草案.md"),
+            "https://x/dav/%E7%AC%94%E8%AE%B0/%E8%8D%89%E6%A1%88.md"
+        );
+        assert_eq!(join_url("https://x/dav", "a b.md"), "https://x/dav/a%20b.md");
+        /* `/` 必须保留：它是路径分隔符，编码成 %2F 会被当成文件名的一部分 */
+        assert_eq!(
+            join_url("https://x/dav", "a/b/c.md"),
+            "https://x/dav/a/b/c.md"
+        );
     }
 
     #[test]

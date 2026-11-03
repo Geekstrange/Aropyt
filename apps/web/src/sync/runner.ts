@@ -18,23 +18,76 @@
  * 中途失败时，已经完成的那部分保持正确。
  */
 
-import { hashText, planSync, summarize, type SyncAction, type SyncSummary } from './engine.js';
+import { hashBytes, planSync, type SyncAction } from './engine.js';
+
+/** 远端的元信息，用来判断"这份文件在上次同步之后变过没有"。 */
+export interface RemoteMeta {
+  readonly size: number;
+  /** `getlastmodified` 的原文；服务端不返回时为 `null`。 */
+  readonly modified: string | null;
+}
+
+/** 快照里的一条：内容哈希 + 当时远端的元信息。 */
+export interface BaseEntry {
+  readonly hash: string;
+  readonly size?: number;
+  readonly modified?: string | null;
+}
 
 export interface SyncBackend {
   /** 本地所有待同步文件：相对路径 → 内容。非文本文件由宿主过滤掉。 */
-  readLocal(): Promise<Map<string, string>>;
-  writeLocal(path: string, content: string): Promise<void>;
+  /**
+   * 本地所有待同步文件：相对路径 → **原始字节**。
+   *
+   * 用字节而不是字符串：图片与文本要走同一条链路，而把二进制塞进
+   * `string` 会在 UTF-8 解码时损坏（更糟的是它**不报错**，要到图片
+   * 显示成裂图才发现）。文本文件读出来的字节就是它的 UTF-8 序列。
+   */
+  readLocal(): Promise<Map<string, Uint8Array>>;
+  writeLocal(path: string, bytes: Uint8Array): Promise<void>;
   deleteLocal(path: string): Promise<void>;
 
-  /** 远端：只列路径，内容按需取。 */
-  listRemote(): Promise<ReadonlySet<string>>;
-  readRemote(path: string): Promise<string | null>;
-  writeRemote(path: string, content: string): Promise<void>;
+  /**
+   * 远端：路径 → 元信息。**内容按需取**。
+   *
+   * 早先只返回路径集合，于是每一轮都要把每个文件下回来算哈希 ——
+   * 目录一大，光这一项就是几十秒。带上大小与修改时间之后，没变的文件
+   * 可以直接沿用快照里的哈希，一个字节都不用下载。
+   */
+  listRemote(): Promise<Map<string, RemoteMeta>>;
+  readRemote(path: string): Promise<Uint8Array | null>;
+  writeRemote(path: string, bytes: Uint8Array): Promise<void>;
   deleteRemote(path: string): Promise<void>;
 
-  /** 上次同步成功时的状态：路径 → 内容哈希。 */
-  loadBase(): Promise<Map<string, string>>;
-  saveBase(base: ReadonlyMap<string, string>): Promise<void>;
+  /** 上次同步成功时的状态：路径 → 哈希与远端元信息。 */
+  loadBase(): Promise<Map<string, BaseEntry>>;
+  saveBase(base: ReadonlyMap<string, BaseEntry>): Promise<void>;
+
+  /**
+   * "远端没有、本地保留"过的路径。
+   *
+   * 与 `base` 分开存：`base` 描述内容（谁和谁一致），这个集合描述意图
+   * （这些文件我们决定不删）。混在一起会让 `base` 的语义变得含混，
+   * 而 `base` 是判断"哪一侧改过"的唯一依据。
+   */
+  loadKept(): Promise<ReadonlySet<string>>;
+  saveKept(kept: ReadonlySet<string>): Promise<void>;
+
+  /**
+   * 冲突时保存远端那一份。
+   *
+   * 宿主把它写进**编辑历史**（标 `source: 'remote'`），而不是在工作区里
+   * 生成 `note.conflict-….md`：那种副本会出现在文件树、会被下一轮同步
+   * 再传一遍，于是冲突会自我繁殖。历史是它的自然归宿 —— 用户想找回时
+   * 和找回旧版本是同一个操作。
+   */
+  /**
+   * 冲突时保存远端那一份。
+   *
+   * 收字节而不是字符串：远端可能是图片。宿主自己判断能不能当文本处理
+   * ——文本进编辑历史，二进制没法进（历史表存的是 `text`），只能另存。
+   */
+  saveConflict(path: string, bytes: Uint8Array, at: number): Promise<void>;
 }
 
 export interface SyncStepResult {
@@ -78,37 +131,75 @@ export function conflictPath(path: string, at: number): string {
 export async function runSync(
   backend: SyncBackend,
   now: () => number = Date.now,
-  /**
-   * 决策做完、动作开始执行时回调一次。
-   *
-   * 界面要靠它知道"这一轮是往上还是往下" —— 只有 plan 出来之后才知道，
-   * 而那时 `running` 状态已经亮起来了。不给这个回调，界面在运行期间就
-   * 只能显示一个没有方向的图标。
-   */
-  onPlanned?: (summary: SyncSummary, actionCount: number) => void,
 ): Promise<SyncRunResult> {
-  const [localFiles, remotePaths, base] = await Promise.all([
+  const [localFiles, remoteEntries, base, kept] = await Promise.all([
     backend.readLocal(),
     backend.listRemote(),
     backend.loadBase(),
+    backend.loadKept(),
   ]);
 
   /*
-   * 远端内容必须取回来才能算哈希 —— WebDAV 的 PROPFIND 只给大小和
-   * 修改时间，没有内容摘要。只同步文本文件时这个代价可以接受；
-   * 将来把图片纳入同步，要先按 size 筛掉没变的。
+   * 远端哈希。WebDAV 的 PROPFIND 没有内容摘要，所以**只有变过的文件**
+   * 才真的下载：大小与修改时间都和快照一致时，直接沿用上次算出的哈希。
+   *
+   * 这一步是"自动同步能不能无感"的关键 —— 以前每次保存后都要把整个
+   * 目录下回来，文件一多就在后台跑几十秒，而图片不会出现在这里，
+   * 因为它只同步文本。
    */
   const remoteHashes = new Map<string, string>();
-  for (const path of remotePaths) {
-    const text = await backend.readRemote(path);
-    if (text !== null) remoteHashes.set(path, hashText(text));
+  for (const [path, meta] of remoteEntries) {
+    const known = base.get(path);
+    if (known && meta.size === known.size && meta.modified === known.modified) {
+      remoteHashes.set(path, known.hash);
+      continue;
+    }
+    const bytes = await backend.readRemote(path);
+    if (bytes !== null) remoteHashes.set(path, hashBytes(bytes));
   }
 
-  const localHashes = new Map([...localFiles].map(([path, text]) => [path, hashText(text)]));
-  const actions = planSync({ local: localHashes, remote: remoteHashes, base });
-  onPlanned?.(summarize(actions), actions.length);
+  /** 快照条目：哈希取自本轮，元信息取自远端列表。 */
+  const snapshotOf = (path: string, hash: string): BaseEntry => {
+    const meta = remoteEntries.get(path);
+    return { hash, size: meta?.size, modified: meta?.modified ?? null };
+  };
+
+  const localHashes = new Map([...localFiles].map(([path, bytes]) => [path, hashBytes(bytes)]));
+  /* `planSync` 只关心哈希 —— 元信息是给"要不要下载"用的，留在本层 */
+  const baseHashes = new Map([...base].map(([path, entry]) => [path, entry.hash]));
+
+  /*
+   * 远端整体为空 + base 里记着东西 → **忽略快照，全部重新上传**。
+   *
+   * 这不是"用户把所有文件都删了"，而是"这个远端是新目录 / 被清空了"。
+   * 交给 `planSync` 会因为 base 里有记录而判成"远端删除了这些文件"，
+   * 全部产出 `keep` —— 同步就永远传不上去。
+   *
+   * 反过来做是安全的：多传一份不会丢数据，而"传不上去"会让同步彻底
+   * 卡死。删本地那条路由 `keep` 动作堵着，这里可以放心偏向上传。
+   */
+  const remoteIsEmpty = remoteHashes.size === 0 && baseHashes.size > 0;
+  const effectiveBase = remoteIsEmpty ? new Map<string, string>() : baseHashes;
+  /*
+   * 这里曾经有一道"远端整体为空就中止"的闸门，已经删掉。
+   *
+   * 它挡住的恰恰是**唯一正确的动作**：本地有文件、远端是空目录 ——
+   * 那就上传。而它想防的那些情况（网盘被清空、连错目录）结果不过是
+   * "把文件传到另一个地方"，那不会丢数据，用户可以删掉重来。
+   *
+   * 真正危险的是"删本地"，而那条路由 `keep` 动作已经彻底堵死了。
+   * 用一个会卡住正常同步的检查去防一个不丢数据的误操作，代价不对等。
+   */
+
+  const actions = planSync({
+    local: localHashes,
+    remote: remoteHashes,
+    base: effectiveBase,
+    kept,
+  });
 
   const nextBase = new Map(base);
+  const nextKept = new Set(kept);
 
   /*
    * 引擎对"两端一致"不产出动作 —— 确实没什么要做的，但它的哈希仍要
@@ -117,7 +208,7 @@ export async function runSync(
    * `bothChanged`，措辞不同、行为一样，属于能跑但说不清的坑）。
    */
   for (const [path, hash] of localHashes) {
-    if (remoteHashes.get(path) === hash) nextBase.set(path, hash);
+    if (remoteHashes.get(path) === hash) nextBase.set(path, snapshotOf(path, hash));
   }
 
   const steps: SyncStepResult[] = [];
@@ -127,18 +218,23 @@ export async function runSync(
     try {
       switch (action.kind) {
         case 'upload': {
-          const text = localFiles.get(action.path);
-          if (text === undefined) throw new Error('本地文件已消失');
-          await backend.writeRemote(action.path, text);
-          nextBase.set(action.path, hashText(text));
+          const bytes = localFiles.get(action.path);
+          if (bytes === undefined) throw new Error('本地文件已消失');
+          await backend.writeRemote(action.path, bytes);
+          /*
+           * 上传之后远端的大小与 mtime 由**服务端**决定，本地算不出来。
+           * 这里不写 meta，于是下一轮会（因为 `size === undefined`）
+           * 下载一次确认 —— 只多这一次，换来的是快照不会记下错误的元信息。
+           */
+          nextBase.set(action.path, { hash: hashBytes(bytes) });
           result = { action, ok: true };
           break;
         }
         case 'download': {
-          const text = await backend.readRemote(action.path);
-          if (text === null) throw new Error('远端文件已消失');
-          await backend.writeLocal(action.path, text);
-          nextBase.set(action.path, hashText(text));
+          const bytes = await backend.readRemote(action.path);
+          if (bytes === null) throw new Error('远端文件已消失');
+          await backend.writeLocal(action.path, bytes);
+          nextBase.set(action.path, snapshotOf(action.path, hashBytes(bytes)));
           result = { action, ok: true };
           break;
         }
@@ -148,22 +244,50 @@ export async function runSync(
           result = { action, ok: true };
           break;
         }
-        case 'deleteLocal': {
-          await backend.deleteLocal(action.path);
-          nextBase.delete(action.path);
+        case 'keep': {
+          /*
+           * 什么都不动，只把路径记进 kept。
+           *
+           * `nextBase` 也**不清**那条记录：清掉之后下一轮就成了"首次
+           * 同步"，会把它当成新文件重新上传到云端 —— 用户想删都删不掉。
+           */
+          nextKept.add(action.path);
           result = { action, ok: true };
           break;
         }
+        case 'deleteLocal': {
+          /*
+           * 引擎**不再产生**这个动作（见 engine.ts：远端为空不等于用户
+           * 删了它）。分支保留只为类型完整，执行时一律拒绝 ——
+           * 删本地文件是不可逆的，宁可留一个多余的文件。
+           */
+          result = {
+            action,
+            ok: false,
+            error: '拒绝删除本地文件：远端缺少某个文件不等于它应该被删除',
+          };
+          break;
+        }
         case 'conflict': {
-          const remoteText = await backend.readRemote(action.path);
-          if (remoteText === null) throw new Error('远端文件已消失');
-          const copy = conflictPath(action.path, now());
-          await backend.writeLocal(copy, remoteText);
+          const remoteBytes = await backend.readRemote(action.path);
+          if (remoteBytes === null) throw new Error('远端文件已消失');
+          /*
+           * 远端版本进历史，**不落在工作区**。
+           *
+           * 早先是写一个 `note.conflict-<时间戳>.md`：它出现在文件树里，
+           * 下一轮同步又把它当新文件传上去，于是每次冲突都会多出一个
+           * 副本，冲突会自我繁殖。历史面板本来就是"找回旧内容"的地方，
+           * 放那儿才对。
+           *
+           * 二进制（图片）进不了历史表 —— 那列存的是 `text`。宿主会为
+           * 这种情况在历史里留一条"无法保存内容"的占位，而不是静默丢弃。
+           */
+          await backend.saveConflict(action.path, remoteBytes, now());
           /*
            * `nextBase` 一个字都不动：冲突尚未解决，下一轮同步必须
            * 继续报它，否则冲突会在用户处理之前被悄悄"忘记"。
            */
-          result = { action, ok: true, conflictCopy: copy };
+          result = { action, ok: true };
           break;
         }
       }
@@ -193,6 +317,13 @@ export async function runSync(
    * 两个文件完全相同，base 一直是空的）。
    */
   await backend.saveBase(nextBase).catch(() => undefined);
+
+  /*
+   * kept 跟着一起落盘。它只增不减 —— 本地文件被用户删掉之后，
+   * 下一轮 `hasLocal === false`，那条自然不会再进 `kept`；
+   * 但清理它没有收益（多一条无害），少一条却可能让文件被重新上传。
+   */
+  await backend.saveKept(nextKept).catch(() => undefined);
 
   return { steps, ok: steps.every((step) => step.ok) };
 }

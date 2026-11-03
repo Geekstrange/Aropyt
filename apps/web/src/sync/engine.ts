@@ -36,7 +36,16 @@ export type SyncActionKind =
   | 'upload'
   | 'download'
   | 'deleteRemote'
+  /** @deprecated 引擎不再产生。删本地文件不可逆，见 `keep`。 */
   | 'deleteLocal'
+  /**
+   * 远端没有这个文件，但本地有 —— **保留本地，只记一笔**。
+   *
+   * 这是"远端删了"的**唯一**处理方式。把本地文件删掉是不可逆的数据
+   * 丢失，而"远端列表里没有"至少有四种解释：用户删了、网盘被清空、
+   * 地址填错了、服务商回收站策略。四种里只有第一种该删本地。
+   */
+  | 'keep'
   | 'conflict';
 
 /**
@@ -66,7 +75,9 @@ export type SyncCause =
   /** 远端删了，但本地有未同步的修改 */
   | 'remoteDeletedDirty'
   /** 本地删了，但远端有未同步的修改 */
-  | 'localDeletedDirty';
+  | 'localDeletedDirty'
+  /** 远端没有、本地保留（已标记，之后不再重复报） */
+  | 'keptLocal';
 
 export interface SyncAction {
   readonly kind: SyncActionKind;
@@ -83,6 +94,13 @@ export interface SyncInput {
   readonly remote: ReadonlyMap<string, string>;
   /** 上次同步成功时的状态：路径 → 内容哈希。 */
   readonly base: ReadonlyMap<string, string>;
+  /**
+   * 已经"远端没有、本地保留"过的路径。
+   *
+   * 标记存在的意义是**不再重复报**：没有它，那些文件每一轮都会产出
+   * 一条 `keep`，同步日志里堆着永远不变的一批；有了它，只报第一次。
+   */
+  readonly kept?: ReadonlySet<string>;
 }
 
 /**
@@ -100,6 +118,23 @@ export function hashText(text: string): string {
   let hash = 0x811c9dc5;
   for (let index = 0; index < text.length; index += 1) {
     hash ^= text.charCodeAt(index);
+    hash = Math.imul(hash, 0x01000193);
+  }
+  return (hash >>> 0).toString(36);
+}
+
+/**
+ * 同一套 FNV-1a，但按**字节**算 —— 同步一旦支持图片就必须用它。
+ *
+ * 与 `hashText` 的结果不同（`charCodeAt` 给的是 UTF-16 码元，字节是
+ * UTF-8 序列），所以两者**不能混用**：文本文件走 `hashBytes` 之后，
+ * 旧的 `hashText` 快照会对不上，表现为所有文件都被当成"改过"。
+ * 迁移时把旧快照整体丢弃一次即可（`host.ts` 读不出 `hash` 就当没记录）。
+ */
+export function hashBytes(bytes: Uint8Array): string {
+  let hash = 0x811c9dc5;
+  for (let index = 0; index < bytes.length; index += 1) {
+    hash ^= bytes[index]!;
     hash = Math.imul(hash, 0x01000193);
   }
   return (hash >>> 0).toString(36);
@@ -153,13 +188,27 @@ export function planSync(input: SyncInput): SyncAction[] {
     }
 
     if (hasLocal) {
-      /* 只有本地：首次同步就上传；base 里有而远端没了，说明远端删了它 */
+      /*
+       * 只有本地：首次同步就上传。
+       *
+       * **远端没有 ≠ 用户删了它。** 这一支原来会产出 `deleteLocal`，
+       * 触发条件仅仅是"base 里记着、远端列表里没有"——而网盘被清空、
+       * 换了账号、连错目录、服务商回收站策略，全都会让远端列表变空。
+       * 那几种情况下把本地文件删掉是**不可逆的数据丢失**，而本地才是
+       * 用户唯一真实的副本（实测：云端为空时点一下同步，本地全没了）。
+       *
+       * 所以：**本地改过 → 冲突**（远端那份改动没了，需要人看）；
+       * **本地没动 → `keep`**（留一份，记一笔，不删）。
+       *
+       * `keep` 不是"无动作"：它要写进 `kept` 集合，否则下一轮又会报
+       * 一次。已经标记过的不再重复报。
+       */
       if (baseHash === undefined) {
         actions.push({ kind: 'upload', path, cause: 'onlyLocal' });
       } else if (localChanged) {
         actions.push({ kind: 'conflict', path, cause: 'remoteDeletedDirty' });
-      } else {
-        actions.push({ kind: 'deleteLocal', path, cause: 'remoteDeleted' });
+      } else if (!input.kept?.has(path)) {
+        actions.push({ kind: 'keep', path, cause: 'keptLocal' });
       }
       continue;
     }

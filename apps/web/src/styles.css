@@ -2394,6 +2394,45 @@ button {
  * 除了"还没跑过"那一档，**不染色**：图标已经表达了状态，再叠颜色只会
  * 和工具栏其它按钮不一致。冲突与失败的原因在 title 里。
  */
+/*
+ * 搜索面板的一条结果。
+ *
+ * 上行是「文件:行号」（次要信息，但排在上面是为了让同一文件的多行
+ * 连成一组），下行是该行内容 —— 用等宽字体，因为用户常常在找代码或
+ * 表格里的某个值，比例字体下对齐会散。
+ */
+.search-hit {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  width: 100%;
+  padding: 6px 10px;
+  border: none;
+  border-radius: 4px;
+  background: transparent;
+  color: inherit;
+  text-align: left;
+  cursor: pointer;
+}
+
+.search-hit:hover {
+  background: rgba(128, 128, 128, 0.12);
+}
+
+.search-hit__where {
+  font-size: 12px;
+  color: var(--md-muted);
+  font-variant-numeric: tabular-nums;
+}
+
+.search-hit__text {
+  font-family: var(--font-mono, ui-monospace, monospace);
+  font-size: 13px;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
 .tool-button--sync {
   display: inline-flex;
   align-items: center;

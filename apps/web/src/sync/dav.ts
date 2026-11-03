@@ -27,10 +27,44 @@ export interface DavEntry {
   readonly modified?: string | null;
 }
 
+/** 列目录时带回的元信息：同步靠它跳过没变的文件。 */
+export interface DavListEntry {
+  readonly path: string;
+  readonly isDir: boolean;
+  readonly size: number;
+  readonly modified: string | null;
+}
+
+/** base64 解码成字节。浏览器 `atob` 给的是"每字符一字节"的二进制串。 */
+function base64ToBytes(encoded: string): Uint8Array {
+  const binary = atob(encoded);
+  const bytes = new Uint8Array(binary.length);
+  for (let index = 0; index < binary.length; index += 1) {
+    bytes[index] = binary.charCodeAt(index);
+  }
+  return bytes;
+}
+
+/**
+ * 字节编码成 base64。
+ *
+ * 分块处理：`String.fromCharCode(...bytes)` 在几十万字节时会因为参数
+ * 过多直接栈溢出，而一张照片轻松超过那个上限。
+ */
+function bytesToBase64(bytes: Uint8Array): string {
+  const CHUNK = 0x8000;
+  let binary = '';
+  for (let offset = 0; offset < bytes.length; offset += CHUNK) {
+    binary += String.fromCharCode(...bytes.subarray(offset, offset + CHUNK));
+  }
+  return btoa(binary);
+}
+
 export interface RemoteDav {
-  list(path: string): Promise<readonly { path: string; isDir: boolean }[]>;
-  read(path: string): Promise<string | null>;
-  write(path: string, content: string): Promise<void>;
+  list(path: string): Promise<readonly DavListEntry[]>;
+  /** 读原始字节。文本文件就是它的 UTF-8 序列。 */
+  readBytes(path: string): Promise<Uint8Array | null>;
+  writeBytes(path: string, bytes: Uint8Array): Promise<void>;
   remove(path: string): Promise<void>;
   ensureDir(path: string): Promise<void>;
 }
@@ -96,25 +130,55 @@ export type Invoke = <T>(command: string, args?: Record<string, unknown>) => Pro
  * 协议细节不往上漏。
  */
 export function createRemoteDav(invoke: Invoke, auth: DavAuth): RemoteDav {
+  /* 本次同步里已经确认存在的目录，避免每个文件都发一次 MKCOL */
+  const ensured = new Set<string>();
+
   return {
     async list(path) {
-      const entries = await invoke<DavEntry[]>('dav_list', { auth, path });
-      const out: { path: string; isDir: boolean }[] = [];
+      let entries: DavEntry[];
+      try {
+        entries = await invoke<DavEntry[]>('dav_list', { auth, path });
+      } catch (error) {
+        /*
+         * 404 = 这个目录还不存在，**不是错误**。
+         *
+         * 每个工作区在远端有自己的子树（`test-9wxtej/`），它要到第一次
+         * 调用 `ensureDir` 才会被建出来。首次同步时 `listRemote` 先跑，
+         * 撞上 404 就整轮失败 —— 那意味着"新工作区永远没法完成第一次
+         * 同步"。空目录与不存在的目录对同步而言是同一件事。
+         */
+        const detail = error instanceof Error ? error.message : String(error);
+        if (detail.includes('404')) return [];
+        throw error;
+      }
+
+      const out: DavListEntry[] = [];
       for (const entry of entries) {
         const relative = davRelativePath(entry.href, auth.url);
         /* 服务根自身与外部记录都会被这里滤掉 */
         if (!relative || relative === path) continue;
-        out.push({ path: relative, isDir: entry.is_dir });
+        out.push({
+          path: relative,
+          isDir: entry.is_dir,
+          size: entry.size,
+          modified: entry.modified ?? null,
+        });
       }
       return out;
     },
 
-    read(path) {
-      return invoke<string | null>('dav_get', { auth, path });
+    async readBytes(path) {
+      /*
+       * 走 `dav_get_bytes`（base64）而不是 `dav_get`（纯文本）：
+       * 后者让 Rust 侧按 UTF-8 解码响应体，图片会在这里就已经损坏，
+       * 而且**不报错** —— 要到显示成裂图才发现。
+       */
+      const encoded = await invoke<string | null>('dav_get_bytes', { auth, path });
+      return encoded === null ? null : base64ToBytes(encoded);
     },
 
-    async write(path, content) {
-      await invoke('dav_put', { auth, path, content });
+    async writeBytes(path, bytes) {
+      await invoke('dav_put_bytes', { auth, path, base64: bytesToBase64(bytes) });
     },
 
     async remove(path) {
@@ -122,7 +186,38 @@ export function createRemoteDav(invoke: Invoke, auth: DavAuth): RemoteDav {
     },
 
     async ensureDir(path) {
-      await invoke('dav_mkcol', { auth, path });
+      /*
+       * 逐级建。RFC 4918 的 MKCOL 只建**一层**：父目录不存在时返回 409，
+       * 所以 `a/b/c` 要先建 `a`、再 `a/b`、再 `a/b/c`。
+       *
+       * 405（已存在）在 Rust 侧已当成功；其余错误在这里静默忽略 ——
+       * 目录真建不出来时，随后那次 PUT 的报错比这里更有信息量。
+       *
+       * 已经建过的路径记在 `ensured` 里：每写一个文件都会调一次，不缓存
+       * 就会在服务端日志里刷出一串 405（实测：13 个文件 = 13 次 MKCOL）。
+       * 缓存只在本次同步内有效，下一次运行重新建一遍也无妨。
+       */
+      if (ensured.has(path)) return;
+      ensured.add(path);
+
+      const parts = path.split('/').filter(Boolean);
+      if (parts.length === 0) {
+        /*
+         * 空路径 = 工作区自己的那棵子树。`auth.url` 已经拼过子树路径，
+         * 所以 MKCOL 的是它本身，不会碰到服务根。
+         *
+         * 这一层原来没人建：`writeRemote` 只在父目录非空时调 `ensureDir`，
+         * 而"文件直接放在工作区根下"正是空父目录 —— 首次同步的 PROPFIND
+         * 因此永远是 404，PUT 也全被 409 拒掉。
+         */
+        await invoke('dav_mkcol', { auth, path: '' }).catch(() => undefined);
+        return;
+      }
+      let current = '';
+      for (const part of parts) {
+        current = current ? `${current}/${part}` : part;
+        await invoke('dav_mkcol', { auth, path: current }).catch(() => undefined);
+      }
     },
   };
 }

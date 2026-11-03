@@ -25,6 +25,15 @@ export interface HistoryVersion {
   /** 手动命名的版本（里程碑）；自动版本为 undefined。 */
   readonly label?: string;
   readonly size: number;
+  /**
+   * 来源。`remote` 表示"同步时远端的那一份"，不是本地编辑产生的。
+   *
+   * 冲突时它被记在这里，而不是在工作区里生成 `note.conflict-….md`：
+   * 那种副本本身会出现在文件树、会被下一轮同步再传一遍，于是冲突会
+   * 自我繁殖。历史是它的自然归宿 —— 用户想找回时，和找回旧版本是
+   * 同一个操作。
+   */
+  readonly source?: 'remote';
 }
 
 /** 单版本上限：超过不记录（避免一个大文件吃光配额）。 */
@@ -38,6 +47,8 @@ export interface HistorySummary {
   readonly size: number;
   /** 与上一个版本相比的行数变化（+增 / -删），由 diff 计算后填充。 */
   readonly wordCount: number;
+  /** 来自远端的版本（同步冲突时记下），列表里单独标注。 */
+  readonly source?: 'remote';
 }
 
 /** FNV-1a 32 位：足够做"内容是否相同"的判定，且同步、无依赖。 */
@@ -68,12 +79,13 @@ export async function listVersions(path: string): Promise<HistorySummary[]> {
   return all
     .filter((version) => version.path === path)
     .sort((a, b) => b.createdAt - a.createdAt)
-    .map(({ id, createdAt, label, size, text }) => ({
+    .map(({ id, createdAt, label, size, text, source }) => ({
       id,
       createdAt,
       label,
       size,
       wordCount: text.length,
+      source,
     }));
 }
 
@@ -114,6 +126,44 @@ export async function recordVersion(
   const overflow = sorted.slice(Math.max(limit, 1));
   await Promise.all(overflow.map((item) => idbDelete(STORE.history, item.id).catch(() => undefined)));
   return true;
+}
+
+/**
+ * 记录"同步时远端的那一份"。
+ *
+ * 与 `recordVersion` 分开，因为语义不同：
+ *  · 它**不参与淘汰** —— `history.limit` 约束的是本地编辑版本；
+ *  · 同一文件**只保留最新一条**：每次同步都记一条会把列表刷满，而这个
+ *    条目只有一个用途，就是让用户看到"云端现在长什么样"。
+ *
+ * 一条都记不下（超过上限）时静默跳过：冲突本身已经通过返回值报给调用方，
+ * 记不下历史不该让同步失败。
+ */
+export async function recordRemoteVersion(
+  path: string,
+  text: string,
+  createdAt: number,
+): Promise<void> {
+  const size = new TextEncoder().encode(text).length;
+  if (size > MAX_VERSION_BYTES) return;
+
+  const version: HistoryVersion = {
+    id: `remote-${createdAt.toString(36)}-${Math.random().toString(36).slice(2, 6)}`,
+    path,
+    text,
+    hash: hashText(text),
+    createdAt,
+    size,
+    source: 'remote',
+  };
+  await idbSet(STORE.history, version.id, version);
+
+  const stale = (await loadAll()).filter(
+    (item) => item.path === path && item.source === 'remote' && item.id !== version.id,
+  );
+  await Promise.all(
+    stale.map((item) => idbDelete(STORE.history, item.id).catch(() => undefined)),
+  );
 }
 
 /** 取一个版本（含全文）。 */

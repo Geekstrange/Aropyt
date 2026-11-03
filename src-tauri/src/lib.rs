@@ -16,7 +16,7 @@ use std::fs;
 use std::io::Write;
 use std::path::{Component, Path, PathBuf};
 
-use serde::Deserialize;
+use serde::{Deserialize, Serialize};
 use std::sync::Mutex;
 use tauri::{Manager, State};
 
@@ -1098,6 +1098,117 @@ fn backup_write(path: String, text: String) -> Result<(), String> {
     fs::rename(&tmp, &file).map_err(|error| format!("替换失败: {}", error))
 }
 
+// ── 全工作区搜索 ────────────────────────────────────────────
+
+/// 搜索结果的一条。
+#[derive(Debug, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct SearchHit {
+    /// 相对工作区根的路径。
+    pub path: String,
+    /// 1 起算，与编辑器行号一致。
+    pub line: u32,
+    /// 该行内容，截断到 200 个字符 —— 够看清上下文，又不会因为一行几万字
+    /// 把整个响应撑大。
+    pub text: String,
+}
+
+#[derive(Debug, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct SearchArgs {
+    pub root_id: String,
+    pub query: String,
+}
+
+/// 单个文件参与搜索的上限。超过就跳过 —— 一个 50MB 的日志文件里
+/// 逐行 `to_lowercase` 会卡住整次搜索，而它本来也不是"笔记"。
+const SEARCH_MAX_FILE_BYTES: u64 = 1_048_576;
+
+/// 结果条数上限。搜索的目的是"带我去那个地方"，不是导出全部匹配；
+/// 同时命中几千条时，逐条渲染本身就会让界面卡顿。
+const SEARCH_MAX_HITS: usize = 200;
+
+/// 参与搜索的扩展名。与同步的文件白名单一致 —— 两边不一致会导致
+/// "能同步但搜不到"或者反过来。
+const SEARCH_TEXT_EXTENSIONS: &[&str] = &[
+    "md", "markdown", "txt", "tex", "latex", "ltx", "fountain",
+];
+
+fn has_text_extension(path: &str) -> bool {
+    let extension = path.rsplit('.').next().unwrap_or("").to_ascii_lowercase();
+    SEARCH_TEXT_EXTENSIONS.contains(&extension.as_str())
+}
+
+/// 全工作区文本搜索。
+///
+/// 放在原生侧而不是前端逐个 `workspace_read`：一个几百文件的项目会走
+/// 几百次 IPC，每次都要把整个文件内容序列化一遍。这里一次遍历、一次
+/// 返回，代价只跟磁盘读取有关。
+///
+/// **大小写不敏感**：写作时搜 "TODO" 和 "todo" 是同一个意图。代价是
+/// 每行都要 `to_lowercase`，所以文件大小和结果条数都有硬上限。
+#[tauri::command]
+fn search_workspace(
+    state: State<'_, WorkspaceState>,
+    args: SearchArgs,
+) -> Result<Vec<SearchHit>, String> {
+    let query = args.query.trim().to_lowercase();
+    if query.is_empty() {
+        return Ok(Vec::new());
+    }
+
+    log_line(&format!(
+        "search_workspace root={:?} query={:?}",
+        args.root_id, query
+    ));
+
+    state.with(&args.root_id, |ws| {
+        let mut hits = Vec::new();
+        collect_hits(ws, "", &query, &mut hits);
+        Ok(hits)
+    })
+}
+
+fn collect_hits(ws: &Workspace, dir: &str, query: &str, hits: &mut Vec<SearchHit>) {
+    if hits.len() >= SEARCH_MAX_HITS {
+        return;
+    }
+
+    /* 目录读不到就跳过这一层：权限、竞态都可能发生，不该让整次搜索失败 */
+    let Ok(entries) = ws.list(dir) else {
+        return;
+    };
+
+    for entry in entries {
+        if hits.len() >= SEARCH_MAX_HITS {
+            return;
+        }
+        if entry.kind == EntryKind::Directory {
+            collect_hits(ws, &entry.path, query, hits);
+            continue;
+        }
+        if entry.size > SEARCH_MAX_FILE_BYTES || !has_text_extension(&entry.path) {
+            continue;
+        }
+        /* 单个文件读不出来（编码不支持、被占用）只跳过它 */
+        let Ok(text) = ws.read_to_string(&entry.path) else {
+            continue;
+        };
+        for (index, line) in text.lines().enumerate() {
+            if hits.len() >= SEARCH_MAX_HITS {
+                return;
+            }
+            if line.to_lowercase().contains(query) {
+                hits.push(SearchHit {
+                    path: entry.path.clone(),
+                    line: (index + 1) as u32,
+                    text: line.chars().take(200).collect(),
+                });
+            }
+        }
+    }
+}
+
 // ── 凭据（系统钥匙串） ──────────────────────────────────────
 
 /// 凭据条的服务名。所有条目都挂在它下面，能成组清理。
@@ -2088,7 +2199,10 @@ pub fn run() {
             webdav::dav_head,
             webdav::dav_mkcol,
             webdav::dav_delete,
+            webdav::dav_put_bytes,
+            webdav::dav_get_bytes,
             workspace_delete,
+            search_workspace,
             secret_set,
             secret_get,
             secret_delete

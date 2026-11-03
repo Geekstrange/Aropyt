@@ -47,6 +47,7 @@ export {
   getVersion,
   hashText,
   listVersions,
+  recordRemoteVersion,
   recordVersion,
   type HistorySummary,
   type HistoryVersion,

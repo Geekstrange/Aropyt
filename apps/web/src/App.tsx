@@ -34,6 +34,7 @@ import { DebugPanel } from './components/DebugPanel';
 import { ViewColumn } from './components/ViewHost.js';
 import { SettingsDialog } from './components/SettingsDialog.js';
 import { HistoryDialog } from './components/HistoryDialog.js';
+import { SearchDialog } from './components/SearchDialog.js';
 import { trace } from './debug/timeline';
 import { workspaceAccent } from './lib/workspace-color';
 import { countStats, languageLabelOf } from '@aropyt/core';
@@ -56,6 +57,7 @@ export function App(): JSX.Element {
   const [paletteOpen, setPaletteOpen] = useState(false);
   const [debugOpen, setDebugOpen] = useState(false);
   const [historyOpen, setHistoryOpen] = useState(false);
+  const [searchOpen, setSearchOpen] = useState(false);
 
   /*
    * 侧栏开关**不在组件里存 state**：真源是 settings.jsonc 的
@@ -91,6 +93,26 @@ export function App(): JSX.Element {
        * **必须在 capture handler 最前** —— 后面各分支都会 stopPropagation，
        * 冒泡 handler（下面的 onKeyDown）永远收不到。
        */
+      /*
+       * Ctrl+Alt+F：全工作区搜索。
+       *
+       * **不用 Ctrl+Shift+F**：那是 CodeMirror 自己的"查找"变体，
+       * 它的 keymap 也注册在 capture 阶段，实测两个面板会同时弹出来。
+       * 加一个 Alt 就能避开这条既有绑定，代价是没那么"标准"——
+       * 但一个能用的快捷键好过一个会打架的。
+       */
+      if (
+        event.code === 'KeyF' &&
+        (event.ctrlKey || event.metaKey) &&
+        event.altKey &&
+        !event.shiftKey
+      ) {
+        event.preventDefault();
+        event.stopPropagation();
+        setSearchOpen(true);
+        return;
+      }
+
       if (event.code === 'KeyB' && (event.ctrlKey || event.metaKey) && event.shiftKey && !event.altKey && runtime) {
         event.preventDefault();
         event.stopPropagation();
@@ -389,6 +411,10 @@ export function App(): JSX.Element {
         />
       )}
 
+      {searchOpen && runtime ? (
+        <SearchDialog runtime={runtime} onClose={() => setSearchOpen(false)} />
+      ) : null}
+
 
       {paletteOpen && runtime && (
         <CommandPalette runtime={runtime} onClose={() => setPaletteOpen(false)} />
@@ -615,7 +641,7 @@ function Toolbar({ runtime, onOpenSettings, onOpenHistory, onOpenPlugins }: Tool
        * 那些只读信息不同类。实现直接调 `runtime.syncNow()` —— 插件拿不到
        * runtime，因此这一颗按钮和导出不同，没法由插件贡献。
        *
-       * 图标随状态换（sync / syncUp / syncDown），`running` 时转圈并禁用：
+       * 图标恒定 `sync`；`running` 期间禁用（防止连点），
        * 一次往返在 WAN 上要几秒，没有过程反馈用户会以为没点上、连点几次。
        * `conflict` / `error` 只染色不加新图标 —— 工具栏宽度比状态栏还紧张。
        */}
@@ -644,20 +670,17 @@ function Toolbar({ runtime, onOpenSettings, onOpenHistory, onOpenPlugins }: Tool
                   : t('status.syncIdle');
 
         /*
-         * 方向图标**只在运行期间**用：syncUp / syncDown 是"正在进行"的
-         * 记号，任务结束后一律回到 sync。
+         * 图标恒定 `sync`，**不随运行状态变**。
          *
-         * 跑完还停在箭头上会让人以为没跑完 —— 上一版就是这样（实测报障：
-         * "上传完成后图标未回到默认状态"）。
+         * 这里原来会在运行期间换成 syncUp / syncDown，但同步常常在几十
+         * 毫秒内结束，浏览器来不及画一帧 —— 实测"图标没变过"。而那个
+         * 方向信息本来也没有决策价值：自动同步是后台行为，用户不在等它，
+         * 看到"这次在拉"也改变不了什么。
+         *
+         * "正在工作"的反馈交给状态点（变蓝）和 title。按钮应该表达
+         * **它能做什么**，而不是它此刻正在做什么。
          */
-        const icon =
-          status === 'running'
-            ? state.sync.direction === 'up'
-              ? 'syncUp'
-              : state.sync.direction === 'down'
-                ? 'syncDown'
-                : 'sync'
-            : 'sync';
+        const icon: 'sync' = 'sync';
 
         /*
          * 颜色只表达一件事：**这一颗还不能用**。已配置但还没跑过时压暗
@@ -671,7 +694,18 @@ function Toolbar({ runtime, onOpenSettings, onOpenHistory, onOpenPlugins }: Tool
           <button
             type="button"
             className={`tool-button tool-button--sync${tone}`}
-            title={state.sync.message ? `${label} · ${state.sync.message}` : label}
+            title={(() => {
+              /*
+               * 自动同步是静默的，"上次什么时候跑的"是用户判断"是不是
+               * 卡住了"的唯一线索 —— 放在 title 里，不占界面。
+               */
+              const parts = [label];
+              if (state.sync.lastAt) {
+                parts.push(new Date(state.sync.lastAt).toLocaleTimeString());
+              }
+              if (state.sync.message) parts.push(state.sync.message);
+              return parts.join(' · ');
+            })()}
             aria-label={label}
             onClick={() => void runtime.syncNow()}
             disabled={status === 'running'}
