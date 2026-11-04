@@ -246,6 +246,32 @@ release.
 
 ### Added
 
+- **A recovery banner could overwrite a different file**: the warning stays on
+  screen after you open something else, and its "use disk version" action
+  called `editor.replaceDocument` unconditionally — which writes into whatever
+  the editor currently shows. Opening B while A's banner was up and clicking
+  the action put A's disk content into B's buffer; the display looked wrong
+  but harmless, and one save made it permanent. The action now re-opens its
+  own file first, so it can only act on the file it is about.
+- **Delete and rename from the file tree**: right-click any row for a menu
+  with both actions.
+  Delete asks first — `fs::remove_file` does not reach the recycle bin, so
+  there is no undo. Directories are removed only when empty; a recursive
+  delete of a whole subtree is not something a right-click should be able to
+  do by accident, so a non-empty directory reports the server's own error
+  ("directory not empty") instead of silently taking the children with it.
+  Rename happens **inline**: the row turns into an input with the base name
+  selected, extension left alone since that is almost never what changes.
+  Enter commits, Escape cancels, and blur commits too — losing the edit
+  because you clicked elsewhere is worse than committing a typo you can fix.
+  Rename goes through `workspace_rename` → `fs::rename`, not
+  read-write-delete: the latter loses the modification time and can leave the
+  file under neither name if it fails halfway. The new name may not contain a
+  path separator — moving is a different action, and allowing it here would
+  route around the path-traversal check, which is applied to the *source*.
+  Deleting also closes any open tab pointing at that path and emits a
+  workspace change; a tab left pointing at a removed file would recreate it
+  on the next save.
 - **All six heading levels, in one button**: H4–H6 were missing entirely, and
   adding three more buttons would have made the heading group 160 px wide —
   half the toolbar for something used occasionally. The six levels now share a
