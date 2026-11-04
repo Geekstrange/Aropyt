@@ -178,6 +178,40 @@ impl Workspace {
         Ok(resolved)
     }
 
+    /// 重命名同目录下的一个条目。
+    ///
+    /// 只允许改名、不允许移动：新名字里带分隔符等于允许 `a/b.md` 变成
+    /// `../x.md`，而 `resolve` 的越界检查是对**源路径**做的，目标路径
+    /// 一旦能自由构造就绕过去了。要移动请走"新建 + 删除"。
+    ///
+    /// 走 `fs::rename` 而不是"读出来再写回去"：后者会丢修改时间，并且在
+    /// 两次操作之间失败时，文件会处于两个名字都不完整的状态。
+    fn rename(&self, relative: &str, new_name: &str) -> Result<(), String> {
+        let trimmed = new_name.trim();
+        if trimmed.is_empty() {
+            return Err("名称不能为空".to_string());
+        }
+        if trimmed.contains(['/', '\\']) || trimmed == "." || trimmed == ".." {
+            return Err(format!("非法的名称：{new_name}"));
+        }
+
+        let from = self.resolve(relative)?;
+        let parent = from
+            .parent()
+            .ok_or_else(|| format!("无法确定 {relative} 的父目录"))?;
+        let to = parent.join(trimmed);
+
+        if to == from {
+            return Ok(());
+        }
+        /* 覆盖会无声丢掉另一个文件，而重命名的意图从来不是覆盖 */
+        if to.exists() {
+            return Err(format!("{trimmed} 已存在"));
+        }
+
+        fs::rename(&from, &to).map_err(|error| format!("重命名失败：{error}"))
+    }
+
     /// 删除一个文件或**空**目录。
     ///
     /// 走 `resolve` 的同一套越界检查。目录刻意用 `remove_dir` 而不是
@@ -623,6 +657,28 @@ fn workspace_delete(state: State<'_, WorkspaceState>, args: DeleteArgs) -> Resul
     let result = state.with(&args.root_id, |ws| ws.delete(&args.path));
     if let Err(error) = &result {
         log_line(&format!("workspace_delete 失败：{error}"));
+    }
+    result
+}
+
+#[derive(Debug, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct RenameArgs {
+    pub root_id: String,
+    pub path: String,
+    pub new_name: String,
+}
+
+/// 重命名工作区里的一个文件或目录。
+#[tauri::command]
+fn workspace_rename(state: State<'_, WorkspaceState>, args: RenameArgs) -> Result<(), String> {
+    log_line(&format!(
+        "workspace_rename root={:?} path={:?} newName={:?}",
+        args.root_id, args.path, args.new_name
+    ));
+    let result = state.with(&args.root_id, |ws| ws.rename(&args.path, &args.new_name));
+    if let Err(error) = &result {
+        log_line(&format!("workspace_rename 失败：{error}"));
     }
     result
 }
@@ -2194,6 +2250,7 @@ pub fn run() {
             webdav::dav_put_bytes,
             webdav::dav_get_bytes,
             workspace_delete,
+            workspace_rename,
             search_workspace,
             secret_set,
             secret_get,
