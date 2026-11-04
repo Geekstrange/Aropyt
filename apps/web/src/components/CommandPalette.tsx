@@ -2,6 +2,7 @@ import { useEffect, useMemo, useRef, useState } from 'react';
 import { categoryTitle, commandTitle } from '../i18n';
 import { useT } from '../i18n/useT';
 import type { AropytRuntime } from '../runtime';
+import { Backdrop } from './Backdrop.js';
 
 /**
  * 命令面板（v0.1.0）。
@@ -57,7 +58,7 @@ export function CommandPalette({ runtime, onClose }: CommandPaletteProps) {
   };
 
   return (
-    <div className="settings-backdrop" role="presentation" onClick={onClose}>
+    <Backdrop onClose={onClose}>
       <div
         className="settings-dialog palette"
         role="dialog"
@@ -117,6 +118,6 @@ export function CommandPalette({ runtime, onClose }: CommandPaletteProps) {
           ))}
         </ul>
       </div>
-    </div>
+    </Backdrop>
   );
 }

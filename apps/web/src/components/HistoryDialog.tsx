@@ -13,6 +13,7 @@ import { useT } from '../i18n/useT';
 import type { HistorySummary } from '@aropyt/core';
 import type { AropytRuntime } from '../runtime.js';
 import { DiffView } from './DiffView.js';
+import { Backdrop } from './Backdrop.js';
 
 interface HistoryDialogProps {
   readonly runtime: AropytRuntime;
@@ -31,8 +32,17 @@ export function HistoryDialog({ runtime, path, onClose }: HistoryDialogProps): J
   const [versions, setVersions] = useState<HistorySummary[]>([]);
   const [label, setLabel] = useState('');
   const [busy, setBusy] = useState(false);
-  /** 当前正在对比的版本（null = 显示列表）。 */
-  const [diff, setDiff] = useState<{ readonly id: string; readonly before: string } | null>(null);
+  /**
+   * 当前正在对比的版本（null = 显示列表）。
+   *
+   * `after` 缺省时对比的是「历史版本 → 编辑器当前内容」；给了值就是
+   * 「上一版 → 这一版」—— 同一个 `DiffView` 两种用法，不必区分布局。
+   */
+  const [diff, setDiff] = useState<{
+    readonly id: string;
+    readonly before: string;
+    readonly after?: string;
+  } | null>(null);
 
   const refresh = useCallback(async () => {
     const list = await runtime.listHistory(path);
@@ -51,6 +61,30 @@ export function HistoryDialog({ runtime, path, onClose }: HistoryDialogProps): J
       return;
     }
     setDiff({ id, before });
+  };
+
+  /**
+   * 与**上一个版本**对比 —— 回答「这一版改了什么」。
+   *
+   * 「与当前文档对比」回答的是「从我上次保存到现在改了什么」，对翻旧账
+   * 没用：越早的版本，两者差得越远，diff 里全是噪声。
+   *
+   * 列表是新的在前，所以「上一版」是 `index + 1`；最后一条没有上一版。
+   */
+  const handleComparePrevious = async (index: number): Promise<void> => {
+    const current = versions[index];
+    const previous = versions[index + 1];
+    if (!previous) return;
+
+    const [before, after] = await Promise.all([
+      runtime.readHistory(previous.id).catch(() => null),
+      runtime.readHistory(current.id).catch(() => null),
+    ]);
+    if (before === null || after === null) {
+      void runtime.windowService.showMessage(t('history.gone'), { level: 'warning' });
+      return;
+    }
+    setDiff({ id: current.id, before, after });
   };
 
   const handleRestore = async (id: string): Promise<void> => {
@@ -75,7 +109,7 @@ export function HistoryDialog({ runtime, path, onClose }: HistoryDialogProps): J
   };
 
   return (
-    <div className="settings-backdrop" role="presentation" onClick={onClose}>
+    <Backdrop onClose={onClose}>
       <div
         className={diff ? 'settings-dialog history-dialog settings-dialog--wide' : 'settings-dialog history-dialog'}
         role="dialog"
@@ -113,7 +147,7 @@ export function HistoryDialog({ runtime, path, onClose }: HistoryDialogProps): J
           <DiffView
             fileName={t('history.compare', { path })}
             before={diff.before}
-            after={runtime.editor.getText()}
+            after={diff.after ?? runtime.editor.getText()}
             onClose={() => setDiff(null)}
           />
         ) : null}
@@ -147,6 +181,15 @@ export function HistoryDialog({ runtime, path, onClose }: HistoryDialogProps): J
                       disabled={busy}
                       onClick={() => void handleCompare(version.id)}
                     >{t('history.compareTab')}</button>
+                    {/* 最后一条没有上一版，没必要给它一个点了没反应的按钮 */}
+                    {index < versions.length - 1 ? (
+                      <button
+                        type="button"
+                        className="settings-button"
+                        disabled={busy}
+                        onClick={() => void handleComparePrevious(index)}
+                      >{t('history.comparePrev')}</button>
+                    ) : null}
                     <button
                       type="button"
                       className="settings-button"
@@ -160,6 +203,6 @@ export function HistoryDialog({ runtime, path, onClose }: HistoryDialogProps): J
           )}
         </section>
       </div>
-    </div>
+    </Backdrop>
   );
 }

@@ -107,13 +107,9 @@ function activate(context: PluginContext): void {
   /*
    * 任务列表就是一个前缀，直接交给 `toggleLinePrefix`。
    *
-   * 之前这里自己写了一个循环：跳过空行、跳过已存在的任务项、处理一行就
-   * return。三处叠加的结果是"点了没反应"——
-   *   · 空文档/空行被跳过（新开一章就点按钮，什么都不发生）
-   *   · 已经是任务项的行被跳过（再点一次没法取消）
-   *   · 循环里 return，多行选区只改第一行
-   * `toggleLinePrefix` 本身已经处理了"剥掉旧前缀再加新前缀"，
-   * 这里多写一层只会制造例外。
+   * 自己写循环会制造一堆例外：跳过空行（空文档点按钮没反应）、跳过已存在
+   * 的任务项（再点一次取消不掉）、循环里 return（多行选区只改第一行）。
+   * `toggleLinePrefix` 本身已经处理了"剥掉旧前缀再加新前缀"。
    */
   commands.register('aropyt.taskList', () => editor.toggleLinePrefix('- [ ] '));
 

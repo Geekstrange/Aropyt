@@ -83,10 +83,9 @@ export function App(): JSX.Element {
      */
     const onKeyDown = (event: KeyboardEvent): void => {
       /*
-       * 这里曾有一段 `[kd]` 按键诊断日志：每次带修饰键或功能键按下都
-       * console.log 一行。它把方向键、退格、Ctrl+S 全部塞进日志缓冲，
-       * 面板打开时每按一次键就触发一次全量重渲染 —— 一个测卡顿的面板
-       * 不该自己制造卡顿。已删除；需要按键轨迹时用操作轨迹（timeline）。
+       * 不要在按键处理器里写诊断日志：把方向键、退格、Ctrl+S 全塞进日志
+       * 缓冲，面板打开时每按一次键就触发一次全量重渲染 —— 一个测卡顿的
+       * 面板不该自己制造卡顿。需要按键轨迹时用操作轨迹（timeline）。
        */
       /*
        * Ctrl+Shift+B：侧栏开合 + 焦点。
@@ -96,10 +95,14 @@ export function App(): JSX.Element {
       /*
        * Ctrl+Alt+F：全工作区搜索。
        *
-       * **不用 Ctrl+Shift+F**：那是 CodeMirror 自己的"查找"变体，
-       * 它的 keymap 也注册在 capture 阶段，实测两个面板会同时弹出来。
-       * 加一个 Alt 就能避开这条既有绑定，代价是没那么"标准"——
-       * 但一个能用的快捷键好过一个会打架的。
+       * **不用 `Ctrl+Shift+F`**：CodeMirror 的搜索面板也监听 `Mod-f` 系，
+       * 两边的 keymap 各走一条 capture 路径（一个在 `window`，一个在
+       * `.cm-editor`），`stopPropagation` 与 `stopImmediatePropagation`
+       * 都只能作用于同一个节点，实测两个面板会同时弹出来。
+       *
+       * 换掉 CM6 面板自己写一个是可以的，但代价是重新实现正则、大小写、
+       * 全词匹配、高亮装饰、替换（含捕获组）、面板焦点管理 —— 那些都是
+       * 库已经做好的东西。为了一个键位去重写它们，不划算。
        */
       if (
         event.code === 'KeyF' &&
@@ -108,8 +111,9 @@ export function App(): JSX.Element {
         !event.shiftKey
       ) {
         event.preventDefault();
-        event.stopPropagation();
-        setSearchOpen(true);
+        event.stopImmediatePropagation();
+        /* 再按一次关闭：同一个键开、同一个键关 */
+        setSearchOpen((open) => !open);
         return;
       }
 
@@ -278,12 +282,13 @@ export function App(): JSX.Element {
    */
   useEffect(() => {
     /*
-     * **只用捕获阶段一个 handler**（之前是"捕获阶段 stopPropagation + 冒泡
-     * 阶段执行"——stopPropagation 会把事件从传播链上摘掉，冒泡阶段根本
-     * 收不到，于是所有快捷键集体失效，用户实测六项全废）。
+     * **只用捕获阶段一个 handler**，不要"捕获阶段 stopPropagation + 冒泡
+     * 阶段执行"——前者会把事件从传播链上摘掉，冒泡阶段根本收不到，所有
+     * 快捷键集体失效。
      *
-     * 捕获阶段先于 CM6/vim 的键位层（它们监听的是 contentDOM 上的冒泡），
-     * 所以这里 preventDefault + stopPropagation 才能压过 vim 的 Prec.highest。
+     * 捕获阶段先于 CM6/vim 的键位层（它们监听 `contentDOM` 上的冒泡），
+     * 所以这里 `preventDefault` + `stopPropagation` 才能压过 vim 的
+     * `Prec.highest`。
      */
     const onKeyDown = (event: KeyboardEvent): void => {
       if (!runtime) return;
@@ -382,14 +387,11 @@ export function App(): JSX.Element {
           <Icon name={sidebarOpen ? 'sidebarActive' : 'sidebar'} />
         </button>
         {/*
-         * 这里原来还有 logo + "Aropyt" 品牌标记，已删除。
+         * 这里不写品牌名：原生窗口标题栏已经写着，WebView 里再写一遍是
+         * 同一句话；而 `logo.svg` 是 3.2KB 的 path 数据加一条 public 资源，
+         * 为了一个到处都有的名字常驻首屏，不划算。
          *
-         * 理由是**信息量为零**：桌面形态下原生窗口标题栏已经写着软件名，
-         * WebView 里再写一遍是同一句话；移动端则由启动器图标承担识别。
-         * 而logo.svg 是 3.2KB 的path 数据 + 一条 public 资源，
-         * 为了显示一个到处都有的名字而常驻首屏，不划算。
-         *
-         * 侧栏按钮仍在原位：它是**布局开关**，删掉品牌标记不该顺带删掉它。
+         * 侧栏按钮仍在原位：它是**布局开关**，不该跟着品牌标记一起删。
          */}
         {runtime && <Header runtime={runtime} />}
       </header>
@@ -537,14 +539,10 @@ function runCommand(runtime: AropytRuntime, commandId: string): void {
   void runtime.commands.execute(commandId).catch((error: unknown) => {
     console.error(error);
     /*
-     * 提示里必须带上**真实错误信息**，不能只给命令 id。
+     * 提示里必须带上**真实错误信息**，不能只给命令 id——只写哪个命令挂了、
+     * 不写为什么，所有故障看起来都一模一样。
      *
-     * 原来只显示 `命令执行失败：aropyt.file.pickWorkspace` ——
-     * 那条提示把"哪个命令挂了"说清楚了，却把"为什么挂"完全藏起来，
-     * 于是无论什么问题看起来都一模一样。实际那次是
-     * `window.showMessage is not a function`，但光看提示根本无从判断。
-     *
-     * 定位信息（命令 id）放前面是为了多个提示堆叠时仍能扫读。
+     * 定位信息（命令 id）放前面，是为了多个提示堆叠时仍能扫读。
      */
     const detail = error instanceof Error ? error.message : String(error);
     void runtime.windowService.showMessage(
@@ -561,11 +559,11 @@ function Header({ runtime }: { readonly runtime: AropytRuntime }): JSX.Element {
   return (
     <>
       {/*
-       * 工作区名不再显示：标签顶部的色条已经承担"这些文件属于哪个工作区"
-       * 的标识（见 TabBar），再写一遍名字是同一句话。
+       * 不显示工作区名：标签顶部的色条已经承担"这些文件属于哪个工作区"
+       * 的标识（见 TabBar）。
        *
-       * 未保存提示也不再需要：未命名文档现在有标签（Untitled.md），
-       * 脏点由标签自己显示 —— 原来这里是"未命名文档没有标签"时代的遗留。
+       * 也不需要未保存提示：未命名文档现在有标签（`Untitled.md`），
+       * 脏点由标签自己显示。
        */}
       {/*
        * 标签栏占据整个 header 中部，吃掉剩余宽度。
@@ -672,10 +670,9 @@ function Toolbar({ runtime, onOpenSettings, onOpenHistory, onOpenPlugins }: Tool
         /*
          * 图标恒定 `sync`，**不随运行状态变**。
          *
-         * 这里原来会在运行期间换成 syncUp / syncDown，但同步常常在几十
-         * 毫秒内结束，浏览器来不及画一帧 —— 实测"图标没变过"。而那个
-         * 方向信息本来也没有决策价值：自动同步是后台行为，用户不在等它，
-         * 看到"这次在拉"也改变不了什么。
+         * 同步常常在几十毫秒内结束，浏览器来不及画一帧；而方向本身也没有
+         * 决策价值——自动同步是后台行为，用户不在等它，看到"这次在拉"也
+         * 改变不了什么。
          *
          * "正在工作"的反馈交给状态点（变蓝）和 title。按钮应该表达
          * **它能做什么**，而不是它此刻正在做什么。
@@ -684,9 +681,9 @@ function Toolbar({ runtime, onOpenSettings, onOpenHistory, onOpenPlugins }: Tool
 
         /*
          * 颜色只表达一件事：**这一颗还不能用**。已配置但还没跑过时压暗
-         * （与其它禁用按钮同一套观感），其余情况一律跟随工具栏常规色 ——
-         * 用户要求"颜色与其他图标保持一致"，而冲突/失败的细节 title 里
-         * 已经写了，不值得让一颗图标独自变色。
+         * （与其它禁用按钮同一套观感），其余情况一律跟随工具栏常规色——
+         * 图标已经表达了状态，再叠颜色只会和邻居不一致。冲突与失败的
+         * 原因在 title 里。
          */
         const tone = status === 'idle' ? ' is-idle' : '';
 
@@ -790,13 +787,10 @@ function Toolbar({ runtime, onOpenSettings, onOpenHistory, onOpenPlugins }: Tool
       )}
 
       {/*
-       * 预览面板开关**已从工具栏移除**。
+       * 预览面板**不在工具栏里**，由 `Ctrl+Shift+V` 开关（见 runtime）。
        *
-       * 原来的按钮提示写着"打开预览面板（编辑区切到源码模式）"——
-       * 那条耦合本身就是问题的来源：Typora 式的编辑体验是**边写边看渲染**，
-       * 编辑区永远该是渲染态，不该因为旁边多了一栏就被拽成源码。
-       * 面板本身还在，改由 Ctrl+Shift+V 开关（见 runtime），
-       * 打开它不会影响编辑区的模式。
+       * 它和"编辑区切到源码模式"是两件不相干的事：边写边看渲染是常态，
+       * 不该因为旁边多了一栏就被拽成源码。
        */}
     </div>
   );
@@ -842,9 +836,9 @@ function StatusBar({ runtime }: { readonly runtime: AropytRuntime }): JSX.Elemen
   const t = useT();
   const state = useRuntimeState(runtime);
   /*
-   * 只统计**加载失败**的插件。用户主动禁用的（state === 'disabled'）
-   * 不是故障 —— 之前两者混在一起，禁用插件后左下角反而出现
-   * "1 个功能模块未能加载"，像是出错了（实测）。
+   * 只统计**加载失败**的插件。用户主动禁用的（`state === 'disabled'`）
+   * 不是故障——混在一起时，禁用插件反而会让左下角提示"1 个功能模块未能
+   * 加载"，看起来像出错了。
    */
   const failedPlugins = state.plugins.filter((record) => record.state === 'failed');
   return (
@@ -902,8 +896,7 @@ function StatusBar({ runtime }: { readonly runtime: AropytRuntime }): JSX.Elemen
         )}
       </button>
       {/*
-       * 语言不再在这里显示：标签上的类型徽标已经说明了格式，
-       * 状态栏再写一遍是同一句话（用户反馈）。
+       * 不显示语言：标签上的类型徽标已经说明了格式。
        */}
       {/*
        * 「插件 4/4」已移除。
@@ -938,12 +931,10 @@ function StatusBar({ runtime }: { readonly runtime: AropytRuntime }): JSX.Elemen
             <span className="status-bar__spacer" />
       {(() => {
         /*
-         * 字数统计统一走 `countStats`（core 里那份）。
+         * 字数统计走 `countStats`（core 那份），不要在这里另写一份正则：
+         * 口径一旦分叉，同一份文档会在不同位置显示两个数字。
          *
-         * 这里原来自己写了一遍正则，而且口径与 core 不同：把"词"只算英文、
-         * "字"只算中文。同一份文档在状态栏和别处（如未来的导出预览）会得到
-         * 两个数字，这种重复迟早分叉。现在统一成 core 的定义：
-         * 词 = 西文词 + 中日文字数，字 = 非空白字符数。
+         * 定义：词 = 西文词 + 中日文字数，字 = 非空白字符数。
          */
         const stats = countStats(runtime.editor.getText());
         return (
@@ -1026,7 +1017,6 @@ function TabBar({ runtime }: { readonly runtime: AropytRuntime }): JSX.Element |
               className="tab__label"
               onMouseDown={(event) => {
                 // 中键按下的默认行为是"自动滚动"（图标+拖动）—— 不拦掉它，
-                // auxclick 永远不会到来（用户实测：中键变成拖拽滚动）
                 if (event.button === 1) event.preventDefault();
               }}
               onAuxClick={(event) => {

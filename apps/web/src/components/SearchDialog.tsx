@@ -15,6 +15,7 @@ import { useCallback, useEffect, useRef, useState, type JSX } from 'react';
 import { useT } from '../i18n/useT';
 import type { AropytRuntime, SearchHit } from '../runtime.js';
 import { Icon } from './Icons.js';
+import { Backdrop } from './Backdrop.js';
 
 interface SearchDialogProps {
   readonly runtime: AropytRuntime;
@@ -78,7 +79,7 @@ export function SearchDialog({ runtime, onClose }: SearchDialogProps): JSX.Eleme
   }, [onClose]);
 
   return (
-    <div className="settings-backdrop" role="presentation" onClick={onClose}>
+    <Backdrop onClose={onClose}>
       <div
         className="settings-dialog settings-dialog--wide"
         role="dialog"
@@ -99,7 +100,7 @@ export function SearchDialog({ runtime, onClose }: SearchDialogProps): JSX.Eleme
 
         <section className="settings-section">
           <input
-            className="settings-input"
+            className="settings-input search-input"
             type="search"
             autoFocus
             spellCheck={false}
@@ -136,6 +137,6 @@ export function SearchDialog({ runtime, onClose }: SearchDialogProps): JSX.Eleme
           ) : null}
         </section>
       </div>
-    </div>
+    </Backdrop>
   );
 }

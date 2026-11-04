@@ -206,9 +206,8 @@ export function createRemoteDav(invoke: Invoke, auth: DavAuth): RemoteDav {
          * 空路径 = 工作区自己的那棵子树。`auth.url` 已经拼过子树路径，
          * 所以 MKCOL 的是它本身，不会碰到服务根。
          *
-         * 这一层原来没人建：`writeRemote` 只在父目录非空时调 `ensureDir`，
-         * 而"文件直接放在工作区根下"正是空父目录 —— 首次同步的 PROPFIND
-         * 因此永远是 404，PUT 也全被 409 拒掉。
+         * 这一层必须建：`writeRemote` 的父目录为空正是这种情况，漏了它
+         * 首次同步的 PROPFIND 永远 404、PUT 全被 409 拒掉。
          */
         await invoke('dav_mkcol', { auth, path: '' }).catch(() => undefined);
         return;

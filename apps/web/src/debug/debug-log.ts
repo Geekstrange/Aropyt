@@ -3,7 +3,7 @@
  *
  * 目标：让用户能交出一份**维护者能据此定位问题**的 issue 报告。
  *
- * 三条硬规则（都是被真实 issue 教出来的）：
+ * 三条硬规则：
  *   1. **启动即采集，永不卸载**。日志和错误必须覆盖"面板打开之前"
  *      发生的事 —— 用户打开面板的动机恰恰是"刚才出了问题"。
  *   2. **错误不被普通日志挤掉**。500 条环形缓冲对 info/log 公平、
@@ -210,12 +210,11 @@ function schedulePersist(): void {
   /*
    * 延迟 0ms，不是 500ms。
    *
-   * 崩溃场景恰恰是"错误发生后立刻挂"：致命错误 → 白屏 / 进程被杀，
-   * 留给我们落盘的窗口只有几十毫秒。原来用 500ms 合并高频错误，
-   * 等于把最需要留住的最后一条丢在内存里。
+   * 崩溃恰恰是"错误发生后立刻挂"：致命错误 → 白屏 / 进程被杀，留给我们
+   * 落盘的窗口只有几十毫秒。debounce 等于把最需要留住的最后一条丢在内存里。
    *
-   * 合并的需求已经由 append 层的"同一条错误累加计数"解决，
-   * 这里再 debounce 只会牺牲可靠性换一个并不存在的性能问题。
+   * 合并的需求已经由 append 层的"同一条错误累加计数"解决，这里再 debounce
+   * 只会牺牲可靠性换一个并不存在的性能问题。
    */
   persistTimer = setTimeout(() => {
     persistTimer = null;
@@ -316,9 +315,9 @@ export function installDebugLog(): void {
 
   windowErrorHandler = (event: ErrorEvent): void => {
     /*
-     * 资源加载失败（img/script/link）也在 window 的 error 事件里，
+     * 资源加载失败（img / script / link）也在 window 的 error 事件里，
      * 但它不冒泡、没有 message，只有 target —— 必须靠捕获阶段 + target
-     * 才能记下来。之前这类错误是完全静默的。
+     * 才能记下来，否则这类错误完全静默。
      */
     const target = event.target;
     if (target && target !== (window as unknown as EventTarget) && !event.message) {

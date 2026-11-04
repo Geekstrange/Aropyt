@@ -16,8 +16,7 @@ import { Compartment } from '@codemirror/state';
 import { t } from './i18n';
 import { createSyncBackend } from './sync/host';
 import { createRemoteDav, joinBaseUrl, type DavAuth } from './sync/dav';
-import { runSync } from './sync/runner';
-import { summarize } from './sync/engine';
+import { runSync, summarize } from '@aropyt/core';
 
 import {
   describeLimitations,
@@ -448,9 +447,8 @@ function isAbsolutePath(path: string): boolean {
  *   1. 上次是真崩了（进程被杀、断电）—— 草稿是崩溃现场唯一的副本
  *   2. 上次是用户正常关掉的，但当时有没保存的修改
  *
- * 两种情况都该恢复内容，**但措辞必须不同**。用户明明是正常关掉应用，
- * 重开却被告知"已从崩溃恢复日志中还原" —— 他会以为文件坏了，
- * 而这正是之前报上来的现象。
+ * 两种情况都该恢复内容，**但措辞必须不同**：用户明明是正常关掉应用，
+ * 重开却被告知"已从崩溃恢复日志中还原"，他会以为文件坏了。
  *
  * 机制：`dispose()` 时写下标记，启动时**读走并立即删掉**（消费掉）。
  * 被强杀时 `dispose` 不会执行，标记自然不存在 → 判定为崩溃。
@@ -842,11 +840,11 @@ export function createRuntime(options: RuntimeOptions): AropytRuntime {
       if (loadingDocument) return;
       state.dirty = true;
       /*
-       * 注意：这里**不要**动 state.tabs —— 曾经为了同步 tab.dirty 加过
-       * tabs.map，结果打坏了崩溃恢复链路（check:crash 实测：
-       * "未保存的修改没有被恢复"）。
-       * closeTab 的未保存确认改用全局 state.dirty 兜底（激活标签场景
-       * 覆盖绝大多数情况），不需要维护 tab.dirty 的实时同步。
+       * 这里**不要**动 `state.tabs`。
+       *
+       * 在 `tabs.map` 里同步 `tab.dirty` 会打坏崩溃恢复链路（未保存的修改
+       * 不再被恢复）。未保存确认走全局 `state.dirty` 兜底即可，不需要维护
+       * 每个标签的实时脏标记。
        */
       /*
        * **编辑使预览标签转正**（斜体消失）。
@@ -916,9 +914,8 @@ export function createRuntime(options: RuntimeOptions): AropytRuntime {
     onViolation: (violation) => {
       state.budgetViolations += 1;
       /*
-       * 留最近 20 条明细。原来只留 5 条，理由是"状态栏要能说清是哪一次"，
-       * 但状态栏现在不显示它 —— 真正的消费者是 DEBUG 报告。用户跑了半小时
-       * 才来报"越来越卡"，5 条早就被后面的记录顶掉了。
+       * 留最近 20 条明细。消费者是 DEBUG 报告而不是状态栏 —— 用户跑了
+       * 半小时才来报"越来越卡"，5 条早被后面的记录顶掉了。
        */
       state.budgetDetails.push(violation);
       if (state.budgetDetails.length > 20) state.budgetDetails.shift();
@@ -1110,7 +1107,6 @@ export function createRuntime(options: RuntimeOptions): AropytRuntime {
        * 取反 **实际生效** 的 sourceMode，不是 preferredSourceMode。
        * vim 强制源码期间 preferred 一直停在 false（用户没主动切过），
        * 用它取反永远是"设成 true" —— 已经是源码态时点了没反应，
-       * 表现为"关闭源码模式关不掉，要开关一次 vim 才行"（用户实测）。
        */
       editor.setSourceMode(!editor.sourceMode);
       notify();
@@ -1124,9 +1120,8 @@ export function createRuntime(options: RuntimeOptions): AropytRuntime {
       window.removeEventListener('pagehide', markCleanExit);
       markCleanExit();
       /*
-       * 让插件收到 deactivate —— 之前只停宿主资源，插件的 deactivate()
-       * 从未被调用（文档承诺了"退出或禁用时调用"）。
-       * 同步路径上用 void：卸载时不能等异步，但要尽力发出。
+       * 让插件收到 `deactivate`（文档承诺"退出或禁用时调用"）。
+       * 同步路径上用 `void`：卸载时不能等异步，但要尽力发出。
        */
       for (const record of host.records) {
         if (record.state === 'active') void host.deactivate(record.manifest.id);
@@ -1142,15 +1137,11 @@ export function createRuntime(options: RuntimeOptions): AropytRuntime {
 
   async function pickWorkspace(): Promise<Workspace | null> {
     /*
-     * 必须用 preferredProvider()，不能像原来那样写死 fsa / opfs。
+     * 必须走 `preferredProvider()`，**不要在这里判断可用性**。
      *
-     * 原来这里是 `fsaProvider.isAvailable() ? fsaProvider : opfsProvider...`，
-     * 结果是**发出去的 Tauri 应用从来不用原生适配器** —— 它在 WebView 里
-     * 试着调浏览器的 showDirectoryPicker。优先级列表（tauri → fsa → opfs）
-     * 早就定义在能力层里了，运行时却没走它。
-     *
-     * 这类"能力层建好了但没接线"的问题不会报错，只会在真机上表现为
-     * 一个莫名其妙的浏览器 API 异常。
+     * 优先级列表（tauri → fsa → opfs）定义在能力层，绕过它意味着 Tauri 版
+     * 会去调浏览器的 `showDirectoryPicker`——不报错，只在真机上表现为一个
+     * 莫名其妙的 API 异常。
      */
     const provider = preferredProvider();
     if (!provider) {
@@ -1165,9 +1156,9 @@ export function createRuntime(options: RuntimeOptions): AropytRuntime {
     if (!workspace) return null;
 
     /*
-     * **追加，不顶替**：旧工作区的标签留在标签栏里（带自己的颜色），
-     * 点它就会切回去。原来这里直接覆盖 state.workspace，旧标签随即
-     * 变成"没有根的孤儿"—— 再保存时写进的是新项目。
+     * **追加，不顶替**：旧工作区的标签留在标签栏里，点它就能切回去。
+     * 覆盖 `state.workspace` 会让旧标签变成"没有根的孤儿"——再保存时
+     * 写进的是新项目。
      */
     syncActiveTabBuffer();
     state.workspaces = [...state.workspaces.filter((item) => item.id !== workspace.id), workspace];
@@ -1184,16 +1175,12 @@ export function createRuntime(options: RuntimeOptions): AropytRuntime {
     state.dirty = false;
 
     /*
-     * 先宣布状态变化，再落配置 —— 顺序很重要。
+     * 先宣布状态变化，再落配置 —— **顺序不能反**。
      *
-     * 原来这两次 `await configuration.update(...)` 排在 `emitWorkspaceChange()`
-     * **之前**。配置写入只是记账（把上次工作区记下来供下次启动恢复），
-     * 而"工作区变了"是用户立刻要看到的结果。让记账挡在结果前面，
-     * 就有了一条很脆的因果链：配置写入一旦变慢或卡住（IndexedDB 在某些
-     * WebView 里并不总是可靠），文件树就永远不刷新 —— 而且不报错，
-     * 用户看到的是"选了文件夹，左边一片空白"。
-     *
-     * 现在改成：状态先落、事件先发，配置随后异步写、失败也不影响使用。
+     * 配置写入只是记账（记住上次工作区，供下次启动恢复），而"工作区变了"
+     * 是用户立刻要看到的结果。让记账挡在结果前面，配置一旦变慢或卡住
+     * （IndexedDB 在某些 WebView 里并不可靠），文件树就永远不刷新，且
+     * 不报错——用户看到的是"选了文件夹，左边一片空白"。
      */
     emitWorkspaceChange();
     notify();
@@ -1376,15 +1363,10 @@ export function createRuntime(options: RuntimeOptions): AropytRuntime {
     /*
      * 崩溃恢复：只有草稿**确实比磁盘上的文件新**才用它。
      *
-     * 这段的判断原来只写了 `draft.text !== content`，而上面那行注释
-     * 说的"如果草稿比磁盘上的内容新"根本没有落实 —— 于是任何一份
-     * 残留草稿（哪怕比文件还旧）都会覆盖磁盘内容。用户看到的是
-     * "提示恢复了未保存内容，而文件内容货不对板"。
-     *
      * `at` 与 `stat.mtime` 都是毫秒（Rust 侧用 `as_millis()`），可直接比。
      *
-     * stat 失败时**不恢复**：宁可这次少救一份草稿，也不能拿一份来历
-     * 不明的文本去覆盖磁盘 —— 前者是可恢复的遗憾，后者是数据损坏。
+     * stat 失败时**不恢复**：宁可少救一份草稿，也不能拿一份来历不明的
+     * 文本去覆盖磁盘——前者是可恢复的遗憾，后者是数据损坏。
      */
     const draftKey = storageKey(state.activeWorkspaceId, path);
     let draft = await idbGet<DraftRecord>(STORE.drafts, draftKey).catch(() => undefined);
@@ -1410,7 +1392,6 @@ export function createRuntime(options: RuntimeOptions): AropytRuntime {
          * 措辞按"上次是怎么结束的"分流。
          *
          * 内容该恢复就恢复（它确实是用户的心血），但**不能对正常关闭的
-         * 用户说"崩溃恢复"** —— 他会以为文件坏了、以为是软件出了问题，
          * 而实际上只是上次关掉时没保存。
          *
          * 带上**这份草稿是什么时候写的**，用户一看就知道它是不是
@@ -1418,11 +1399,9 @@ export function createRuntime(options: RuntimeOptions): AropytRuntime {
          * 此前这份内容只能靠"保存"来覆盖，而用户恰恰不想要它。
          */
         /*
-         * 状态栏黄点：绑定**恢复的这份文件**（recoveredPath）——
-         * 上一版用全局布尔，打开别的文件也黄、且永不复位（实测打回）。
-         * 现在：黄点只在"当前激活的文件就是恢复来源"时亮；
-         * 打开别的文件自然不亮，切回来仍亮（它还是未保存的恢复内容），
-         * 保存成功后清掉。
+         * 状态栏黄点绑定**恢复的这份文件**（`recoveredPath`），不是全局布尔：
+         * 只在"当前激活的文件就是恢复来源"时亮，打开别的文件自然不亮，
+         * 切回来仍亮（内容仍未保存），保存成功后清掉。
          */
         state.recoveredPath = path;
         state.recoveredWorkspaceId = state.activeWorkspaceId;
@@ -1476,11 +1455,9 @@ export function createRuntime(options: RuntimeOptions): AropytRuntime {
     /*
      * 顺序很关键：**先把 activePath 指到新文件，再换文档**。
      *
-     * `replaceDocument` 会触发 `onDocChange`（虽然现在被 loadingDocument
-     * 挡住了，但顺序仍是唯一的正确写法）。曾经这里把 `state.activePath = path`
-     * 放在 `replaceDocument` 之后，而当时 `onDocChange` 没有挡住装载 ——
-     * 于是"打开 B"写出来的草稿挂在 A 的路径下（activePath 还是 A），
-     * 下次打开 A 就会拿 B 的内容覆盖它。
+     * `replaceDocument` 会触发 `onDocChange`（现在被 `loadingDocument`
+     * 挡住了，但顺序仍是唯一正确的写法）：反过来的话，草稿会挂在旧路径下，
+     * 下次打开那个文件就拿新内容覆盖它。
      */
     state.activePath = path;
     editor.setActiveFile(path, guessLanguage(path));
@@ -1688,13 +1665,9 @@ export function createRuntime(options: RuntimeOptions): AropytRuntime {
     /*
      * 是否关的是**当前激活**的标签 —— 必须走 `isActiveTab`。
      *
-     * 这里原来自己写了一遍严格比较（`activePath === path &&
-     * activeWorkspaceId === workspaceId`），对**外部文件**永远为假：
-     * 单独打开的文件 `workspaceId` 是 `null`，而 `activeWorkspaceId`
-     * 仍指向某个项目（文件树要显示它）。
-     *
-     * 后果：关掉它时走"不是激活标签"的分支，只 `notify()` 就返回 ——
-     * 标签没了，编辑区里的内容还在（用户实测报障）。
+     * 自己写 `activePath === path && activeWorkspaceId === workspaceId`
+     * 会漏掉外部文件：它的 `workspaceId` 是 `null`，而 `activeWorkspaceId`
+     * 仍指向某个项目（文件树要显示它），严格比较永远为假。
      */
     const closingActive = isActiveTab(closing);
     // 关掉当前标签之前先把它缓冲区的修改存回来 ——
@@ -1746,7 +1719,6 @@ export function createRuntime(options: RuntimeOptions): AropytRuntime {
    *
    * **每次点击都开一个新的** —— 与浏览器 / VSCode 一致：连开三个草稿
    * 是真实诉求（"这段先放一边，开个新的记另一件事"），把第二次点击
-   * 变成"激活已有的"是上一版的设计错误（用户实测后打回）。
    *
    * 路径用 `__untitled__-N` 递增序号（tabs 按 path 索引，重复会互相顶替）；
    * 与草稿键 DRAFT_KEY 同前缀，未命名文档的保存/草稿机制天然兼容。
@@ -1822,10 +1794,10 @@ export function createRuntime(options: RuntimeOptions): AropytRuntime {
   /*
  * 外部插件存储键（模块作用域）。
  *
- * 原来是 createRuntime 函数体内的 const —— 启动 IIFE 在函数同步体早期
- * 就被调用，而 const 初始化在函数体后段：闭包一访问就是 TDZ
- * ReferenceError；再叠加启动早期 showMessage 不可用，错误彻底隐身，
- * 症状是"插件列表空白、没有任何提示"（实测两轮）。
+ * **必须放在模块作用域**，不能是 `createRuntime` 函数体内的 `const`：
+ * 启动 IIFE 在函数同步体早期就被调用，而 `const` 初始化在函数体后段，
+ * 闭包一访问就是 TDZ ReferenceError；再叠加启动早期 `showMessage` 不可用，
+ * 错误彻底隐身。
  */
 const EXTERNAL_PLUGINS_KEY = 'aropyt.externalPlugins';
 
@@ -1838,7 +1810,7 @@ interface StoredExternalPlugin {
     try {
       return (await idbGet<StoredExternalPlugin[]>(STORE.kv, EXTERNAL_PLUGINS_KEY)) ?? [];
     } catch (error) {
-      /* 读不到要能看见 —— 之前的 catch(() => undefined) 把错误变成了"没有插件" */
+      /* 读不到要能看见 —— `catch(() => undefined)` 会把错误静默变成"没有插件" */
       console.error('[plugins] 读取外部插件存储失败', error);
       return [];
     }
@@ -1859,10 +1831,9 @@ interface StoredExternalPlugin {
           if (typeof mod.activate !== 'function') continue;
           /*
            * ⚠️ 必须是**平铺字段**（manifest / activate / deactivate）——
-           * LoadablePlugin 的接口就是这样定义的。之前写成
-           * `{ manifest, module: { activate } }`，而 host.load() 读的是
-           * `plugin.activate` → 永远是 undefined → 走"假激活"分支：
-           * 面板显示已启用，但一条命令都没注册（实测多轮的根因）。
+           * `LoadablePlugin` 就是这么定义的。嵌套成
+           * `{ manifest, module: { activate } }` 会让 `host.load()` 读到
+           * `undefined`，走"假激活"分支：面板显示已启用，但一条命令都没注册。
            */
           externals.push({
             manifest: row.manifest,
@@ -1887,19 +1858,17 @@ interface StoredExternalPlugin {
        * ⚠️ 必须与内置插件**合并后一次性 load**。
        *
        * `host.load()` 每次都会 `#rebuildContributions(accepted)`，用传入的
-       * 这组插件**重建**整个贡献集。之前是"每个外部插件单独 load 一次"，
-       * 结果最后一个外部插件的贡献把内置插件（explorer / outline / file /
-       * formatting）的贡献全部覆盖掉 —— 工具栏清空、侧栏打不开、
-       * 文件操作只剩保存，重启必复发（v0.0.9 实测事故的直接原因）。
+       * 这组插件**重建**整个贡献集 —— 分开 load 时，最后一个外部插件的贡献
+       * 会把内置插件（explorer / outline / file / formatting）全部覆盖掉：
+       * 工具栏清空、侧栏打不开、文件操作只剩保存，且重启必复发。
        */
       host.load([...(options.plugins ?? builtinPlugins), ...externals]);
 
       /*
-       * 应用用户的禁用名单（settings.jsonc 的 plugins.disabled）。
+       * 应用用户的禁用名单（settings.jsonc 的 `plugins.disabled`）。
        *
-       * 之前禁用只写了配置、从来没人读 —— 面板点"禁用"、重启后照样启用
-       * （实测）。必须在 load 之后、activateFor 之前把名单里那些插件
-       * 主动 disable 掉，否则"已禁用"只是一次性的内存状态。
+       * 必须在 load 之后、activateFor 之前主动 disable 那些插件 ——
+       * 只写配置不读，面板点"禁用"、重启后照样启用。
        */
       const disabledIds = new Set(currentSettings.plugins.disabled);
       for (const plugin of externals) {
@@ -2212,7 +2181,6 @@ function validateContributions(manifest: PluginManifest): void {
     void settingsIo.openExternal().catch((error: unknown) => {
       /*
        * Tauri 的 IPC 错误经常是**字符串**而不是 Error（权限拒绝就是
-       * "opener.open_path not allowed"）。上一版只取 error.message，
        * 于是全都显示成"未知错误"，把排查引向错误方向。
        */
       const detail =
@@ -2501,7 +2469,6 @@ function validateContributions(manifest: PluginManifest): void {
    *
    * **每个工作区必须有自己的一棵子树。** 所有工作区共用一个远端目录时，
    * A 的文件会出现在 B 的远端列表里，B 同步时把它们下载到本地 —— 两个
-   * 项目互相污染，而且**不报任何错**（实测报障：不在同一工作区的文件被
    * 同步到了同一个工作区）。
    *
    * 名字取目录 basename + 路径哈希后缀（`notes-a3f9c1`）：
@@ -2519,13 +2486,11 @@ function validateContributions(manifest: PluginManifest): void {
     /*
      * **只用工区名，不拼哈希。**
      *
-     * 早先加了 `hashText(绝对路径)` 的 6 位后缀，想让两个同名工作区不撞车 ——
-     * 但绝对路径在两台机器上必然不同，于是同一个项目被分到
-     * `test-9wxtej` 和 `test-1uskj7` 两个目录，**互相看不见**，同步永远
-     * 不可能成功（实测日志：两台机器各传一批，谁也拉不到对方的）。
+     * 绝对路径在两台机器上必然不同，拿它做后缀会把同一个项目分到两个
+     * 远端目录——互相看不见，同步永远不可能成功，而且不报错。
      *
-     * 撞名的代价是两个同名项目混进同一个远端目录 —— 能看见、能手动分开；
-     * 而跨机器不一致的代价是同步根本不工作，且不报错。两害相权取前者。
+     * 撞名的代价是两个同名项目混进同一个远端目录：能看见、能手动分开。
+     * 跨机器不一致的代价是同步根本不工作。两害相权取前者。
      */
     return [base, name].filter(Boolean).join('/');
   }
@@ -2772,12 +2737,10 @@ function validateContributions(manifest: PluginManifest): void {
         /*
          * 有文件落到或离开本地时，界面必须跟着变两处：
          *
-         *  1. **文件树**：它持有的是目录快照，不会自己发现新文件。
-         *     少了这一步，用户看到的是"同步说完成了，但树还是空的"，
-         *     只能重启（实测报障）。
-         *  2. **已打开的标签**：`tab.text` 是内存中的副本，磁盘被同步
-         *     覆盖后它仍是旧内容 —— 而保存一次就会把远端更新覆盖回去，
-         *     比树空白更隐蔽。
+         *  1. **文件树**持有目录快照，不会自己发现新文件 —— 少这一步，
+         *     用户看到的是"同步说完成了，但树还是空的"，只能重启。
+         *  2. **已打开的标签**：`tab.text` 是内存副本，磁盘被覆盖后它仍是
+         *     旧内容，保存一次就把远端更新覆盖回去，比树空白更隐蔽。
          */
         const downloaded = result.steps.filter(
           (step) => step.ok && step.action.kind === 'download',
@@ -3029,9 +2992,8 @@ function validateContributions(manifest: PluginManifest): void {
       return;
     }
     /*
-     * 未命名标签（__untitled__-N）没有磁盘身份，必须强制走"另存为"。
-     * 上一版只判了 `!path` —— 加号按钮引入带序号的未命名标签后，
-     * path 非空，保存会直接把 `__untitled__-2` 当文件名写进工作区。
+     * 未命名标签（`__untitled__-N`）没有磁盘身份，必须强制走"另存为"——
+     * 它的 path 非空，不判前缀就会把 `__untitled__-2` 当文件名写进工作区。
      */
     if (path && path.startsWith('__untitled__')) path = null;
 
@@ -3069,13 +3031,8 @@ function validateContributions(manifest: PluginManifest): void {
       /*
        * 直接写那个绝对路径，**不把目标目录变成工作区**。
        *
-       * 早先的做法是 `openNativeFolderAsWorkspace(目录)` + 相对路径写 ——
-       * 因为工作区 API 只接受相对根目录的路径。结果是每保存一个新文档，
-       * 用户的工作区列表里就多出一个目录（实测报障）：她只是想把正在
-       * 写的东西存到某个地方，不该顺手改变她的项目列表。
-       *
-       * "打开单个文件"早就改成这个决策了（不再把父目录变成工作区），
-       * 另存为这一支当时没同步。
+       * 保存一个新文档不该改变用户的项目列表 —— 她只是想把正在写的东西
+       * 存到某个地方。"打开单个文件"也是这个决策，两条路径保持一致。
        *
        * 写完把 `activePath` 设成绝对路径，后续 Ctrl+S 走上面那条
        * `write_external_file` 分支，行为与"文件关联打开"完全一致。
@@ -3267,12 +3224,11 @@ function validateContributions(manifest: PluginManifest): void {
 
   async function regrantWorkspace(): Promise<boolean> {
     /*
-     * 先尝试走完整的恢复流程，再退回 FSA 的重新授权。
+     * 先走完整的恢复流程，再退回 FSA 的重新授权。
      *
-     * 顺序有讲究：FSA 的"重新授权"依赖 IndexedDB 里的目录句柄，
-     * 而原生侧根本没有句柄 —— 它只需要路径，恢复是直接成功的。
-     * 原来直接调 regrantLastWorkspace()，在 Tauri 下必然返回 null，
-     * 于是用户看到"没有可恢复的文件夹"，尽管那个文件夹明明还在。
+     * FSA 的"重新授权"依赖 IndexedDB 里的目录句柄，而原生侧没有句柄——
+     * 它只需要路径。直接调 `regrantLastWorkspace()` 在 Tauri 下必然
+     * 返回 null，用户会看到"没有可恢复的文件夹"，尽管它明明还在。
      */
     const lastId = configuration.get<string | null>('workspace.lastId', null);
     const restored = await restoreWorkspace(lastId);
@@ -3300,25 +3256,19 @@ function validateContributions(manifest: PluginManifest): void {
     /*
      * ⚠️ 配置必须先加载完，再加载插件。
      *
-     * `plugins.disabled`（用户在插件面板里禁用的名单）就在配置里 ——
-     * 之前插件加载跑在 configuration.load() 之前，读到的是默认空名单，
-     * 于是"禁用插件、重启后照样启用"（实测）。
+     * `plugins.disabled` 就在配置里；在 `configuration.load()` 之前读到的
+     * 是默认空名单，"禁用插件、重启后照样启用"。
      */
     await configuration.load();
 
 
     /*
-     * 必须把上次工作区的位置传进去。
+     * 必须把上次工作区的位置传进去：FSA 能自己从 IndexedDB 找回句柄，
+     * 但原生侧只有路径，无参恢复必然返回 none（表现为每次启动都"未打开
+     * 工作区"）。
      *
-     * 原来这里是无参调用 —— FSA 能从 IndexedDB 自己找回目录句柄，所以看着没事；
-     * 但原生侧没有可恢复的"句柄"，只有路径，无参恢复必然返回 none。
-     * 于是 Tauri 下每次启动都是"未打开工作区"。
-     */
-    /*
-     * 逐个恢复上次会话打开的工作区。
-     *
-     * 旧版本只存单个 `workspace.lastId`；roots 为空时退回它 ——
-     * 升级后不该突然"什么都没恢复"。
+     * 逐个恢复上次会话打开的工作区。旧版本只存单个 `workspace.lastId`，
+     * roots 为空时退回它——升级后不该突然"什么都没恢复"。
      */
     const savedRoots = configuration.get<string[]>('workspace.roots', []);
     const legacyId = configuration.get<string | null>('workspace.lastId', null);
@@ -3392,10 +3342,9 @@ function validateContributions(manifest: PluginManifest): void {
     /*
      * 插件加载与激活 —— **必须排在 loadSettings + applySettings 之后**。
      *
-     * 用户在插件面板禁用插件写的是 settings.jsonc 的 plugins.disabled；
-     * `currentSettings` 只有经过 applySettings 才带上真实值。之前这段
-     * 排在 configuration.load() 之后（但仍在 loadSettings 之前），
-     * 读到的 disabled 恒为空 → 禁用永远不生效（实测两轮）。
+     * 禁用名单写在 settings.jsonc 里，而 `currentSettings` 只有经过
+     * `applySettings` 才带真实值；早一步读到的 `disabled` 恒为空，
+     * 禁用永远不生效。
      */
     try {
       await loadExternalPlugins();
@@ -3410,8 +3359,7 @@ function validateContributions(manifest: PluginManifest): void {
 
     /*
      * 插件键位：贡献集就绪后注入编辑器（Compartment 重配）。
-     * 之前 contributes.keybindings 只被收集、没有任何消费方 ——
-     * 声明了不生效（实测清单第 2 项）。
+     * `contributes.keybindings` 如果只收集不消费，声明了也不会生效。
      */
     editor.setPluginKeybindings(host.contributions.keybindings);
 

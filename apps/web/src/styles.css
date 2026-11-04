@@ -2401,6 +2401,59 @@ button {
  * 连成一组），下行是该行内容 —— 用等宽字体，因为用户常常在找代码或
  * 表格里的某个值，比例字体下对齐会散。
  */
+/*
+ * 搜索框要撑满整行。
+ *
+ * `settings-input` 在设置页里是配合左侧标签用的窄尺寸（约 180px），
+ * 单独放在搜索面板里会缩成一条 —— 而搜索框的宽度就是可读性。
+ */
+/*
+ * 搜索框：尺寸与底色逐条对齐 `Ctrl+F` 的搜索栏（`theme.ts` 里的
+ * `& .cm-panel.cm-search input`）。
+ *
+ * 只覆盖差异项 —— `settings-input` 已经有 `border: 1px solid
+ * var(--md-border)`、`border-radius: 0`、`outline: none`，那些都是一致的。
+ * 不一致的是这三条：设置页的输入框 12px 字、`surface-0` 底、4px 上内边距，
+ * 放在搜索面板里显得比旁边的按钮"轻"一档。
+ */
+.search-input {
+  width: 100%;
+  box-sizing: border-box;
+  padding: 3px 8px;
+  font-size: 13px;
+  background: var(--md-surface-1);
+}
+
+/*
+ * 焦点环用品牌绿，不是 `--md-accent`。
+ *
+ * `.settings-input:focus` 用的是 accent（蓝），那是设置页的既有选择；搜索
+ * 面板是主界面的一部分，焦点色应该和工具栏、状态点同属一套 —— 同一个界面
+ * 里出现两种「当前焦点」的颜色，只会让人以为它们代表不同的东西。
+ *
+ * 用 `:focus-visible` 而不是 `:focus`：鼠标点进输入框时不该亮一圈，只有
+ * 键盘（`Ctrl+Alt+F` 打开）才需要。
+ */
+/*
+ * 焦点边框：**与 Ctrl+F 的搜索栏完全一致**。
+ *
+ * 用 `--md-link` 而不是写死一个绿 —— 那个变量在两套主题下不同：
+ *   深色 `#5dcaa5`（青绿）· 浅色 `#4aa63d`（深绿）
+ * 写死色值意味着深色模式下会变成一块亮斑，而且和同屏的 Ctrl+F 面板
+ * 对不上（用户截图对比过）。
+ *
+ * 不加 `box-shadow`：CM6 的搜索栏只有一根 1px 边框，这里多一圈光晕就
+ * 成了两种视觉重量。
+ *
+ * ⚠️ 选择器必须是三个类级（`.settings-input.search-input:focus`）：
+ * 与 `.settings-input:focus` 特异性相同时实测后者仍然赢，三个类级不依赖
+ * 书写顺序。
+ */
+.settings-input.search-input:focus,
+.settings-input.search-input:focus-visible {
+  border-color: var(--md-link);
+}
+
 .search-hit {
   display: flex;
   flex-direction: column;

@@ -198,12 +198,11 @@ function activate(context: PluginContext): void {
               /*
                * 整行点击 = **跳到那个标题**。
                *
-               * 这里原来写的是"有子节点就折叠、没有才跳转"，结果是
-               * 只要标题带下级（多数文档都如此）就永远跳不过去 ——
-               * 用户报的"点击节点不会跳转"正是这个。
+               * 折叠与跳转是两个不同的意图，由两个不同的落点承担：箭头管
+               * 折叠，行管跳转。反过来（有子节点就折叠）会让带下级的标题
+               * 永远跳不过去，而多数文档都带下级。
                *
-               * 折叠与跳转是两个不同的意图，该由两个不同的落点承担：
-               * 箭头管折叠，行管跳转。这也和 VSCode / Obsidian 的树一致。
+               * 与 VSCode / Obsidian 的树一致。
                */
               row.addEventListener('click', () => {
                 context.editor.revealLine(item.line);

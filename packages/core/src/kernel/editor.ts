@@ -202,24 +202,22 @@ export class EditorAdapter implements EditorApi {
   /** 渲染层的装载槽。同上：切模式绝不能重建编辑器。 */
   readonly #renderSlot = new Compartment();
   /**
-   * 语言解析器槽（v0.1.6）。
+   * 语言解析器槽。
    *
-   * 之前这里直接塞了 `markdown(...)`，等于假设"所有文档都是 markdown"——
-   * 打开 .fountain / .tex 时也会套上 markdown 解析器：既拿不到正确的高亮，
-   * 又会让 markdown 的原地渲染误判它们的语法（例如 `#` 开头的动作行
-   * 被当成标题）。改成槽之后，换文件只重配解析器，不重建编辑器
+   * 不能写死 `markdown(...)`：打开 .fountain / .tex 时会套上 markdown
+   * 解析器，既拿不到正确高亮，又会让原地渲染误判它们的语法（`#` 开头的
+   * 动作行被当成标题）。用槽之后换文件只重配解析器，不重建编辑器
    * （重建会丢撤销历史、光标、滚动位置）。
    */
   readonly #languageSlot = new Compartment();
   /**
    * 模式类名槽。
    *
-   * 不在运行时切换"哪个主题生效" —— 那条路已经踩过两次：
-   * 同优先级的 EditorView.theme 规则，谁最后注入谁赢，
-   * 与扩展顺序无关，切模式后字体静默不变。
+   * 不用"切换哪个主题生效"来实现：同优先级的 `EditorView.theme` 规则
+   * 谁最后注入谁赢，与扩展顺序无关，切模式后字体静默不变。
    *
-   * 现在只有一个主题，模式体现为根节点上的类名。
-   * 规则唯一、优先级确定、且能在检查器里一眼看出当前处于哪个模式。
+   * 只有一个主题，模式体现为根节点上的类名：规则唯一、优先级确定，
+   * 且能在检查器里一眼看出当前模式。
    */
   readonly #modeClassSlot = new Compartment();
   /** vim 模式槽：运行时开关，不重建编辑器。 */
@@ -265,12 +263,7 @@ export class EditorAdapter implements EditorApi {
     }));
     this.#view.dispatch({
       effects: this.#keymapSlot.reconfigure(
-        keymap.of([
-          ...pluginBindings,
-          ...historyKeymap,
-          { key: 'Mod-f', preventDefault: true, run: openSearchPanel },
-          indentWithTab,
-        ]),
+        keymap.of([...pluginBindings, ...historyKeymap, { key: 'Mod-f', preventDefault: true, run: openSearchPanel }, indentWithTab]),
       ),
     });
   }
@@ -278,13 +271,6 @@ export class EditorAdapter implements EditorApi {
   /** 动态 import 的 vim 模块（懒加载，这里只留 getCM 供状态查询）。 */
   #vimApi: { getCM: (view: EditorView) => unknown } | null = null;
   #sourceMode = false;
-  /*
-   * 曾经还有一个 #forcedSource（"预览面板把编辑区逼成源码"）。
-   * 它与 #sourceMode 分开是为了"关面板只撤销强制、不动用户偏好"——
-   * 但既然编辑区不再被任何东西强制，那条耦合本身就是多余的：
-   * Typora 式编辑里编辑区永远是渲染态，预览面板是并列的另一栏。
-   * 整台机器（字段 + setter + 合取）一并删掉，不留"也许以后会用"的死代码。
-   */
   /** 已经同步给视图的模式。用于避免重复 dispatch（重复会白白触发一次重绘）。 */
   #appliedSource = false;
   /**
@@ -316,9 +302,7 @@ export class EditorAdapter implements EditorApi {
     this.#vimOn = options.vimMode ?? false;
     /*
      * vim 开启时初始就是源码态：渲染态下非光标块是整块 widget，j/k 与
-     * 上下键按 DOM 几何移动会跳过文本（用户实测"跳过文字行"）。
      * 注意这只管**初始**状态；用户仍可用 Ctrl+/ 切到渲染态（能切回去
-     * 才是可用的，上一版"拒绝切回"导致用户卡在源码态出不来）。
      */
     this.#sourceMode = options.inlineRender === false || this.#vimOn;
     this.#appliedSource = this.#sourceMode;
@@ -405,14 +389,13 @@ export class EditorAdapter implements EditorApi {
           search({ top: true }),
           searchMatchCount(),
           /*
-           * 面板文案走 EditorState.phrases（CM6 的全局文案 facet）——
-           * 键名是 CM6 search 内部调用 phrase() 时用的英文原文，
-           * 不能改成任意中文键（试过 phrases 放在 search() 里，类型上不存在）。
+           * 面板文案走 `EditorState.phrases`（CM6 的全局文案 facet）——
+           * 键名是 search 内部调 `phrase()` 时的英文原文，不能改成任意中文键
+           * （`phrases` 放在 `search()` 里类型上不存在）。
            */
           EditorState.phrases.of({
             Find: '查找',
             Replace: '替换',
-            // CM6 内部用的是小写键（用户实测这两个漏翻）
             replace: '替换',
             'replace all': '全部替换',
             next: '下一个',
@@ -443,17 +426,11 @@ export class EditorAdapter implements EditorApi {
           /*
            * 自有键位必须排在 `...defaultKeymap` **之前**。
            *
-           * CM6 的同一批 keymap 里，**前面的优先**。defaultKeymap 自带
-           * `{ key: "Mod-/", run: toggleComment }`（见 @codemirror/commands），
-           * 所以原来把 Mod-/ 放在它后面等于永远轮不到自己 ——
-           * 按 Ctrl+/ 得到的是"注释选中行"，不是切换源码模式。
+           * CM6 同一批 keymap 里**前面的优先**，而 defaultKeymap 自带
+           * `Mod-/ → toggleComment`：排在它后面就永远轮不到自己，按 Ctrl+/
+           * 得到的是"注释选中行"而不是切换源码模式。
            *
-           * 这里以前的注释写的是"必须在 defaultKeymap 之后，否则会被覆盖"，
-           * 方向正好反了。它当时没暴露只是因为 Mod-s 在 defaultKeymap 里
-           * 恰好没有占用者 —— 也就是说那条注释把"巧合"说成了"规则"，
-           * 而照着它排版的 Mod-/ 直接失效了。
-           *
-           * 拆成独立的一段放最前面，让优先级变成显式的，而不是靠数组顺序猜。
+           * 拆成独立的一段放最前面，让优先级显式，而不是靠数组顺序猜。
            */
           keymap.of([
             { key: 'Mod-s', preventDefault: true, run: () => { options.onSaveRequest?.(); return true; } },
@@ -468,7 +445,6 @@ export class EditorAdapter implements EditorApi {
                  * vim 模式恒为源码态 —— Ctrl+/ 在这里**直接吞掉**。
                  * 自有 keymap 独立于 vim 的键位层（vim 不占 Ctrl+/），
                  * 不做这层拦截的话 vim 下仍能切到渲染态，
-                 * j/k 又会跳块（用户实测）。
                  */
                 if (this.#vimOn) return true;
                 /* 纯文本语言没有渲染态可切：吞掉，避免"按了没反应"。 */
@@ -483,7 +459,6 @@ export class EditorAdapter implements EditorApi {
            *
            * CM6 的 keymap 前面优先，而 defaultKeymap 里的 Backspace 是
            * "删除字符" —— 排在 vim 之前就会让 normal 模式的 Backspace
-           * 真的删字（用户实测打回：不进插入模式也能删）。
            * vim 模式下只留历史与缩进兜底（insert 模式的 Tab、Ctrl-Z）。
            */
           this.#keymapSlot.of(
@@ -506,7 +481,6 @@ export class EditorAdapter implements EditorApi {
               /*
                * 必须用 this.#sourceMode（已含 vim 强制源码），不能只看
                * options.inlineRender —— 否则"启动时 vim 已开启"的场景下
-               * 按钮显示激活、编辑器实际却是渲染态（用户实测）。
                */
               class: this.#sourceMode ? 'aropyt-source-mode' : 'aropyt-render-mode',
             }),
@@ -516,9 +490,8 @@ export class EditorAdapter implements EditorApi {
             // vim 模式禁用鼠标选择（单击定位仍可用）—— 老用户的手始终在键位层
             mousedown: (event) => this.#vimOn && (event.shiftKey || event.detail > 1),
             /*
-             * 拖选必须拦 **mousemove**：CM6 的 drawSelection() 自绘选区，
-             * 选中过程完全不走浏览器原生选择 —— `user-select: none`
-             * 对它无效（因此上一版没能禁掉拖选）。
+             * 拖选必须拦 **mousemove**：`drawSelection()` 自绘选区，选中过程
+             * 完全不走浏览器原生选择，`user-select: none` 对它无效。
              * 按住左键移动时返回 true = CM6 不扩展选择；
              * 单击定位（按下即抬起，无 move）仍然可用。
              */
@@ -527,7 +500,6 @@ export class EditorAdapter implements EditorApi {
             /*
              * vim 模式下的纵向移动：如果当前在渲染态，先切回源码态。
              * 渲染态的非光标块是整块 widget，j/k 只能落在 widget 边界
-             * （用户实测"跳过文字行"）—— 渲染态与 vim 的行级光标本质冲突，
              * 一按 j/k 就退回源码是最不反直觉的处理。
              */
             keydown: (event) => {
@@ -661,9 +633,8 @@ export class EditorAdapter implements EditorApi {
   /*
    * 应用当前模式到视图。
    *
-   * 原来这里是 `sourceMode || forcedSource` 的合取，因为预览面板会强制源码。
-   * 那条强制已删，现在生效模式就等于用户的唯一选择 ——
-   * 留着合取的写法只会让人以为强制态还在。
+   * 生效模式就是用户的选择，没有"被别处强制"这一层 ——
+   * 编辑区永远是渲染态，预览面板是并列的另一栏。
    */
   /**
    * vim 模式开关（@replit/codemirror-vim）。持久化由宿主负责。
@@ -678,7 +649,6 @@ export class EditorAdapter implements EditorApi {
      *
      * 两个理由：
      * 1. 渲染态下非光标块是整块 widget（8 行源码 = 1 行 DOM），j/k 与
-     *    上下方向键按 DOM 几何移动，只会落在 widget 边界 —— 用户实测
      *    "跳过文字行落到空白行"。
      * 2. vim 用户的编辑习惯本来就是源码（Typora 的 vim 模式同样如此）。
      * 关闭 vim 时不自动切回，用户按 Ctrl+/ 自己决定。
@@ -688,7 +658,6 @@ export class EditorAdapter implements EditorApi {
       /*
        * 退出 vim：回到渲染态。
        * vim 是"强制源码"的唯一原因，退出后应回到用户的阅读模式，
-       * 而不是把人留在源码态里（上一版留在源码态，用户以为按钮坏了）。
        */
       this.setSourceMode(false);
       this.#view.dispatch({
@@ -730,7 +699,6 @@ export class EditorAdapter implements EditorApi {
       /*
        * 这里也必须保存 getCM —— 只在构造时保存的话，"先关 vim 再开"的
        * 路径下 #vimApi 永远是 null，getVimSubMode() 恒返回 null，
-       * 状态栏就永远显示 fallback 的 NORMAL（用户实测：按 i 进插入模式
        * 仍显示 NORMAL）。
        */
       this.#vimApi = { getCM: getCM as (view: EditorView) => unknown };
@@ -796,7 +764,6 @@ export class EditorAdapter implements EditorApi {
       if (typeof mode !== 'string') return null;
       /*
        * 库在 normal 模式返回的是 'vim'（内部默认名），不是 'normal' ——
-       * 直接大写会显示成 "VIM"，与旁边的 vim logo 重复（用户实测）。
        */
       return mode === 'vim' ? 'normal' : mode;
     } catch {

@@ -52,11 +52,7 @@ const MARKER_TYPES = new Set([
   'CodeMark',
   'SetextUnderline',
   /*
-   * 下面这四个是**按 test.md 的语法树 dump 找出来的缺口**。
-   *
-   * 之前的覆盖清单只写了"看起来该藏的"，没拿语法树的节点表对过账，
-   * 于是这些标记在渲染态原样挂在文字旁边（60 处转义、9 处引用式链接、
-   * 2 处自动链接的尖括号、6 处 HTML 标签）。
+   * 下面这四个是按语法树 dump 找出来的缺口，不是"看起来该藏的"。
    * 判断依据是 `scripts/dump-md-tree.mjs` 的输出，不是肉眼扫。
    */
   'LinkLabel',
@@ -76,10 +72,10 @@ const DEFINITION_TYPES = new Set(['LinkReference']);
 /**
  * 需要隐藏的**成对**标记：单侧隐藏会让文本看起来只剩一半。
  *
- * StrikethroughMark 是 `~~`，实测（@lezer/markdown 的 GFM 扩展）
- * 它是 Strikethrough 的两个子节点，与 EmphasisMark 同构 ——
- * 所以走同一套"同长度两两配对"的逻辑即可。
- * 之前漏了它，于是 `~~删除线~~` 在渲染态是两个波浪号原样挂在文字两边。
+ * StrikethroughMark 是 `~~`，在 @lezer/markdown 的 GFM 扩展里是
+ * Strikethrough 的两个子节点，与 EmphasisMark 同构 —— 走同一套
+ * "同长度两两配对"的逻辑即可。漏掉它，`~~删除线~~` 会把两个波浪号
+ * 原样挂在文字两边。
  */
 const PAIRED_MARKERS = new Set(['EmphasisMark', 'CodeMark', 'StrikethroughMark']);
 
@@ -93,9 +89,7 @@ const PAIRED_MARKERS = new Set(['EmphasisMark', 'CodeMark', 'StrikethroughMark']
  *   Link        `[百度](url)`
  *   Autolink    `<https://x.com>` —— 尖括号也是 LinkMark，目标也是 URL
  *   LinkReference / Image —— 引用式写法 `[x][ref]` / `![x][ref]`
- * 原来的判据只写了 `parent === 'Link'`，于是自动链接的尖括号与
- * 引用式链接的方括号全都没被藏起来（dump 显示 LinkMark 出现 36 次，
- * 真正被处理掉的只有父节点为 Link 的那部分）。
+ * 只判 `parent === 'Link'` 会漏掉后两种的全部标记。
  */
 const LINK_WRAPPER_PARENTS = new Set(['Link', 'Autolink']);
 const LINK_PARTS = new Set(['LinkMark', 'URL']);
@@ -671,8 +665,8 @@ function bindFenceEditing(options: {
   /*
    * 绑 mousedown 而不是 click。
    *
-   * 实测（debug 日志）：mousedown 确实到达目标元素，但 CM6 在它之前做的
-   * 处理让浏览器不再把这一串按下/抬起合成 click —— 监听 click 永远不触发。
+   * mousedown 确实到达目标元素，但 CM6 在此之前做的处理让浏览器不再把这一串
+   * 按下/抬起合成 click —— 监听 click 永远不触发。
    */
   host.addEventListener('mousedown', (event) => {
     const target = event.target;
@@ -747,9 +741,8 @@ class BlockWidget extends WidgetType {
   /**
    * 代码块：点击后就地展开编辑框。
    *
-   * 原来的行为是"点一下整块变回源码"—— 用户为了改一行代码要先看满屏的反引号
-   * 与 fence 语言标记，改完再点别处收起。现在点击只把这一块换成 textarea，
-   * 上下文一行不动。
+   * 只把这一块换成 textarea，上下文一行不动 —— 而不是整块变回源码，
+   * 那样为了改一行要先看满屏的反引号与 fence 语言标记。
    */
   #bindCodeEditing(wrap: HTMLElement): void {
     if (!this.source) return;
@@ -1554,10 +1547,9 @@ function build(
         /*
          * 自己按行文本定位 `[ ]` / `[x]`，**不用 lezer 节点的边界**。
          *
-         * 在某些输入状态下 `TaskMarker` 的 `to` 会落在 `]` 之前，替换后
-         * 行首留下一个孤零零的紫色 `]`（用户看到的就是「☐ ] 未完」）。
-         * 这里只认"同一行内、`[` 之后恰好一个字符就是 `]`"的形状，
-         * 位置一定是齐的；形状对不上就整行不动，不做半截替换。
+         * 某些输入状态下 `TaskMarker` 的 `to` 会落在 `]` 之前，按节点边界
+         * 替换会留下一个孤零零的 `]`。这里只认"同一行内、`[` 之后恰好一个
+         * 字符就是 `]`"的形状，位置一定齐；形状对不上就整行不动。
          */
         const offset = cursor.from - line.from;
         /*
@@ -2587,7 +2579,6 @@ const aropytInlineTheme = EditorView.baseTheme({
   '.cm-md-block': {
     display: 'flow-root',
     /*
-     * 1.7 在渲染态下显得松散（用户反馈"预览模式行间距过大"）。
      * 1.55 接近 Typora 的正文行高，同时保留中文阅读的呼吸感。
      */
     lineHeight: '1.2',

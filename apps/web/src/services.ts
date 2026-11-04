@@ -258,8 +258,6 @@ export class WindowService implements WindowApi {
      * 带 actions 的提示要**等用户真的点了**才返回，并且返回值必须是
      * **被点击那个 action 的 label**。
      *
-     * 上一版直接 `return actions[0].label` —— 点"保存并关闭"也返回
-     * "不保存并关闭"（第一个），于是"有提示但保不住文件"（用户实测打回）。
      */
     let resolveChoice: ((label?: string) => void) | null = null;
     const actions = options?.actions?.map((action) => ({

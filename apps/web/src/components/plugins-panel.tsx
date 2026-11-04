@@ -3,6 +3,7 @@ import { useT } from '../i18n/useT';
 import type { PluginRecord } from '@aropyt/core';
 import type { AropytRuntime } from '../runtime';
 import { Icon } from './Icons.js';
+import { Backdrop } from './Backdrop.js';
 
 /**
  * 插件管理面板（v0.1.0）。
@@ -73,14 +74,8 @@ export function PluginsPanel({ runtime, records, onClose }: PluginsPanelProps) {
   };
 
   return (
-    <div
-      className="settings-backdrop"
-      role="dialog"
-      aria-modal="true"
-      aria-label={t('toolbar.plugins')}
-      onClick={onClose}
-    >
-      <div className="settings-dialog" onClick={(event) => event.stopPropagation()}>
+    <Backdrop onClose={onClose}>
+      <div className="settings-dialog" role="dialog" aria-modal="true" aria-label={t('toolbar.plugins')}>
         <header className="settings-dialog__header">
           <h2>{t('plugins.titleShort')}</h2>
           <button type="button" className="settings-dialog__close" onClick={onClose} aria-label={t('common.close')}>
@@ -144,6 +139,6 @@ export function PluginsPanel({ runtime, records, onClose }: PluginsPanelProps) {
           <span className="plugins-panel__hint">{t('plugins.restartHint')}</span>
         </footer>
       </div>
-    </div>
+    </Backdrop>
   );
 }

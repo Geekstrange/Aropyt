@@ -53,3 +53,42 @@ export {
   type HistoryVersion,
 } from './kernel/history.js';
 export { applyBackup, assembleBackup, type BackupFile } from './kernel/backup.js';
+
+/*
+ * 同步的**纯逻辑**（决策表 + 执行器）。
+ *
+ * 放在 core 而不是 `apps/web`：开源版用 WebDAV、商业版用自建云 API，
+ * 但"哪些文件该上传、哪些该下载、什么算冲突"对两者完全一样。传输层
+ * 依赖 `SyncBackend` 接口，各自实现；这一层不该被两端各抄一份。
+ *
+ * `dav.ts` / `host.ts` 留在 `apps/web` 侧 —— WebDAV 只是开源版的能力，
+ * 商业版不会需要它。
+ */
+export {
+  actionKey,
+  causeKey,
+  hashBytes,
+  /*
+   * `hashText` 不在这里再导一次：`kernel/history.ts` 已经提供了同名的
+   * 函数（同一套 FNV-1a，只是喂的是 UTF-16 码元）。两个同名导出会让
+   * `index.ts` 报 Duplicate identifier，而且调用方分不清该用哪个 ——
+   * 同步一律用 `hashBytes`，文本哈希留给编辑历史。
+   */
+  planSync,
+  summarize,
+  summaryKey,
+  type SyncAction,
+  type SyncActionKind,
+  type SyncCause,
+  type SyncInput,
+  type SyncSummary,
+} from './sync/engine.js';
+export {
+  conflictPath,
+  runSync,
+  type BaseEntry,
+  type RemoteMeta,
+  type SyncBackend,
+  type SyncRunResult,
+  type SyncStepResult,
+} from './sync/runner.js';

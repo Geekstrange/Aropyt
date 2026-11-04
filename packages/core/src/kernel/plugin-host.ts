@@ -182,15 +182,14 @@ export class PluginHost {
     }
 
     /*
-     * 逐插件隔离（v0.1.0）。
+     * 逐插件隔离。
      *
      * 外部插件的 manifest 来自运行时（可能被手改、可能是坏的 JS 产物），
-     * 不能按 TS 类型信任。之前的实现里任何一处抛错都会中断整个循环，
-     * 后面的插件（包括内置 explorer / outline / file / formatting）
-     * 全部不加载 —— 表现就是"工具栏清空、侧栏打不开、文件菜单只剩保存"，
-     * 而且重启后必然复发，只能卸载软件（实测）。
+     * 不能按 TS 类型信任。任何一处抛错如果中断整个循环，后面的插件
+     * （包括内置的 explorer / outline / file / formatting）就全部不加载——
+     * 表现是"工具栏清空、侧栏打不开、文件菜单只剩保存"，且重启后必然复发。
      *
-     * 现在的规则：**一个插件坏，只影响它自己**。
+     * 规则：**一个插件坏，只影响它自己**。
      */
     let unmet: Map<string, readonly string[]> = new Map();
     try {
@@ -275,10 +274,8 @@ export class PluginHost {
 
     if (!record.module.activate) {
       /*
-       * 没有 activate 导出**不是**"激活成功"。
-       *
-       * 之前这里直接置 active —— 面板显示"已启用"，但插件没有机会注册
-       * 任何命令处理器，点命令永远报"未注册"（实测多轮的假象）。
+       * 没有 `activate` 导出**不是**"激活成功"：插件没有机会注册任何命令
+       * 处理器，面板却显示"已启用"，点命令永远报"未注册"。
        */
       record.state = 'failed';
       record.reason = '插件没有导出 activate 函数';
@@ -290,11 +287,10 @@ export class PluginHost {
     const context = this.#createContext(pluginId, store);
 
     /*
-     * 先不置 active：activate 失败必须留下痕迹。
+     * 先不置 `active`：activate 失败必须留下痕迹。
      *
-     * 之前先设 state='active' 再 await，而异常被 guardAsync 吞掉 ——
-     * 结果插件"看起来是启用的"，但它的命令处理器一个都没注册，
-     * 点命令只报"未注册或未激活"，面板上也没有任何原因（实测）。
+     * 反过来（先设 `state='active'` 再 await）会让异常被 `guardAsync` 吞掉，
+     * 插件"看起来是启用的"，但命令处理器一个都没注册，面板上也没有原因。
      */
     try {
       await record.module.activate(context);
@@ -426,10 +422,9 @@ export class PluginHost {
       /*
        * **声明了命令 = 隐含 onCommand 激活**（与 VS Code 一致）。
        *
-       * 之前还要求插件显式写 `activationEvents: ['onCommand:<id>']`，
-       * 结果是"命令出现在工具栏、点了却报未激活" —— 用户没理由知道
-       * 要为每个命令重复声明一次。onCommand 声明仍然有效，只是不再是
-       * 前置条件。
+       * 不要求插件再显式写 `activationEvents: ['onCommand:<id>']`——
+       * 用户没理由知道要为每个命令重复声明一次，否则命令出现在工具栏、
+       * 点了却报未激活。显式声明仍然有效，只是不再是前置条件。
        */
       if (owns) return this.activate(record.manifest.id);
     }
@@ -570,11 +565,11 @@ function createCommandsFacade(registry: CommandRegistry, pluginId: string): Comm
  * 给窗口服务套一层"注入插件身份"的门面。
  *
  * ── 为什么用 Proxy 而不是展开运算符 ──────────────────────────
- * 这里原来的写法是 `{ ...window, registerView: ... }`，看起来没问题，
- * 实际**丢掉了除 registerView 之外的全部方法**。
+ * `{ ...window, registerView: ... }` 看起来没问题，实际**丢掉了除
+ * `registerView` 之外的全部方法**。
  *
- * 原因：`WindowService` 是 class，它的方法定义在**原型**上，
- * 而对象展开只复制**自有可枚举属性**。于是插件拿到的 window 门面里
+ * 原因：`WindowService` 是 class，方法定义在**原型**上，而对象展开只复制
+ * **自有可枚举属性**。于是插件拿到的 window 门面里
  * `showMessage` / `pickWorkspaceFolder` / `regrantLastWorkspaceFolder` /
  * `createStatusBarItem` 全是 undefined。
  *

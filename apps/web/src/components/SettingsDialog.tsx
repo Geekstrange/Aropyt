@@ -17,6 +17,7 @@ import {
   type JSX,
   type MouseEvent,
 } from 'react';
+import { Backdrop } from './Backdrop.js';
 import type { AropytRuntime, RuntimeState } from '../runtime.js';
 import { setLocale } from '../i18n';
 import { useT } from '../i18n/useT';
@@ -31,8 +32,6 @@ interface SettingsDialogProps {
 /**
  * 订阅运行时状态。
  *
- * 上一版把 themePreference / vimMode 当 props 传进来 —— 那是**渲染时的快照**，
- * 点开关后组件不会重渲染，界面看起来"点了没反应"（用户实测）。
  * 状态必须订阅，不能用快照。
  */
 function useRuntimeState(runtime: AropytRuntime): RuntimeState {
@@ -98,7 +97,7 @@ export function SettingsDialog({
   };
 
   return (
-    <div className="settings-backdrop" role="presentation" onClick={onClose}>
+    <Backdrop onClose={onClose}>
       <div
         className="settings-dialog"
         role="dialog"
@@ -567,6 +566,6 @@ export function SettingsDialog({
           </section>
         </div>
       </div>
-    </div>
+    </Backdrop>
   );
 }

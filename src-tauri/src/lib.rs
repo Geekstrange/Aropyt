@@ -26,7 +26,6 @@ pub mod webdav;
 
 /*
  * ── 为什么要有文件日志 ──────────────────────────────────
- * 桌面应用最难受的处境是"用户说不好用，而开发者看不到任何线索"：
  * 双击启动的 exe 没有 stdout，WebView 的控制台要开 devtools 才看得到
  * （发布版还默认关掉了）。所以这一轮开始把关键动作落到文件里。
  *
@@ -236,13 +235,9 @@ impl Workspace {
             .ok_or_else(|| format!("路径没有父目录：{}", path.display()))?;
 
         /*
-         * 父目录不存在时要先建。
+         * 父目录不存在时要先建：`File::create` **不会**自动创建父目录。
          *
-         * `File::create` **不会**自动创建父目录 —— 之前的注释声称"写入时
-         * 会自动创建父目录"，那是错的，单元测试直接把它证伪了
-         * （`write_creates_nested_parents`：系统找不到指定的路径 os error 3）。
-         *
-         * 这一点很关键：前端没有单独的"建目录"命令，`createDirectory` 尚未接入，
+         * 前端没有单独的"建目录"命令（`createDirectory` 尚未接入），
          * 所以"在子目录里新建文件"整条路都依赖这里。
          */
         if !dir.exists() {
@@ -673,8 +668,7 @@ async fn pick_folder(app: tauri::AppHandle) -> Result<Option<String>, String> {
      *   阻塞版是 "a blocking version for use in other contexts"。
      *
      * 我们的命令是 `async fn`，跑在异步运行时的工作线程上 —— 正属于"其它上下文"。
-     * 之前用的是非阻塞版，也就是把两者用反了：在不该用的线程上调用它，
-     * 表现是选择器弹不出来或回调永远不触发，而**没有任何报错**，
+     * 用反了的后果是选择器弹不出来或回调永远不触发，而**没有任何报错**：
      * 前端只能看到"命令成功返回了 null"，与"用户取消"完全无法区分。
      *
      * 外面再套 `spawn_blocking`：blocking_pick_folder 会阻塞当前线程直到
@@ -691,7 +685,6 @@ async fn pick_folder(app: tauri::AppHandle) -> Result<Option<String>, String> {
         return Err("移动端暂不支持选择文件夹作为工作区，请使用内置草稿。".to_string());
     }
     // 桌面实现在同一个 cfg 块里：mobile 分支 return 后，这段代码在 mobile
-    // 编译时不存在，picked 才不会悬空（上一版只 cfg 了 let picked，
     // match/Ok 悬在外面 → E0425，实测）。
     #[cfg(desktop)]
     {
@@ -1947,10 +1940,9 @@ async fn export_document(
     /*
      * 读入格式（`--from`）必须跟着文档走。
      *
-     * 之前写死 `markdown`：打开 `.tex` 导出时，pandoc 用 markdown 解析
-     * LaTeX 源码 —— `\documentclass` / `\section` / `\begin{}` 全被当成
-     * 普通文字或转义吞掉，产物只剩第一行注释（实测：`basic-test.tex`
-     * 66 行导出成一行 `% basic-test.tex`）。换成 `latex` 读入后内容完整。
+     * 写死 `markdown` 时，`.tex` 会被当 markdown 解析：`\documentclass` /
+     * `\section` / `\begin{}` 全被当成普通文字或转义吞掉，66 行的文件
+     * 只剩第一行注释。`latex` 读入才完整。
      */
     let reader = source
         .as_deref()

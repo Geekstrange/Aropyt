@@ -11,7 +11,7 @@
 
 import { idbGet, idbSet, recordRemoteVersion, STORE } from '@aropyt/core';
 import type { RemoteDav } from './dav.js';
-import type { BaseEntry, RemoteMeta, SyncBackend } from './runner.js';
+import type { BaseEntry, RemoteMeta, SyncBackend } from '@aropyt/core';
 
 /**
  * 参与同步的扩展名。

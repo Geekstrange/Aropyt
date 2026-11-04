@@ -181,11 +181,10 @@ export function normalizeSettings(raw: unknown): {
   }
 
   /*
-   * locale 必须**从文件读**。
+   * locale 必须**从文件读**并赋回去。
    *
-   * 这里原来只校验了 `settings.locale`（默认值 'auto'，永远合法），
-   * 却从没把 `obj.locale` 赋回去 —— 于是 settings.jsonc 里写了
-   * "locale": "de" 也不会生效，每次启动都回到跟随系统。
+   * 只校验 `settings.locale`（默认值 'auto'，永远合法）而忘了赋值，
+   * settings.jsonc 里写 `"locale": "de"` 不会生效，每次启动都回到跟随系统。
    */
   if (obj.locale !== undefined) {
     if (typeof obj.locale === 'string' && LOCALES.includes(obj.locale as LocaleCode)) {

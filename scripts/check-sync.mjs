@@ -31,8 +31,8 @@ execFileSync(
   'npx',
   [
     'tsc',
-    'apps/web/src/sync/engine.ts',
-    'apps/web/src/sync/runner.ts',
+    'packages/core/src/sync/engine.ts',
+    'packages/core/src/sync/runner.ts',
     '--outDir',
     outDir,
     '--module',

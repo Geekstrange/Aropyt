@@ -165,8 +165,8 @@ export function DebugPanel({ runtime, version, onClose }: DebugPanelProps): JSX.
   /*
    * 线程阻塞占比：**真正的 60 秒滑动窗口**。
    *
-   * 原来用"最近 50 条总时长 / 30000"，既没有时间裁剪、也不会随空闲
-   * 衰减 —— 空闲十分钟后数字仍然停在那里，看起来像"一直卡"。
+   * 用"最近 50 条总时长 / 30000"是不对的：没有时间裁剪、不会随空闲衰减，
+   * 空闲十分钟后数字仍然停在那里，看起来像"一直卡"。
    */
   const blockPct = useMemo(() => {
     const since = Date.now() - 60_000;

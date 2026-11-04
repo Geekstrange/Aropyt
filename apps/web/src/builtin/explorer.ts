@@ -193,16 +193,11 @@ function mount(container: HTMLElement, context: PluginContext, viewContext: View
     row.dataset.path = entry.path;
 
     /*
-     * 折叠箭头。
+     * 折叠箭头：没有它，"哪些行可展开"没有任何视觉暗示，只能一个个点开去试。
      *
-     * 原来只有"点整行折叠"，没有任何视觉暗示 —— 用户根本不知道目录能点，
-     * 于是只能一个个文件点开去试。加了箭头之后，
-     * "哪些行是可展开的"一眼可见，缩进层级也对齐了。
-     *
-     * 画法用 CSS 边框三角而不是 SVG：它要跟着文字颜色走（继承 currentColor），
-     * 且旋转靠 transform，不占额外的资源请求。文件行则渲染一个**空占位**
-     * 而不是不留空 —— 不留空会让文件名的缩进比目录名浅一格，
-     * 树看起来是歪的。
+     * 画法用 CSS 边框三角而不是 SVG：继承 `currentColor` 跟着文字颜色走，
+     * 旋转靠 transform，不占额外的资源请求。文件行渲染一个**空占位**而不是
+     * 不留空 —— 不留空会让文件名的缩进比目录名浅一格，树看起来是歪的。
      */
     const twisty = document.createElement('span');
     twisty.className =
@@ -264,7 +259,6 @@ function mount(container: HTMLElement, context: PluginContext, viewContext: View
        *
        * 键盘导航（j/k、上下、Enter）只认 `focusedRow`，而它原来只在键盘
        * 移动时赋值 —— 于是"点一行、然后按 Enter"什么都不发生：用户觉得
-       * Enter 根本打不开文件（实测报障）。点一下就当选中，两条路径才一致。
        */
       setFocus(row);
       if (isDir) {
@@ -392,7 +386,6 @@ function mount(container: HTMLElement, context: PluginContext, viewContext: View
            *
            * 还给容器（`body.focus()`）时，浏览器认为"焦点在这个可聚焦
            * 容器上"，按 Tab 会从容器内**第一个**可聚焦元素重新开始 ——
-           * 用户实测："打开文件后继续用 Tab 选择文件总是从第一个开始"。
            * 落回原来的行，Tab 才会接着往下走。
            */
           if (restored) restored.focus({ preventScroll: true });
@@ -416,10 +409,9 @@ function mount(container: HTMLElement, context: PluginContext, viewContext: View
       /*
        * 要把**真实错误**显示出来。
        *
-       * 原来是一句笼统的"可能是授权已过期" —— 而读取失败的成因很多：
-       * 目录被删、权限不足、原生侧命令报错、工作区没登记上。
-       * 一律归因于"授权过期"会把人引到完全错误的方向（尤其原生端
-       * 根本没有"授权"这个概念）。现在附带原文，用户截图就能定位。
+       * 读取失败的成因很多：目录被删、权限不足、原生侧命令报错、工作区没
+       * 登记上。一律归因于"授权过期"会把人引到完全错误的方向（原生端根本
+       * 没有"授权"这个概念）。附带原文，用户截图就能定位。
        */
       const detail = error instanceof Error ? error.message : String(error);
       empty(t('view.readWorkspaceFailed', { detail }));
@@ -434,10 +426,9 @@ function mount(container: HTMLElement, context: PluginContext, viewContext: View
    * 高亮用 .tree-item--focused，与"活动文件"高亮（aria-current）是两回事 ——
    * 前者是键盘光标，后者是文档状态。
    *
-   * ⚠️ 这段必须挂在 mount 作用域，**不能挂在行的 click 处理器里**。
-   * 曾经它被误粘进 click 内部，后果是每点一次目录就多挂一个 keydown 监听
-   * （事件叠加、同一次按键移动好几行），而且 `focusedRow` 每次点击都重新
-   * 声明，键盘光标永远回到起点。
+   * ⚠️ 这段必须挂在 mount 作用域，**不能挂在行的 click 处理器里**：
+   * 那样每点一次目录就多挂一个 keydown 监听（同一次按键移动好几行），
+   * 而且 `focusedRow` 每次点击都重新声明，键盘光标永远回到起点。
    */
   let focusedRow: HTMLElement | null = null;
   /** 键盘光标所在行的路径 —— DOM 重建后靠它把光标找回来。 */
