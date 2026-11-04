@@ -246,6 +246,13 @@ export interface WorkspaceApi {
   writeFileBytes(path: string, data: Uint8Array): Promise<void>;
   createDirectory(path: string): Promise<void>;
   delete(path: string, options?: { readonly recursive?: boolean }): Promise<void>;
+  /**
+   * 重命名同目录下的一个条目。只改名、不移动。
+   *
+   * 可选：FSA / OPFS 适配器还没实现它。调用方要判空 —— 缺这个方法时
+   * 说明当前环境不支持行内改名，而不是"改名失败了"。
+   */
+  rename?(path: string, newName: string): Promise<void>;
 
   /** 解析相对路径。webdev 场景下 `../assets/x.png` 必须相对文档位置解析。 */
   resolvePath(path: string, relativeTo?: string): string;

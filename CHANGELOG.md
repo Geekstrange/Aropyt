@@ -8,6 +8,79 @@ Release notes for a single version (the GitHub Release body) live in
 `docs/releases/<tag>.md`; this file keeps the cumulative view of every
 release.
 
+## [0.2.1] - 2026-11-04
+
+### Added
+
+- **Delete and rename from the file tree**: right-click any row. Delete asks
+  first — `fs::remove_file` does not reach the recycle bin, so there is no
+  undo — and only removes empty directories; a recursive delete of a subtree is
+  not something a right-click should do by accident. Rename is inline: the row
+  becomes an input with the base name selected and the extension left alone.
+  Enter commits, Escape cancels, blur commits too. It goes through
+  `workspace_rename` → `fs::rename` rather than read-write-delete, which would
+  lose the modification time and could leave the file under neither name if it
+  failed halfway. `WorkspaceFileHandle.rename` is optional because the FSA and
+  OPFS adapters do not implement it; a missing implementation rejects rather
+  than silently succeeding.
+- **All six heading levels in one button**: H4–H6 did not exist, and three more
+  buttons would have made the heading group 160 px wide. The six levels share
+  one button — scroll to change level, click to apply. The wheel listener uses
+  `addEventListener` rather than React's `onWheel`: React registers it as
+  passive, `preventDefault()` is ignored, and one scroll would both change the
+  level and scroll the toolbar sideways. `MenuItemContribution.wheel` carries
+  the candidates, so the plugin declares the grouping.
+- **Formatting buttons can be hidden**: right-click the toolbar and uncheck
+  "Show formatting buttons" (`toolbar.formatButtons`). Groups 2 and up
+  collapse; file actions stay.
+- **Compare a history entry against the previous one**: each row gained a
+  "vs. previous" button beside "vs. current". The old one answers "what changed
+  since I last saved", which is noise when scrolling back — the further back,
+  the more it spans. `DiffView` gained an optional `after`, so both directions
+  share one layout.
+
+### Changed
+
+- **Sync's decision logic moved into `packages/core`**: `engine.ts` (the
+  decision table) and `runner.ts` (the executor) were sitting beside the WebDAV
+  transport, but both are transport-agnostic — they depend on a `SyncBackend`
+  interface and know nothing about how bytes move. The open-source build syncs
+  over WebDAV; a commercial build would talk to its own API. `dav.ts` and
+  `host.ts` stay in `apps/web`.
+- **`Ctrl+Alt+F` toggles**: pressing it again closes the workspace search
+  dialog. `Ctrl+F` was left alone — CodeMirror's `Mod-f` binding also listens
+  in the capture phase on `.cm-editor`, and no amount of `stopPropagation` from
+  `window` can preempt it.
+- **The workspace search box matches the `Ctrl+F` bar**: same padding, same
+  13px type, same `--md-surface-1` background, and the focus border uses
+  `--md-link` — the variable the find bar already uses, which resolves to
+  `#5dcaa5` on dark and `#4aa63d` on light. A hard-coded green was one colour
+  for both themes. No glow: the find bar has none.
+- **New save icon**, regenerated through `scripts/make-toolbar-icons.mjs` —
+  the only path that keeps `toolbar-icons.tsx` in step with `icon/*.svg`, since
+  the component holds inlined paths.
+
+### Fixed
+
+- **A recovery banner could overwrite a different file**: the warning stays on
+  screen after you open something else, and its "use disk version" action
+  called `editor.replaceDocument` unconditionally — which writes into whatever
+  the editor currently shows. Opening B while A's banner was up and clicking
+  the action put A's disk content into B's buffer; one save then made it
+  permanent. The action now re-opens its own file first.
+- **Dialogs closed when you dragged out of them**: the backdrop closed on any
+  `click` targeting the overlay, which includes selecting text inside the
+  dialog and releasing past its edge, and pressing inside then sliding out.
+  `mousedown` and `click` must now both land on the overlay. All five dialogs
+  share one `Backdrop` component; each previously carried its own
+  `onClick={onClose}` plus a `stopPropagation` on the inner element.
+- **The search panel shows a match count instead of "Select all"**: that button
+  is CodeMirror's own `selectMatches`, which walks `query.getCursor(state,
+  main.from, main.to)` — the *current selection*. With a cursor it matched at
+  most one place. Selecting hundreds of disjoint ranges is not a workflow this
+  editor has, so the button is hidden and a count badge takes its place.
+  Documents over 200 KB skip the count.
+
 ## [Unreleased]
 
 ### Planned
@@ -1656,7 +1729,8 @@ Other fixes:
 - Editor core, command registry, keybinding parsing, theme system
 - Light and dark palettes and first-paint bundle budget gate
 
-[Unreleased]: https://github.com/Geekstrange/Aropyt/compare/v0.2.0...HEAD
+[Unreleased]: https://github.com/Geekstrange/Aropyt/compare/v0.2.1...HEAD
+[0.2.1]: https://github.com/Geekstrange/Aropyt/compare/v0.2.0...v0.2.1
 [0.2.0]: https://github.com/Geekstrange/Aropyt/compare/v0.1.8...v0.2.0
 [0.1.8]: https://github.com/Geekstrange/Aropyt/compare/v0.1.7...v0.1.8
 [0.1.7]: https://github.com/Geekstrange/Aropyt/compare/v0.1.6...v0.1.7
