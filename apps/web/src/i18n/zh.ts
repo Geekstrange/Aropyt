@@ -174,6 +174,7 @@ export const zh = {
   'search.placeholder': '输入关键词…',
   'search.empty': '没有匹配',
   'search.searching': '正在搜索…',
+  'toolbar.showFormat': '显示格式按钮',
   'settings.sync': '同步（WebDAV）',
   'settings.syncEnabled': '自动同步',
   'history.remote': '云端',

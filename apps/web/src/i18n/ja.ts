@@ -166,6 +166,7 @@ export const ja: Record<keyof typeof import('./zh').zh, string> = {
   'search.placeholder': 'キーワードを入力…',
   'search.empty': '一致なし',
   'search.searching': '検索中…',
+  'toolbar.showFormat': '書式ボタンを表示',
   'settings.sync': '同期（WebDAV）',
   'settings.syncEnabled': '自動同期',
   'history.remote': 'クラウド',

@@ -166,6 +166,7 @@ export const de: Record<keyof typeof import('./zh').zh, string> = {
   'search.placeholder': 'Suchbegriff eingeben…',
   'search.empty': 'Keine Treffer',
   'search.searching': 'Suche läuft…',
+  'toolbar.showFormat': 'Formatierungsschaltflächen anzeigen',
   'settings.sync': 'Synchronisierung (WebDAV)',
   'settings.syncEnabled': 'Automatisch synchronisieren',
   'history.remote': 'Server',

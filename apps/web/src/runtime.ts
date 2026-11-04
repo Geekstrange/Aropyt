@@ -97,6 +97,8 @@ export interface ToolbarItem {
   readonly pluginId: string | null;
   readonly group: string;
   readonly order: number;
+  /** 滚轮可切换的候选命令（从低到高）。见 `MenuItemContribution.wheel`。 */
+  readonly wheel?: readonly string[];
 }
 
 /**
@@ -570,6 +572,8 @@ export function createRuntime(options: RuntimeOptions): AropytRuntime {
       pluginId: item.pluginId,
       group: item.group ?? '0',
       order: item.order ?? 0,
+      /* 只在真的给了候选时才带上这个键 —— 空数组会让按钮变成"滚不动" */
+      ...(item.wheel && item.wheel.length > 1 ? { wheel: item.wheel } : {}),
     })),
     lastInputLatencyMs: state.lastInputLatencyMs,
     budgetViolations: state.budgetViolations,

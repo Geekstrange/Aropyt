@@ -166,6 +166,7 @@ export const ru: Record<keyof typeof import('./zh').zh, string> = {
   'search.placeholder': 'Введите запрос…',
   'search.empty': 'Совпадений нет',
   'search.searching': 'Идёт поиск…',
+  'toolbar.showFormat': 'Показывать кнопки форматирования',
   'settings.sync': 'Синхронизация (WebDAV)',
   'settings.syncEnabled': 'Синхронизировать автоматически',
   'history.remote': 'Облако',

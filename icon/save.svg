@@ -22,11 +22,11 @@
      inkscape:deskcolor="#d1d1d1"
      inkscape:zoom="1.2109375"
      inkscape:cx="511.5871"
-     inkscape:cy="512"
-     inkscape:window-width="2880"
-     inkscape:window-height="1496"
-     inkscape:window-x="-12"
-     inkscape:window-y="-12"
+     inkscape:cy="512.4129"
+     inkscape:window-width="2400"
+     inkscape:window-height="1261"
+     inkscape:window-x="-9"
+     inkscape:window-y="1036"
      inkscape:window-maximized="1"
      inkscape:current-layer="g1" />
   <!-- Generator: Adobe Illustrator 28.7.1, SVG Export Plug-In . SVG Version: 1.2.0 Build 142)  -->
@@ -34,7 +34,7 @@
      data-name="图层_1"
      id="g1">
     <path
-       d="M 792,46 H 46 V 978 H 978 V 232 Z M 698,883 H 326 V 764 h 372 z m 188,3 H 792 V 680 H 232 V 886 H 138 V 138 H 353 V 249 H 633 V 138 H 753.9 L 886,270.1 Z"
+       d="M 792,46 H 46 V 978 H 978 V 232 Z M 698,883 H 326 V 764 h 372 z m 188,3 H 792 V 680 H 232 V 886 H 138 V 138 h 211 v 95 H 637 V 138 H 753.9 L 886,270.1 Z"
        id="path1"
        sodipodi:nodetypes="ccccccccccccccccccccccccc" />
   </g>

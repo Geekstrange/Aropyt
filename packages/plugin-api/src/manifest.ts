@@ -82,6 +82,16 @@ export interface MenuItemContribution {
   readonly when?: string;
   readonly group?: string;
   readonly order?: number;
+  /**
+   * 滚轮可切换的候选命令，从"最小"到"最大"排列。
+   *
+   * 工具栏上只画**一个**按钮，鼠标滚轮在它上面滚动时切换当前项，点击执行
+   * 当前项。用于同一族、数量多、又不需要同时看见的操作（典型是标题
+   * H1–H6：六个按钮排开会占掉半条工具栏）。
+   *
+   * 给了这个字段时，`command` 只作为初始项 —— 实际执行的是滚轮选中的那个。
+   */
+  readonly wheel?: readonly string[];
 }
 
 export type ViewLocation = 'sidebar' | 'panel' | 'statusbar';

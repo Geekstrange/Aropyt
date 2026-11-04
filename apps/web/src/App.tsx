@@ -617,10 +617,36 @@ function Toolbar({ runtime, onOpenSettings, onOpenHistory, onOpenPlugins }: Tool
   const t = useT();
   const state = useRuntimeState(runtime);
   const details = new Map(runtime.commands.details().map((item) => [item.id, item]));
-  const groups = groupToolbar(state.toolbar);
+  const allGroups = groupToolbar(state.toolbar);
+
+  /*
+   * 格式按钮组（编号 2 起）可以整组收起，只留编号 1 的文件操作。
+   *
+   * 恢复入口不放在设置页：右键工具栏就地勾回来 —— 想收起的人多半正在
+   * 用工具栏，不该为此跳一次设置。
+   */
+  const showFormat = runtime.getSettings().toolbar.formatButtons;
+  const groups = showFormat ? allGroups : allGroups.filter((group) => group.key === '1');
+  const [menuAt, setMenuAt] = useState<{ x: number; y: number } | null>(null);
 
   return (
-    <div className="toolbar" role="toolbar" aria-label={t('aria.toolbar')}>
+    <div
+      className="toolbar"
+      role="toolbar"
+      aria-label={t('aria.toolbar')}
+      onContextMenu={(event) => {
+        /*
+         * 空白处和分隔条上都能弹，只有**按钮上**不弹。
+         *
+         * 判成 `target === currentTarget` 是不行的：工具栏的子元素填满了
+         * 整条，右键几乎总落在某个子元素上（spacer、分隔条、按钮容器），
+         * 于是菜单永远不出来。
+         */
+        if ((event.target as HTMLElement).closest('.tool-button')) return;
+        event.preventDefault();
+        setMenuAt({ x: event.clientX, y: event.clientY });
+      }}
+    >
       {groups.map((group, index) => (
         <ToolbarGroup
           key={group.key}
@@ -628,8 +654,49 @@ function Toolbar({ runtime, onOpenSettings, onOpenHistory, onOpenPlugins }: Tool
           details={details}
           onRun={(commandId) => runCommand(runtime, commandId)}
           withSeparator={index > 0}
+          /* 这一组的滚轮候选，来自插件清单 */
+          wheel={state.toolbar.find((item) => item.group === group.key)?.wheel}
         />
       ))}
+      {/*
+       * 右键菜单：一个复选框控制格式按钮组的显隐。
+       *
+       * 用 fixed 定位在鼠标位置，配一层透明遮罩接住"点别处关闭" —— 这是
+       * 右键菜单的标准形态，比进设置页改一个开关快得多。
+       */}
+      {menuAt ? (
+        <>
+          <div
+            className="toolbar-menu__scrim"
+            role="presentation"
+            onClick={() => setMenuAt(null)}
+            onContextMenu={(event) => {
+              event.preventDefault();
+              setMenuAt(null);
+            }}
+          />
+          <div
+            className="toolbar-menu"
+            style={{ left: menuAt.x, top: menuAt.y }}
+            role="menu"
+          >
+            <label className="toolbar-menu__item">
+              <input
+                type="checkbox"
+                checked={showFormat}
+                onChange={(event) => {
+                  void runtime.updateSettings({
+                    toolbar: { formatButtons: event.currentTarget.checked },
+                  });
+                  setMenuAt(null);
+                }}
+              />
+              {t('toolbar.showFormat')}
+            </label>
+          </div>
+        </>
+      ) : null}
+
       <span className="toolbar-spacer" />
 
       {/*
@@ -807,13 +874,83 @@ interface ToolbarGroupProps {
   readonly details: ReadonlyMap<string, DeclaredCommandLike>;
   readonly onRun: (commandId: string) => void;
   readonly withSeparator: boolean;
+  /** 折叠成一枚滚轮按钮的候选命令（从低到高）。 */
+  readonly wheel?: readonly string[];
 }
 
-function ToolbarGroup({ commands, details, onRun, withSeparator }: ToolbarGroupProps): JSX.Element {
+/**
+ * 滚轮切换的按钮：一个图标，滚轮在它上面改级别，点击执行当前项。
+ *
+ * 用 `addEventListener` 而不是 React 的 `onWheel`：React 把它注册成
+ * **被动**监听，`preventDefault()` 会失效并打一条警告。而不 `preventDefault`
+ * 的话，滚轮既切换了级别、又把工具栏横向滚了一格 —— 两个动作同时发生。
+ *
+ * `passive: false` 只在原生监听里能指定，所以这里必须绕过 React 的合成事件。
+ */
+function WheelButton({ commands, details, onRun }: WheelButtonProps): JSX.Element {
+  const [index, setIndex] = useState(0);
+  const ref = useRef<HTMLButtonElement>(null);
+
+  /* 候选命令变了（插件重载）时回到第一项，避免越界 */
+  useEffect(() => {
+    setIndex(0);
+  }, [commands]);
+
+  useEffect(() => {
+    const element = ref.current;
+    if (!element) return;
+
+    const handle = (event: WheelEvent): void => {
+      event.preventDefault();
+      const step = event.deltaY > 0 ? 1 : -1;
+      setIndex((previous) =>
+        Math.min(commands.length - 1, Math.max(0, previous + step)),
+      );
+    };
+
+    element.addEventListener('wheel', handle, { passive: false });
+    return () => element.removeEventListener('wheel', handle);
+  }, [commands.length]);
+
+  const current = commands[index] ?? commands[0];
+  const detail = details.get(current);
+  const title = commandTitle(detail?.title ?? current);
+
+  return (
+    <button
+      ref={ref}
+      type="button"
+      className="tool-button tool-button--wheel"
+      /* 提示里说明滚轮 —— 否则这个交互没有任何可发现性 */
+      title={`${title}（滚轮切换级别）`}
+      aria-label={title}
+      onClick={() => onRun(current)}
+    >
+      <Icon name={detail?.icon ?? 'defaultPlugin'} />
+    </button>
+  );
+}
+
+interface WheelButtonProps {
+  readonly commands: readonly string[];
+  readonly details: ReadonlyMap<string, DeclaredCommandLike>;
+  readonly onRun: (commandId: string) => void;
+}
+
+function ToolbarGroup({ commands, details, onRun, withSeparator, wheel }: ToolbarGroupProps): JSX.Element {
+  /* 有滚轮候选时，这一组只画一个按钮，其余命令不再单独出现 */
+  const wheelSet = new Set(wheel ?? []);
+  const plain = commands.filter((commandId) => !wheelSet.has(commandId) || wheel?.[0] === commandId);
+
   return (
     <>
       {withSeparator && <span className="toolbar-separator" />}
-      {commands.map((commandId) => {
+      {plain.map((commandId) => {
+        if (wheel && wheel[0] === commandId) {
+          return (
+            <WheelButton key={commandId} commands={wheel} details={details} onRun={onRun} />
+          );
+        }
         const detail = details.get(commandId);
         return (
           <button

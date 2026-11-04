@@ -2369,6 +2369,45 @@ button {
 }
 
 /* 设置页里的文本 / 数字输入（插件配置项用） */
+/*
+ * 工具栏右键菜单。
+ *
+ * `fixed` 定位在鼠标位置，配一层透明遮罩接住"点别处关闭" —— 右键菜单的
+ * 标准形态。z-index 取 40/41：高于工具栏与侧栏，低于弹窗（那层是 100），
+ * 因为它不该盖住一个已经打开的设置页。
+ */
+.toolbar-menu__scrim {
+  position: fixed;
+  inset: 0;
+  z-index: 40;
+}
+
+.toolbar-menu {
+  position: fixed;
+  z-index: 41;
+  min-width: 190px;
+  padding: 4px;
+  border: 1px solid var(--md-border);
+  border-radius: var(--md-radius);
+  background: var(--md-surface-2);
+  box-shadow: 0 8px 28px var(--md-shadow);
+}
+
+.toolbar-menu__item {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 7px 10px;
+  border-radius: 4px;
+  font-size: 13px;
+  color: var(--md-text);
+  cursor: pointer;
+}
+
+.toolbar-menu__item:hover {
+  background: var(--md-surface-3);
+}
+
 .settings-input {
   width: 180px;
   padding: 4px 8px;

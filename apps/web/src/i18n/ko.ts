@@ -166,6 +166,7 @@ export const ko: Record<keyof typeof import('./zh').zh, string> = {
   'search.placeholder': '검색어 입력…',
   'search.empty': '일치 항목 없음',
   'search.searching': '검색 중…',
+  'toolbar.showFormat': '서식 버튼 표시',
   'settings.sync': '동기화 (WebDAV)',
   'settings.syncEnabled': '자동 동기화',
   'history.remote': '클라우드',

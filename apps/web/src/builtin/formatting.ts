@@ -25,6 +25,9 @@ const manifest: PluginManifest = {
     'onCommand:aropyt.h1',
     'onCommand:aropyt.h2',
     'onCommand:aropyt.h3',
+    'onCommand:aropyt.h4',
+    'onCommand:aropyt.h5',
+    'onCommand:aropyt.h6',
     'onCommand:aropyt.bulletList',
     'onCommand:aropyt.orderedList',
     'onCommand:aropyt.taskList',
@@ -43,6 +46,9 @@ const manifest: PluginManifest = {
       { id: 'aropyt.h1', title: '一级标题', category: '格式', icon: 'h1' },
       { id: 'aropyt.h2', title: '二级标题', category: '格式', icon: 'h2' },
       { id: 'aropyt.h3', title: '三级标题', category: '格式', icon: 'h3' },
+      { id: 'aropyt.h4', title: '四级标题', category: '格式', icon: 'h4' },
+      { id: 'aropyt.h5', title: '五级标题', category: '格式', icon: 'h5' },
+      { id: 'aropyt.h6', title: '六级标题', category: '格式', icon: 'h6' },
       { id: 'aropyt.bulletList', title: '无序列表', category: '格式', icon: 'bulletList' },
       { id: 'aropyt.orderedList', title: '有序列表', category: '格式', icon: 'orderedList' },
       { id: 'aropyt.taskList', title: '任务列表', category: '格式', icon: 'taskList' },
@@ -64,9 +70,27 @@ const manifest: PluginManifest = {
         { command: 'aropyt.strikethrough', group: '2', order: 3 },
         { command: 'aropyt.inlineCode', group: '2', order: 4 },
         { command: 'aropyt.link', group: '2', order: 5 },
-        { command: 'aropyt.h1', group: '3', order: 1 },
-        { command: 'aropyt.h2', group: '3', order: 2 },
-        { command: 'aropyt.h3', group: '3', order: 3 },
+        /*
+         * 标题六档只占**一个**按钮：鼠标滚轮在它上面滚动切换级别，
+         * 点击执行当前级别。六个按钮排开要占掉一百多像素，而写作时
+         * 绝大多数是 H1–H3，H4–H6 偶尔用一次。
+         *
+         * `wheel` 从低到高排列 —— 滚轮向下 = 级别更深，与"往下翻内容
+         * 越来越细"的直觉一致。
+         */
+        {
+          command: 'aropyt.h1',
+          group: '3',
+          order: 1,
+          wheel: [
+            'aropyt.h1',
+            'aropyt.h2',
+            'aropyt.h3',
+            'aropyt.h4',
+            'aropyt.h5',
+            'aropyt.h6',
+          ],
+        },
         { command: 'aropyt.bulletList', group: '4', order: 1 },
         { command: 'aropyt.orderedList', group: '4', order: 2 },
         { command: 'aropyt.taskList', group: '4', order: 3 },
@@ -100,6 +124,9 @@ function activate(context: PluginContext): void {
   commands.register('aropyt.h1', () => editor.toggleLinePrefix('# '));
   commands.register('aropyt.h2', () => editor.toggleLinePrefix('## '));
   commands.register('aropyt.h3', () => editor.toggleLinePrefix('### '));
+  commands.register('aropyt.h4', () => editor.toggleLinePrefix('#### '));
+  commands.register('aropyt.h5', () => editor.toggleLinePrefix('##### '));
+  commands.register('aropyt.h6', () => editor.toggleLinePrefix('###### '));
 
   commands.register('aropyt.bulletList', () => editor.toggleLinePrefix('- '));
   commands.register('aropyt.orderedList', () => editor.toggleLinePrefix((index) => `${index + 1}. `));

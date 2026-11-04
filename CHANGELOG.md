@@ -25,6 +25,17 @@ release.
 
 ### Fixed
 
+- **The formatting buttons can be hidden**: right-click the toolbar and
+  uncheck "Show formatting buttons" to keep only the file actions — open
+  folder, open file, save, export. Bold, headings, lists, quotes, code blocks,
+  tables and the formula button go with it (toolbar groups 2 and up); the
+  choice persists as `toolbar.formatButtons`.
+  The menu lives on the toolbar rather than in Settings: someone hiding these
+  is already looking at the toolbar, and a settings page for one checkbox is
+  the long way round.
+  The hit test is `closest('.tool-button')` rather than
+  `target === currentTarget` — the toolbar's children fill it end to end, so
+  the latter never matches and the menu would never open.
 - **The search panel shows a match count instead of "Select all"**: that
   button is CodeMirror's own `selectMatches`, which walks
   `query.getCursor(state, main.from, main.to)` — the *current selection*. With
@@ -235,6 +246,21 @@ release.
 
 ### Added
 
+- **All six heading levels, in one button**: H4–H6 were missing entirely, and
+  adding three more buttons would have made the heading group 160 px wide —
+  half the toolbar for something used occasionally. The six levels now share a
+  single button: **scroll over it to change the level**, click to apply. The
+  icon and tooltip follow the selection, and the tooltip says so
+  (`一级标题（滚轮切换级别）`), because nothing on screen advertises a wheel
+  gesture.
+  The wheel listener is attached with `addEventListener` rather than React's
+  `onWheel`: React registers it as passive, where `preventDefault()` is
+  ignored — and without that, one scroll both changes the level and scrolls
+  the toolbar sideways.
+  `MenuItemContribution.wheel` carries the candidates (low → high), so the
+  behaviour is declared by the plugin rather than hard-coded in the toolbar;
+  the six commands are still registered individually and remain reachable from
+  the command palette.
 - **Workspace-wide search**: `Ctrl+Alt+F` opens a panel that searches every
   text file in the workspace and jumps to the matching line on click.
   `search_workspace` walks the tree once in Rust and returns

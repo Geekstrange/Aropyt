@@ -79,7 +79,19 @@ export interface AggregatedContributions {
    * （例如给 .fountain 一个专属 id），而不需要改内核。
    */
   readonly languages: readonly (LanguageContribution & { readonly pluginId: string | null })[];
-  readonly menus: Readonly<Record<string, readonly { command: string; pluginId: string | null; group?: string; order?: number }[]>>;
+  readonly menus: Readonly<
+    Record<
+      string,
+      readonly {
+        command: string;
+        pluginId: string | null;
+        group?: string;
+        order?: number;
+        /** 滚轮可切换的候选命令（从低到高），见 `MenuItemContribution.wheel`。 */
+        wheel?: readonly string[];
+      }[]
+    >
+  >;
 }
 
 export interface PluginHostServices {
@@ -446,7 +458,16 @@ export class PluginHost {
     const keybindings: (AggregatedContributions['keybindings'][number])[] = [];
     const views: (AggregatedContributions['views'][number])[] = [];
     const languages: (AggregatedContributions['languages'][number])[] = [];
-    const menus: Record<string, { command: string; pluginId: string | null; group?: string; order?: number }[]> = {};
+    const menus: Record<
+      string,
+      {
+        command: string;
+        pluginId: string | null;
+        group?: string;
+        order?: number;
+        wheel?: readonly string[];
+      }[]
+    > = {};
     const configDisposables: Disposable[] = [];
 
     // 先收键位再声明命令：声明要在键位确定之后，否则命令面板里会先出现一个没有快捷键的版本。
@@ -488,7 +509,13 @@ export class PluginHost {
       for (const [location, items] of Object.entries(contributes.menus ?? {})) {
         for (const item of items ?? []) {
           const bucket = (menus[location] ??= []);
-          bucket.push({ command: item.command, pluginId, group: item.group, order: item.order });
+          bucket.push({
+            command: item.command,
+            pluginId,
+            group: item.group,
+            order: item.order,
+            wheel: item.wheel,
+          });
         }
       }
       if (contributes.configuration) {

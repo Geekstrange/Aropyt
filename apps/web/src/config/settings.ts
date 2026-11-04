@@ -21,7 +21,16 @@ export interface AppSettings {
   vim: { enabled: boolean };
   sidebar: { open: boolean };
   /** 工具栏是否显示。隐藏后靠 Ctrl+Shift+H 或设置页开关唤回。 */
-  toolbar: { open: boolean };
+  /**
+   * 工具栏。
+   *
+   * `open` 控制整条工具栏的显隐；`formatButtons` 只控制**格式按钮组**
+   * （加粗、标题、列表、引用、代码块、表格、公式）—— 关掉后只留文件操作。
+   * 写作时不用格式化按钮的人不少，而工具栏宽度是稀缺资源。
+   *
+   * 恢复方式是在工具栏上右键勾回来，不用进设置页。
+   */
+  toolbar: { open: boolean; formatButtons: boolean };
   /**
    * 导出相关。两个路径都为空时表示"自动探测"：先查 PATH，再查各平台
    * 常见安装位置。留这个口子是因为用户完全可能装在别处（便携版、
@@ -55,6 +64,7 @@ export interface AppSettings {
   plugins: { disabled: string[] };
   /** 编辑历史。 */
   history: { limit: number; /** 自动保存版本（按间隔）。 */ autoSave: boolean; /** 间隔秒数。 */ autoSaveInterval: number };
+
 }
 
 /** 所有合法的 locale 值。`auto` 表示跟随系统。 */
@@ -67,7 +77,7 @@ export const DEFAULT_SETTINGS: AppSettings = {
   editor: { fontSize: 15 },
   vim: { enabled: false },
   sidebar: { open: true },
-  toolbar: { open: true },
+  toolbar: { open: true, formatButtons: true },
   export: { pandocPath: '', typstPath: '' },
   sync: { enabled: false, url: '', username: '', remotePath: '' },
   plugins: { disabled: [] },
@@ -212,6 +222,11 @@ export function normalizeSettings(raw: unknown): {
   if (toolbar?.open !== undefined) {
     if (typeof toolbar.open === 'boolean') settings.toolbar.open = toolbar.open;
     else invalidValues.push('toolbar.open');
+  }
+  if (toolbar?.formatButtons !== undefined) {
+    if (typeof toolbar.formatButtons === 'boolean') {
+      settings.toolbar.formatButtons = toolbar.formatButtons;
+    } else invalidValues.push('toolbar.formatButtons');
   }
   const exportSection = obj.export as Record<string, unknown> | undefined;
   if (exportSection?.pandocPath !== undefined) {
