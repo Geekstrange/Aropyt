@@ -160,6 +160,128 @@ function mount(container: HTMLElement, context: PluginContext, viewContext: View
     void refresh();
   };
 
+  /**
+   * 删除一个条目。
+   *
+   * 目录只删空的（`recursive` 不传）：递归删除一个非空目录是**不可撤销**
+   * 的，而用户在手滑的时候不该失去整个子树。非空时把服务端的报错原样
+   * 转给用户 —— 它说的是"目录不为空"，比"删除失败"有用得多。
+   */
+  const deleteEntry = async (path: string, name: string): Promise<void> => {
+    const confirmed = await context.window.showMessage(
+      t('view.deleteConfirm', { name }),
+      { level: 'warning' },
+    );
+    /* 弹窗只要被点掉就算确认，取消由用户按 Esc 表达 */
+    if (confirmed === undefined) return;
+
+    try {
+      await context.workspace.delete(path);
+      removed.delete(path);
+      persistRemoved();
+      await refresh();
+    } catch (error) {
+      const detail = error instanceof Error ? error.message : String(error);
+      await context.window.showMessage(t('view.deleteFailed', { detail }), { level: 'error' });
+    }
+  };
+
+  /** 行上右键弹出的小菜单：重命名 / 删除。 */
+  const openRowMenu = (path: string, name: string, x: number, y: number): void => {
+    document.querySelector('.tree-menu')?.remove();
+
+    const menu = document.createElement('div');
+    menu.className = 'tree-menu';
+    menu.style.left = `${x}px`;
+    menu.style.top = `${y}px`;
+
+    const rename = document.createElement('button');
+    rename.type = 'button';
+    rename.className = 'tree-menu__item';
+    rename.textContent = t('view.rename');
+    rename.addEventListener('click', () => {
+      menu.remove();
+      void startRename(path, name);
+    });
+
+    const remove = document.createElement('button');
+    remove.type = 'button';
+    remove.className = 'tree-menu__item tree-menu__item--danger';
+    remove.textContent = t('view.delete');
+    remove.addEventListener('click', () => {
+      menu.remove();
+      void deleteEntry(path, name);
+    });
+
+    menu.append(rename, remove);
+    document.body.append(menu);
+
+    /* 点别处关掉。捕获阶段：面板内的点击也要能关掉它 */
+    const close = (event: MouseEvent): void => {
+      if (menu.contains(event.target as Node)) return;
+      menu.remove();
+      document.removeEventListener('mousedown', close, true);
+    };
+    document.addEventListener('mousedown', close, true);
+  };
+
+  /**
+   * 行内重命名。
+   *
+   * 不用 `prompt()`：WebView2 里它根本不弹（返回 null）。改成在行位置放
+   * 一个输入框 —— 也和 VSCode / Obsidian 的行内改名一致。
+   */
+  const startRename = async (path: string, name: string): Promise<void> => {
+    const row = document.querySelector<HTMLElement>(`.tree-item[data-path="${CSS.escape(path)}"]`);
+    if (!row) return;
+
+    const input = document.createElement('input');
+    input.className = 'tree-item__rename';
+    input.value = name;
+    /* 只选中主名，留下扩展名 —— 改名时几乎总是只改前半段 */
+    const dot = name.lastIndexOf('.');
+    input.setSelectionRange(0, dot > 0 ? dot : name.length);
+
+    row.replaceChildren(input);
+    input.focus();
+
+    let settled = false;
+    const finish = async (commit: boolean): Promise<void> => {
+      if (settled) return;
+      settled = true;
+
+      const next = input.value.trim();
+      input.remove();
+
+      if (!commit || !next || next === name) {
+        await refresh();
+        return;
+      }
+
+      try {
+        await context.workspace.rename?.(path, next);
+        await refresh();
+      } catch (error) {
+        const detail = error instanceof Error ? error.message : String(error);
+        await context.window.showMessage(t('view.renameFailed', { detail }), {
+          level: 'error',
+        });
+        await refresh();
+      }
+    };
+
+    input.addEventListener('keydown', (event) => {
+      if (event.key === 'Enter') {
+        event.preventDefault();
+        void finish(true);
+      } else if (event.key === 'Escape') {
+        event.preventDefault();
+        void finish(false);
+      }
+    });
+    input.addEventListener('blur', () => void finish(true));
+  };
+
   const renderEntry = (
     entry: Entry,
     depth: number,
@@ -246,6 +368,19 @@ function mount(container: HTMLElement, context: PluginContext, viewContext: View
       });
       row.append(action);
     }
+
+    /*
+     * 右键菜单：重命名 / 删除。
+     *
+     * 挂在行上而不是整棵树上 —— 菜单的每个动作都作用于"这一行"，而右键
+     * 空白处没有明确目标。左键仍是打开，两条路径互不干扰。
+     */
+    row.addEventListener('contextmenu', (event) => {
+      event.preventDefault();
+      event.stopPropagation();
+      openRowMenu(entry.path, entry.name, event.clientX, event.clientY);
+    });
+
 
     /*
      * 单击 = 开在**预览标签**里（斜体），而且会替换掉上一个预览标签。

@@ -384,6 +384,14 @@ export interface AropytRuntime {
   searchAcross(query: string): Promise<SearchHit[]>;
   /** 打开文件并跳到指定行（1 起算）。 */
   openAt(path: string, line: number): Promise<void>;
+  /** 删除工作区里的一个文件或空目录。 */
+  deleteEntry(path: string): Promise<void>;
+  /**
+   * 重命名工作区里的一个文件或目录。
+   *
+   * 只改名、不移动 —— 新名字里带路径分隔符会被拒绝。要移动请走"新建 + 删除"。
+   */
+  renameEntry(path: string, newName: string): Promise<void>;
   /** 选择外部工具（pandoc / typst）的可执行文件并写进配置。 */
   pickToolPath(kind: 'pandoc' | 'typst'): Promise<void>;
   /**
@@ -1069,6 +1077,8 @@ export function createRuntime(options: RuntimeOptions): AropytRuntime {
     exportDocument,
     searchAcross,
     openAt,
+    deleteEntry,
+    renameEntry,
     syncNow,
     saveSyncSettings,
     testSyncTarget,
@@ -1275,6 +1285,75 @@ export function createRuntime(options: RuntimeOptions): AropytRuntime {
   }
 
   /**
+   * 删除文件或空目录。
+   *
+   * 删完要发 `emitWorkspaceChange`：文件树持有目录快照，不会自己发现少了
+   * 一个条目。占着它的标签也要关掉 —— 一个指向已删除文件的标签，下一次
+   * 保存会在原地把它重建出来。
+   */
+  async function deleteEntry(path: string): Promise<void> {
+    const workspace = state.workspace;
+    if (!workspace) return;
+
+    await workspace.remove(path);
+
+    const doomed = state.tabs.filter(
+      (tab) =>
+        tab.workspaceId === workspace.id &&
+        (tab.path === path || tab.path.startsWith(`${path}/`)),
+    );
+    for (const tab of doomed) {
+      await closeTab(tab.path, tab.workspaceId);
+    }
+
+    emitWorkspaceChange();
+    notify();
+  }
+
+  /**
+   * 重命名文件或目录。
+   *
+   * 走原生命令（`fs::rename`）而不是"读出来写回去"：后者会丢修改时间，
+   * 并且在两次操作之间失败时，文件处于两个名字都不完整的状态。
+   *
+   * 改名后已打开的标签要跟着改，否则它指向一个不存在的路径。
+   */
+  async function renameEntry(path: string, newName: string): Promise<void> {
+    const workspace = state.workspace;
+    if (!workspace) return;
+
+    const trimmed = newName.trim();
+    const parent = path.includes('/') ? path.slice(0, path.lastIndexOf('/')) : '';
+    const next = parent ? `${parent}/${trimmed}` : trimmed;
+
+    await invokeNative('workspace_rename', {
+      args: { rootId: workspace.id, path, newName: trimmed },
+    });
+
+    state.tabs = state.tabs.map((tab) => {
+      if (tab.workspaceId !== workspace.id) return tab;
+      if (tab.path === path) return { ...tab, path: next };
+      /* 目录改名：它下面打开着的文件也要跟着挪 */
+      if (tab.path.startsWith(`${path}/`)) {
+        return { ...tab, path: `${next}${tab.path.slice(path.length)}` };
+      }
+      return tab;
+    });
+
+    if (state.activePath === path) {
+      state.activePath = next;
+      editor.setActiveFile(next, guessLanguage(next));
+    } else if (state.activePath?.startsWith(`${path}/`)) {
+      const moved = `${next}${state.activePath.slice(path.length)}`;
+      state.activePath = moved;
+      editor.setActiveFile(moved, guessLanguage(moved));
+    }
+
+    emitWorkspaceChange();
+    notify();
+  }
+
+  /**
    * 打开文件并跳到指定行（1 起算）。
    *
    * 两个动作合成一个入口，因为调用方（搜索、大纲、Fountain 场景列表）
@@ -1420,18 +1499,31 @@ export function createRuntime(options: RuntimeOptions): AropytRuntime {
               {
                 label: t('rt.discardDisk'),
                 run: () => {
-                  /*
-                   * 丢弃 = 回到磁盘内容 + 删掉草稿。
-                   *
-                   * 必须走 `replaceDocument` 并把 `loadingDocument` 打开 ——
-                   * 否则这次"换回磁盘版本"会被当作用户编辑，又写出一份
-                   * 一模一样的草稿，下次打开继续提示（那就成了死循环）。
-                   */
-                  const workspaceNow = state.workspace;
-                  if (!workspaceNow) return;
-                  void workspaceNow
-                    .read(path)
-                    .then(async (diskText) => {
+                  void (async () => {
+                    /*
+                     * ⚠️ 提示条会一直留在界面上，而用户完全可能已经打开了
+                     * 另一个文件。此时直接 `replaceDocument` 会把 A 的磁盘
+                     * 内容写进 B 的编辑区 —— 用户看着是 B，保存一次就把
+                     * B 的内容换成了 A 的（实测报障，且不可撤销）。
+                     *
+                     * 先切回那个文件：用户的意图明确指向 A，动作就该作用
+                     * 在 A 上，而不是"屏幕上正在显示的那个"。
+                     */
+                    if (state.activePath !== path) {
+                      await openFile(path);
+                    }
+
+                    /*
+                     * 丢弃 = 回到磁盘内容 + 删掉草稿。
+                     *
+                     * 必须把 `loadingDocument` 打开 —— 否则这次"换回磁盘
+                     * 版本"会被当作用户编辑，又写出一份一模一样的草稿，
+                     * 下次打开继续提示（死循环）。
+                     */
+                    const workspaceNow = state.workspace;
+                    if (!workspaceNow) return;
+                    try {
+                      const diskText = await workspaceNow.read(path);
                       loadingDocument = true;
                       try {
                         editor.replaceDocument(diskText);
@@ -1439,15 +1531,18 @@ export function createRuntime(options: RuntimeOptions): AropytRuntime {
                         loadingDocument = false;
                       }
                       persistDraft.cancel();
-                      await idbDelete(STORE.drafts, storageKey(state.activeWorkspaceId, path)).catch(() => undefined);
+                      await idbDelete(
+                        STORE.drafts,
+                        storageKey(state.activeWorkspaceId, path),
+                      ).catch(() => undefined);
                       state.dirty = false;
                       notify();
                       await windowService.showMessage(t('rt.useDisk'), { level: 'info' });
-                    })
-                    .catch((error: unknown) => {
+                    } catch (error: unknown) {
                       console.error(error);
                       void windowService.showMessage(t('rt.readDiskFailed'), { level: 'error' });
-                    });
+                    }
+                  })();
                 },
               },
             ],

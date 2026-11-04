@@ -318,6 +318,12 @@ export const ja: Record<keyof typeof import('./zh').zh, string> = {
   // ワークスペース：閉じる / サブフォルダーの削除
   'toolbar.closeWorkspace': 'ワークスペースを閉じる',
   'view.removeFromWorkspace': 'ワークスペースから削除',
+  'view.rename': '名前を変更',
+  'view.delete': '削除',
+  'view.deleteConfirm': '「{name}」を削除しますか？元に戻せません。',
+  'view.deleteFailed': '削除に失敗しました：{detail}',
+  'view.renameFailed': '名前の変更に失敗しました：{detail}',
+  'view.renameUnsupported': 'この環境では名前を変更できません',
   'view.restoreRemoved': '削除したフォルダーを復元',
   'view.nothingToRestore': '削除されたフォルダーはありません。',
   'view.restoredAll': '{n} 個のフォルダーを復元しました',

@@ -318,6 +318,12 @@ export const ru: Record<keyof typeof import('./zh').zh, string> = {
   // Рабочая область: закрыть / убрать подпапку
   'toolbar.closeWorkspace': 'Закрыть рабочую область',
   'view.removeFromWorkspace': 'Убрать из рабочей области',
+  'view.rename': 'Переименовать',
+  'view.delete': 'Удалить',
+  'view.deleteConfirm': 'Удалить «{name}»? Это необратимо.',
+  'view.deleteFailed': 'Не удалось удалить: {detail}',
+  'view.renameFailed': 'Не удалось переименовать: {detail}',
+  'view.renameUnsupported': 'Переименование здесь не поддерживается',
   'view.restoreRemoved': 'Восстановить убранные папки',
   'view.nothingToRestore': 'Убранных папок нет.',
   'view.restoredAll': 'Восстановлено папок: {n}',

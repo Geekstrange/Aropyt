@@ -320,6 +320,12 @@ export const de: Record<keyof typeof import('./zh').zh, string> = {
   // Arbeitsbereich: schließen / Unterordner entfernen
   'toolbar.closeWorkspace': 'Arbeitsbereich schließen',
   'view.removeFromWorkspace': 'Aus Arbeitsbereich entfernen',
+  'view.rename': 'Umbenennen',
+  'view.delete': 'Löschen',
+  'view.deleteConfirm': '„{name}“ löschen? Das lässt sich nicht rückgängig machen.',
+  'view.deleteFailed': 'Löschen fehlgeschlagen: {detail}',
+  'view.renameFailed': 'Umbenennen fehlgeschlagen: {detail}',
+  'view.renameUnsupported': 'Umbenennen wird hier nicht unterstützt',
   'view.restoreRemoved': 'Entfernte Ordner wiederherstellen',
   'view.nothingToRestore': 'Es wurden keine Ordner entfernt.',
   'view.restoredAll': '{n} Ordner wiederhergestellt',

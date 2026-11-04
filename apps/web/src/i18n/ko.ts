@@ -318,6 +318,12 @@ export const ko: Record<keyof typeof import('./zh').zh, string> = {
   // 작업 공간: 닫기 / 하위 폴더 제거
   'toolbar.closeWorkspace': '작업 공간 닫기',
   'view.removeFromWorkspace': '작업 공간에서 제거',
+  'view.rename': '이름 바꾸기',
+  'view.delete': '삭제',
+  'view.deleteConfirm': '"{name}"을(를) 삭제할까요? 되돌릴 수 없습니다.',
+  'view.deleteFailed': '삭제 실패: {detail}',
+  'view.renameFailed': '이름 바꾸기 실패: {detail}',
+  'view.renameUnsupported': '이 환경에서는 이름을 바꿀 수 없습니다',
   'view.restoreRemoved': '제거한 폴더 복원',
   'view.nothingToRestore': '제거된 폴더가 없습니다.',
   'view.restoredAll': '폴더 {n}개를 복원했습니다',

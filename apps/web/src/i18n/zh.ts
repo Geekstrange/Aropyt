@@ -330,6 +330,12 @@ export const zh = {
   // 工作区：关闭 / 移除子目录
   'toolbar.closeWorkspace': '关闭工作区',
   'view.removeFromWorkspace': '从工作区移除',
+  'view.rename': '重命名',
+  'view.delete': '删除',
+  'view.deleteConfirm': '确定删除「{name}」？此操作不可撤销。',
+  'view.deleteFailed': '删除失败：{detail}',
+  'view.renameFailed': '重命名失败：{detail}',
+  'view.renameUnsupported': '当前环境不支持重命名',
   'view.restoreRemoved': '恢复已移除的目录',
   'view.nothingToRestore': '没有被移除的目录。',
   'view.restoredAll': '已恢复 {n} 个目录',

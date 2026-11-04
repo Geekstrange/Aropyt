@@ -320,6 +320,12 @@ export const it: Record<keyof typeof import('./zh').zh, string> = {
   // Area di lavoro: chiudi / rimuovi sottocartella
   'toolbar.closeWorkspace': 'Chiudi area di lavoro',
   'view.removeFromWorkspace': 'Rimuovi dall’area di lavoro',
+  'view.rename': 'Rinomina',
+  'view.delete': 'Elimina',
+  'view.deleteConfirm': 'Eliminare «{name}»? L’operazione è irreversibile.',
+  'view.deleteFailed': 'Eliminazione non riuscita: {detail}',
+  'view.renameFailed': 'Rinomina non riuscita: {detail}',
+  'view.renameUnsupported': 'La rinomina non è supportata qui',
   'view.restoreRemoved': 'Ripristina cartelle rimosse',
   'view.nothingToRestore': 'Nessuna cartella è stata rimossa.',
   'view.restoredAll': '{n} cartelle ripristinate',

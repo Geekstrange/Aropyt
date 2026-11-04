@@ -314,6 +314,12 @@ export const en: Record<keyof typeof import('./zh').zh, string> = {
   // Workspace: close / remove subfolder
   'toolbar.closeWorkspace': 'Close Workspace',
   'view.removeFromWorkspace': 'Remove from Workspace',
+  'view.rename': 'Rename',
+  'view.delete': 'Delete',
+  'view.deleteConfirm': 'Delete "{name}"? This cannot be undone.',
+  'view.deleteFailed': 'Delete failed: {detail}',
+  'view.renameFailed': 'Rename failed: {detail}',
+  'view.renameUnsupported': 'Renaming is not supported here',
   'view.restoreRemoved': 'Restore Removed Folders',
   'view.nothingToRestore': 'No folders have been removed.',
   'view.restoredAll': 'Restored {n} folder(s)',

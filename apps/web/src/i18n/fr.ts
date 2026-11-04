@@ -320,6 +320,12 @@ export const fr: Record<keyof typeof import('./zh').zh, string> = {
   // Espace de travail : fermer / retirer un sous-dossier
   'toolbar.closeWorkspace': 'Fermer l’espace de travail',
   'view.removeFromWorkspace': 'Retirer de l’espace de travail',
+  'view.rename': 'Renommer',
+  'view.delete': 'Supprimer',
+  'view.deleteConfirm': 'Supprimer « {name} » ? Action irréversible.',
+  'view.deleteFailed': 'Échec de la suppression : {detail}',
+  'view.renameFailed': 'Échec du renommage : {detail}',
+  'view.renameUnsupported': 'Le renommage n’est pas pris en charge ici',
   'view.restoreRemoved': 'Restaurer les dossiers retirés',
   'view.nothingToRestore': 'Aucun dossier n’a été retiré.',
   'view.restoredAll': '{n} dossier(s) restauré(s)',
