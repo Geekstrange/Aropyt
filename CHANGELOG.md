@@ -8,21 +8,153 @@ Release notes for a single version (the GitHub Release body) live in
 `docs/releases/<tag>.md`; this file keeps the cumulative view of every
 release.
 
+## [Unreleased]
+
+### Planned
+
+## [0.2.2] - 2026-11-06
+
+### Added
+
+- **LaTeX delimiters**: `\( … \)` and `\[ … \]` now work the same as
+  `$…$` and `$$…$$`. They are the delimiters LaTeX itself uses, Typora
+  supports them, and pasting a formula from anywhere else produces them.
+  Without support, `\[` was read as an escaped bracket and the whole formula
+  appeared as source, with no error to notice. Block rendering and inline
+  decorations are separate paths (`prepareMarkdown` and `inlineMathSpans`),
+  and both had to learn the delimiters; fixing only one leaves inline
+  formulas as source near the caret. Everything KaTeX supports comes along:
+  `vmatrix`, `cases`, `pmatrix`, `\left( … \right)`, `\tag`,
+  `\operatorname`, `\lVert`, `\mathbb`.
+- **GitHub alert labels and icons**: labels are always English — `Note` /
+  `Tip` / `Important` / `Warning` / `Caution`. They map one to one onto
+  `> [!NOTE]` in the source, so translating them breaks that link. The icons
+  are Octicon SVGs, replacing the emoji characters that came from the
+  upstream rule `.md-alert-text-container:before`. They are drawn with a CSS
+  mask plus `currentColor`, so they follow the type colour, and all three
+  class families (`.cm-md-alert`, `.markdown-alert`, `.md-alert`) share one
+  definition.
+- **The dev build has its own icon and title**: `npm run tauri dev` opens a
+  window titled `Aropyt · DEV`, and its exe carries the monochrome icon while
+  the release build is green. `build.rs` picks `window_icon_path` by
+  `PROFILE` — that is the only moment the taskbar and Alt+Tab icon can be
+  chosen; `set_icon` at runtime only changes the small one in the title bar.
+  `identifier` is untouched, since it decides where settings and drafts live.
+### Changed
+
+- **The upstream renderer and editing core are now the editor**: the
+  `aropyt-tauri` implementation (21 files) moved into
+  `packages/core/src/editor-upstream/` and was wired into `EditorAdapter`.
+  The previous `wysiwyg/inline-render.ts` (115 KB) is deleted.
+  Two problems this fixes, both visible in the same document:
+  - **Headings no longer fall back to source when the caret enters them.**
+    The old renderer treated `ATXHeading*` as replaceable blocks, so a caret
+    on a title exposed `#` and a grey source backdrop. The upstream renderer
+    treats headings as inline — only `HeaderMark` is hidden, the line keeps
+    its heading class. This is the Typora behaviour: the marker never shows,
+    wherever the caret is.
+  - **Tables stay tables while being edited.** The old renderer replaced the
+    whole table with one non-editable `<table>` widget, so entering it showed
+    a wall of pipes. The upstream renderer projects each cell while keeping
+    Markdown source in text nodes, so DOM ranges and source offsets stay
+    aligned. Row/column insert and delete controls come with it.
+
+  Wiring, in `editor-upstream/adapter.ts`:
+  - `setBlockRenderer(blockRanges)` and `setSingleBlockRenderer(...)` are
+    registered at startup; `EditorAdapter` injects the upstream state fields
+    through its existing render Compartment, so vim, search, themes, word
+    count and source-mode switching are untouched.
+  - `mountUpstreamHost()` runs **after** `new EditorView`. The upstream
+    `DocEditor` assigns `__host` after constructing the view, so the first
+    frame's widgets render without a host and formulas stay plain text.
+    It dispatches `rebuild` to force that first repaint.
+  - Styles are copied from the upstream `vendor/` and `renderer/styles/`
+    into `apps/web/public/` and loaded in `index.html` in upstream order,
+    ending with the `github` theme — table borders, header tint and
+    blockquote colours live in the theme, not in `app.css`.
+  - KaTeX, mermaid and GitHub alert blocks keep their current behaviour.
+    KaTeX renders into a **Shadow DOM** per formula: three stylesheets
+    (upstream `app.css`, the theme, and CM6's dynamic `lineWrapping`) leak
+    into `.katex` and break its internal `display`/`white-space`, scattering
+    integrals and fractions into a column. Per-property fixes and raising
+    `katex.min.css` specificity both failed; a shadow boundary is the only
+    reliable isolation. Mermaid remains a 3.2 MB UMD script loaded from the
+    static directory, cached per fence via `rememberDiagram`.
+  - **Type-only imports had to be real**, not suppressed. `EditorAdapter`'s
+    host tsconfig runs with `verbatimModuleSyntax`, so the 17 places where
+    upstream wrote `import { BlockRange }` (a type) were fixed to
+    `import { type BlockRange }`. Under `npm run build` this looks cosmetic
+    because rollup erases cross-module type imports; under `npm run dev`
+    esbuild transpiles file by file, keeps the import, and the browser throws
+    `The requested module 'md.ts' does not provide an export named
+    'BlockRange'` — a white window with no React tree at all. Marking those
+    files `@ts-nocheck` hid exactly this and was the wrong call.
+    Three genuinely unused locals and parameters were renamed or removed; the
+    five `markdown-it-*` plugins got ambient `declare module` files (one per
+    package, since each `tsc -p` only sees its own `include`).
+
+  Verified in the real app: heading without `#`, real table with borders and
+  header tint, inline and display KaTeX, GitHub alert, lists and a mermaid
+  flowchart all render together, with zero legacy `.cm-md-block` widgets.
+### Fixed
+
+- **Source mode did nothing**: the button flipped its own label but the editor
+  stayed in render mode, and the console showed
+  `RangeError: Field is not present in this state`. The old implementation
+  swapped the whole render extension set out of a Compartment; `showTooltip`
+  and similar consumers still read `decorationField` inside the same
+  transaction, so the `dispatch` threw and the whole switch was lost. The
+  upstream kernel does not work that way — it carries a `modeField` whose
+  `source` flag makes `buildDecorations` return an empty set. Source mode now
+  drives that effect, and the upstream extensions stay mounted for the
+  document's lifetime, switching only when the *language* changes (tex and
+  fountain must not get the markdown renderer).
+- **Formulas inside table cells fell apart**: `a²+b²=c²` rendered as a vertical
+  stack of `a²b²`, `+`, `=`, `c²`. Only `.md-math-block` went through the
+  Shadow DOM isolation; table cells (`md-table-math-preview`) and inline
+  widgets are filled by paths that never reach `enhance`. All three now return
+  a `.aropyt-math` placeholder from `host.math`, and a `MutationObserver` on
+  the view hydrates every placeholder — one entry point instead of three.
+- **Quadrant charts came out broken**: the axes and quadrant labels were
+  present but the data points were missing and the axis titles rendered
+  vertically. The bundled upstream `mermaid.min.js` predates `quadrantChart`.
+  Diagrams now load the project's own `mermaid` (v12) through a dynamic
+  `import()`, which also drops 4 MB from the static assets — the two UMD
+  bundles are gone.
+
+- **Deleting a file did nothing**: the confirmation called
+  `showMessage(msg, { level: "warning" })` without `actions` — that is a
+  toast, not a dialog. It has no buttons, disappears after a few seconds, and
+  its promise resolves to `undefined` immediately, so the guard
+  `if (confirmed === undefined) return` fired every time: the user saw
+  "delete this file?" and nothing happened.
+  `showMessage` resolves to the **label of the clicked action**, so the call
+  now passes a Delete action and proceeds only when that comes back.
+- **A gap between the header and the toolbar**: the upstream `app.css` has an
+  element selector `header { height: var(--titlebar-height) }` (30px, meant
+  for a custom Electron title bar). Our header is also a `<header>`, so it
+  was pinned to 30px while the first grid row is 40px — a 10px gap. The
+  selector is only `(0,0,1)`, but nothing had ever set a height on
+  `.app-header`, so it had always applied.
+- **Six heading levels, six colours**: the highlight style gave
+  `tags.heading1…6` a colour each (blue / green / orange / red / purple /
+  grey). That is a code-editor convention for nesting; in a document it means
+  a screenful of headings in six colours while the levels still have to be
+  remembered. They use the body colour now, with size doing the work
+  (2em / 1.5em / 1.25em / 1.05em / 1em / 1em).
+- **Bold text had a second outline**: the Chinese font on this system has no
+  usable Bold face, so `font-weight: 700` found nothing. Two compensations
+  were tried and both left marks — `-webkit-text-stroke` is offset down-right
+  on WebView2 (very visible on dark backgrounds), and `text-shadow` at 0.35px
+  with zero blur rounds to a whole pixel, giving every glyph a solid copy
+  above and below. Both draw the glyph again slightly offset; with the same
+  colour that always reads as two layers. Only `font-weight: 700` remains,
+  with the Chinese fonts moved to the front of the stack.
+
 ## [0.2.1] - 2026-11-04
 
 ### Added
 
-- **Delete and rename from the file tree**: right-click any row. Delete asks
-  first — `fs::remove_file` does not reach the recycle bin, so there is no
-  undo — and only removes empty directories; a recursive delete of a subtree is
-  not something a right-click should do by accident. Rename is inline: the row
-  becomes an input with the base name selected and the extension left alone.
-  Enter commits, Escape cancels, blur commits too. It goes through
-  `workspace_rename` → `fs::rename` rather than read-write-delete, which would
-  lose the modification time and could leave the file under neither name if it
-  failed halfway. `WorkspaceFileHandle.rename` is optional because the FSA and
-  OPFS adapters do not implement it; a missing implementation rejects rather
-  than silently succeeding.
 - **All six heading levels in one button**: H4–H6 did not exist, and three more
   buttons would have made the heading group 160 px wide. The six levels share
   one button — scroll to change level, click to apply. The wheel listener uses
@@ -1729,7 +1861,8 @@ Other fixes:
 - Editor core, command registry, keybinding parsing, theme system
 - Light and dark palettes and first-paint bundle budget gate
 
-[Unreleased]: https://github.com/Geekstrange/Aropyt/compare/v0.2.1...HEAD
+[Unreleased]: https://github.com/Geekstrange/Aropyt/compare/v0.2.2...HEAD
+[0.2.2]: https://github.com/Geekstrange/Aropyt/compare/v0.2.1...v0.2.2
 [0.2.1]: https://github.com/Geekstrange/Aropyt/compare/v0.2.0...v0.2.1
 [0.2.0]: https://github.com/Geekstrange/Aropyt/compare/v0.1.8...v0.2.0
 [0.1.8]: https://github.com/Geekstrange/Aropyt/compare/v0.1.7...v0.1.8

@@ -2257,6 +2257,23 @@ pub fn run() {
             secret_delete
         ])
         .setup(|app| {
+            /*
+             * 开发版与安装版必须一眼可分。
+             *
+             * 两者共用同一个 exe 名（Aropyt）与窗口尺寸，同时开着的时候
+             * 只能靠图标辨认 —— 而任务栏把图标缩到 16px 之后，两版几乎
+             * 一样（实测反馈）。标题是最不会看漏的区分点。
+             *
+             * 只改标题，不改 identifier：identifier 同时决定配置与草稿的
+             * 存放路径，改它等于让开发版读不到已有设置。
+             */
+            #[cfg(debug_assertions)]
+            {
+                if let Some(window) = app.get_webview_window("main") {
+                    let _ = window.set_title("Aropyt  ·  DEV");
+                }
+            }
+
             app.manage(PendingOpen(Mutex::new(launch_file_from_args())));
             // 状态只在这里注册一次。命令里不再 manage —— 重复注册会 panic。
             app.manage(WorkspaceState {

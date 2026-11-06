@@ -716,6 +716,17 @@ function createWorkspaceFacade(
     writeFileBytes: (path, data) => require().writeBytes(path, data),
     createDirectory: (path) => require().createDirectory(path),
     delete: (path, options) => require().remove(path, options),
+    /*
+     * 适配器不一定实现 `rename`（FSA / OPFS 目前没有）。缺的时候**报错**
+     * 而不是静默成功 —— 静默返回会让上层以为改名成功，界面刷新后名字没变，
+     * 那种"点了没反应"比一句明确的"当前环境不支持"难查得多。
+     */
+    rename: (path, newName) => {
+      const target = require();
+      const impl = target.rename;
+      if (!impl) return Promise.reject(new Error('当前环境不支持重命名'));
+      return impl.call(target, path, newName);
+    },
     resolvePath: (path, relativeTo) => {
       if (path.startsWith('/')) return path;
       const segments = (relativeTo ?? '').split('/').filter(Boolean);

@@ -1,0 +1,4 @@
+Open Sans
+Digitized data copyright © 2010-2011, Google Corporation.
+Licensed under the Apache License, Version 2.0.
+See LICENSE-2.0.txt.

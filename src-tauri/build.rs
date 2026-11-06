@@ -29,7 +29,30 @@ use std::env;
 
 fn main() {
     gate_release_without_custom_protocol();
-    tauri_build::build();
+
+    /*
+     * 开发版的 exe / 窗口图标用另一套。
+     *
+     * `tauri dev` 编译的是 debug profile，产物落在 `target/debug/`，
+     * 但它和安装版共用 `icons/icon.ico` —— 两个窗口在任务栏和 Alt+Tab
+     * 里长得一模一样，很难分清哪个是开发版（实测反馈）。
+     *
+     * `window_icon_path` 决定嵌进 exe 的图标资源，按 profile 选不同的
+     * 文件即可。这是编译期的事，运行时改不了（`set_icon` 只改窗口标题栏
+     * 那个小图标，Alt+Tab 用的还是 exe 资源）。
+     */
+    let debug = env::var("PROFILE").map(|p| p == "debug").unwrap_or(false);
+
+    let mut attributes = tauri_build::Attributes::new();
+    if debug {
+        attributes = attributes.windows_attributes(
+            tauri_build::WindowsAttributes::new().window_icon_path("icons/dev/icon.ico"),
+        );
+    }
+
+    if let Err(error) = tauri_build::try_build(attributes) {
+        panic!("tauri-build 失败：{error:?}");
+    }
 }
 
 /// release 构建必须开 `custom-protocol`，否则前端口令会指向 devUrl。

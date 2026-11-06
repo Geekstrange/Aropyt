@@ -276,6 +276,22 @@ class NativeWorkspace implements Workspace {
       args: { rootId: this.id, path },
     });
   }
+
+  /**
+   * 重命名同目录下的一个条目。
+   *
+   * 走原生 `fs::rename` 而不是"读出来再写回去"：后者会丢修改时间，并且在
+   * 两次操作之间失败时，文件会处于两个名字都不完整的状态。
+   *
+   * 新名字里不能带路径分隔符 —— `assertSafePath` 检查的是**源路径**，目标
+   * 路径一旦能自由构造就能绕过越界检查。移动是另一个动作。
+   */
+  async rename(path: string, newName: string): Promise<void> {
+    assertSafePath(path);
+    await invokeAs<void>(this.#api, 'workspace_rename', {
+      args: { rootId: this.id, path, newName },
+    });
+  }
 }
 
 export const tauriProvider = {

@@ -1,0 +1,33 @@
+pre code.hljs {
+  display: block;
+  overflow-x: auto;
+  padding: 1em
+}
+code.hljs {
+  padding: 3px 5px
+}
+/* Syntax colours match the bundled CodeMirror default theme. */
+.hljs { color:var(--text-color,#333); background:transparent; }
+.hljs-keyword,.hljs-doctag,.hljs-template-tag,.hljs-template-variable { color:#708; }
+.hljs-literal,.hljs-symbol { color:#219; }
+.hljs-number,.hljs-type { color:#164; }
+.hljs-title,.hljs-title.class_,.hljs-title.function_ { color:#00f; }
+.hljs-variable,.hljs-property,.hljs-subst { color:inherit; }
+.hljs-string,.hljs-regexp { color:#a11; }
+.hljs-operator { color:#981a1a; }
+.hljs-comment,.hljs-code { color:#a50; }
+.hljs-meta { color:#555; }
+.hljs-built_in { color:#30a; }
+.hljs-name,.hljs-selector-tag,.hljs-tag { color:#170; }
+.hljs-attr,.hljs-attribute { color:#00c; }
+.hljs-section { color:#00f; font-weight:bold; }
+.hljs-emphasis { font-style:italic; }
+.hljs-strong { font-weight:bold; }
+.hljs-addition { color:#292; }
+.hljs-deletion { color:#d44; }
+html.theme-dark .hljs-keyword { color:#c792ea; }
+html.theme-dark .hljs-string { color:#c3e88d; }
+html.theme-dark .hljs-number,html.theme-dark .hljs-literal { color:#f78c6c; }
+html.theme-dark .hljs-title { color:#82aaff; }
+html.theme-dark .hljs-type { color:#ffcb6b; }
+html.theme-dark .hljs-comment { color:#888; }

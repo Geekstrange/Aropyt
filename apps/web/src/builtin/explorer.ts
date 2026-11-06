@@ -168,12 +168,24 @@ function mount(container: HTMLElement, context: PluginContext, viewContext: View
    * 转给用户 —— 它说的是"目录不为空"，比"删除失败"有用得多。
    */
   const deleteEntry = async (path: string, name: string): Promise<void> => {
+    /*
+     * ⚠️ 必须传 `actions`，否则这只是一个 toast。
+     *
+     * `showMessage` 解析出来的是**被点中的那个 action 的 label**，
+     * 没有 action 时它立刻以 `undefined` 返回（提示几秒后自己消失）。
+     * 之前这里只传了 `{ level: 'warning' }`，于是 `confirmed` 永远是
+     * undefined，函数在第一步就 return —— 用户看到一句提示，文件却没删。
+     */
+    const confirmLabel = t('view.delete');
     const confirmed = await context.window.showMessage(
       t('view.deleteConfirm', { name }),
-      { level: 'warning' },
+      {
+        level: 'warning',
+        actions: [{ label: confirmLabel, run: () => undefined }],
+      },
     );
-    /* 弹窗只要被点掉就算确认，取消由用户按 Esc 表达 */
-    if (confirmed === undefined) return;
+    /* 没点确认（提示消失 / 点了别处）就是不删 */
+    if (confirmed !== confirmLabel) return;
 
     try {
       await context.workspace.delete(path);

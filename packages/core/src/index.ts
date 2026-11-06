@@ -22,7 +22,7 @@ export * from './theme.js';
 export * from './commands.js';
 // Typora 式原地渲染。这是产品的默认编辑形态：
 // 编辑区本身即预览，没有并排的第二栏。
-export { inlineRender, type InlineRenderConfig } from './wysiwyg/inline-render.js';
+export { initUpstreamRenderer, mountUpstreamHost, upstreamRenderExtensions } from './editor-upstream/adapter.js';
 export * from './safety.js';
 // 纯函数，无依赖 —— 状态栏每次渲染都要用，必须留在根入口。
 export * from './text-stats.js';

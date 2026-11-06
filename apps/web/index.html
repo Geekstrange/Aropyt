@@ -40,6 +40,42 @@
         if (meta) meta.setAttribute('content', theme);
       })();
     </script>
+
+    <!--
+      原版排版样式：顺序逐条照抄 aropyt-tauri 的 src/renderer/index.html。
+      `vendor/` 与 `renderer-styles/` 分开放 —— 两边都有 base.css，
+      合到同一目录会互相覆盖。`app.css` 必须排在最后，它是正文排版。
+    -->
+    <link rel="stylesheet" href="/vendor/aropyt-lib/bootstrape/css/bootstrap.css" />
+    <link rel="stylesheet" href="/vendor/aropyt-lib/diagram/css/mermaid.css" />
+    <link rel="stylesheet" href="/vendor/styles/font-awesome-4.1.0/css/font-awesome.min.css" />
+    <link rel="stylesheet" href="/vendor/styles/ionicons-2.0.1/css/ionicons.min.css" />
+    <link rel="stylesheet" href="/vendor/styles/aropyt-icon/style.css" />
+    <link rel="stylesheet" href="/vendor/styles/aropyt-file-icon/style.css" />
+    <link rel="stylesheet" href="/vendor/styles/base.css" />
+    <link rel="stylesheet" href="/renderer-styles/app.css" />
+    <!--
+      原版在运行时把主题 CSS 注入 `<style id="theme_css">`（`applyTheme`），
+      表格边框、表头底色、引用块配色都在主题里，不在 app.css 里。
+      这里先固定注入 github（浅色）；深浅主题联动留到接主题系统时做。
+    -->
+    <link rel="stylesheet" href="/vendor/styles/themes/github.css" />
+    <!--
+      KaTeX 的 CSS 由 adapter.ts 注入到公式自己的 Shadow DOM 里，不在全局
+      加载。这里只给影子宿主定尺寸：`inline-block` 让它参与行内排版，
+      块级公式独占一行并居中。
+    -->
+    <style>
+      .aropyt-math {
+        display: inline-block;
+        vertical-align: middle;
+      }
+      .aropyt-math[data-display='1'] {
+        display: block;
+        text-align: center;
+        margin: 1em 0;
+      }
+    </style>
   </head>
   <body>
     <div id="root"></div>

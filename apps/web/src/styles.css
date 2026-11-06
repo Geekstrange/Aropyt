@@ -1851,19 +1851,24 @@ button {
 }
 
 .cm-md-alert-note,
-.markdown-alert-note { --alert-icon: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 16 16'%3E%3Cpath d='M0 8a8 8 0 1 1 16 0A8 8 0 0 1 0 8Zm8-6.5a6.5 6.5 0 1 0 0 13 6.5 6.5 0 0 0 0-13ZM6.5 7.75A.75.75 0 0 1 7.25 7h1a.75.75 0 0 1 .75.75v2.75h.25a.75.75 0 0 1 0 1.5h-2a.75.75 0 0 1 0-1.5h.25v-2h-.25a.75.75 0 0 1-.75-.75ZM8 6a1 1 0 1 1 0-2 1 1 0 0 1 0 2Z'/%3E%3C/svg%3E");
+.markdown-alert-note,
+.md-alert-note { --alert-icon: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 16 16'%3E%3Cpath d='M0 8a8 8 0 1 1 16 0A8 8 0 0 1 0 8Zm8-6.5a6.5 6.5 0 1 0 0 13 6.5 6.5 0 0 0 0-13ZM6.5 7.75A.75.75 0 0 1 7.25 7h1a.75.75 0 0 1 .75.75v2.75h.25a.75.75 0 0 1 0 1.5h-2a.75.75 0 0 1 0-1.5h.25v-2h-.25a.75.75 0 0 1-.75-.75ZM8 6a1 1 0 1 1 0-2 1 1 0 0 1 0 2Z'/%3E%3C/svg%3E");
   --alert-color: var(--alert-note); }
 .cm-md-alert-tip,
-.markdown-alert-tip { --alert-icon: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 16 16'%3E%3Cpath d='M8 1.5c-2.363 0-4 1.69-4 3.75 0 .984.424 1.625.984 2.304l.214.253c.223.264.47.556.673.848.284.411.537.896.621 1.49a.75.75 0 0 1-1.484.211c-.04-.282-.163-.547-.37-.847a8.456 8.456 0 0 0-.542-.68c-.084-.1-.173-.205-.268-.32C3.201 7.75 2.5 6.766 2.5 5.25 2.5 2.31 4.863 0 8 0s5.5 2.31 5.5 5.25c0 1.516-.701 2.5-1.328 3.259-.095.115-.184.22-.268.319-.207.245-.383.453-.541.681-.208.3-.33.565-.37.847a.751.751 0 0 1-1.485-.212c.084-.593.337-1.078.621-1.489.203-.292.45-.584.673-.848.075-.088.147-.173.213-.253.561-.679.985-1.32.985-2.304 0-2.06-1.637-3.75-4-3.75ZM5.75 12h4.5a.75.75 0 0 1 0 1.5h-4.5a.75.75 0 0 1 0-1.5ZM6 15.25a.75.75 0 0 1 .75-.75h2.5a.75.75 0 0 1 0 1.5h-2.5a.75.75 0 0 1-.75-.75Z'/%3E%3C/svg%3E");
+.markdown-alert-tip,
+.md-alert-tip { --alert-icon: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 16 16'%3E%3Cpath d='M8 1.5c-2.363 0-4 1.69-4 3.75 0 .984.424 1.625.984 2.304l.214.253c.223.264.47.556.673.848.284.411.537.896.621 1.49a.75.75 0 0 1-1.484.211c-.04-.282-.163-.547-.37-.847a8.456 8.456 0 0 0-.542-.68c-.084-.1-.173-.205-.268-.32C3.201 7.75 2.5 6.766 2.5 5.25 2.5 2.31 4.863 0 8 0s5.5 2.31 5.5 5.25c0 1.516-.701 2.5-1.328 3.259-.095.115-.184.22-.268.319-.207.245-.383.453-.541.681-.208.3-.33.565-.37.847a.751.751 0 0 1-1.485-.212c.084-.593.337-1.078.621-1.489.203-.292.45-.584.673-.848.075-.088.147-.173.213-.253.561-.679.985-1.32.985-2.304 0-2.06-1.637-3.75-4-3.75ZM5.75 12h4.5a.75.75 0 0 1 0 1.5h-4.5a.75.75 0 0 1 0-1.5ZM6 15.25a.75.75 0 0 1 .75-.75h2.5a.75.75 0 0 1 0 1.5h-2.5a.75.75 0 0 1-.75-.75Z'/%3E%3C/svg%3E");
   --alert-color: var(--alert-tip); }
 .cm-md-alert-important,
-.markdown-alert-important { --alert-icon: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 16 16'%3E%3Cpath d='M0 1.75C0 .784.784 0 1.75 0h12.5C15.216 0 16 .784 16 1.75v9.5A1.75 1.75 0 0 1 14.25 13H8.06l-2.573 2.573A1.458 1.458 0 0 1 3 14.543V13H1.75A1.75 1.75 0 0 1 0 11.25Zm1.75-.25a.25.25 0 0 0-.25.25v9.5c0 .138.112.25.25.25h2a.75.75 0 0 1 .75.75v2.19l2.72-2.72a.749.749 0 0 1 .53-.22h6.5a.25.25 0 0 0 .25-.25v-9.5a.25.25 0 0 0-.25-.25Zm7 2.25v2.5a.75.75 0 0 1-1.5 0v-2.5a.75.75 0 0 1 1.5 0ZM9 9a1 1 0 1 1-2 0 1 1 0 0 1 2 0Z'/%3E%3C/svg%3E");
+.markdown-alert-important,
+.md-alert-important { --alert-icon: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 16 16'%3E%3Cpath d='M0 1.75C0 .784.784 0 1.75 0h12.5C15.216 0 16 .784 16 1.75v9.5A1.75 1.75 0 0 1 14.25 13H8.06l-2.573 2.573A1.458 1.458 0 0 1 3 14.543V13H1.75A1.75 1.75 0 0 1 0 11.25Zm1.75-.25a.25.25 0 0 0-.25.25v9.5c0 .138.112.25.25.25h2a.75.75 0 0 1 .75.75v2.19l2.72-2.72a.749.749 0 0 1 .53-.22h6.5a.25.25 0 0 0 .25-.25v-9.5a.25.25 0 0 0-.25-.25Zm7 2.25v2.5a.75.75 0 0 1-1.5 0v-2.5a.75.75 0 0 1 1.5 0ZM9 9a1 1 0 1 1-2 0 1 1 0 0 1 2 0Z'/%3E%3C/svg%3E");
   --alert-color: var(--alert-important); }
 .cm-md-alert-warning,
-.markdown-alert-warning { --alert-icon: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 16 16'%3E%3Cpath d='M6.457 1.047c.659-1.234 2.427-1.234 3.086 0l6.082 11.378A1.75 1.75 0 0 1 14.082 15H1.918a1.75 1.75 0 0 1-1.543-2.575Zm1.763.707a.25.25 0 0 0-.44 0L1.698 13.132a.25.25 0 0 0 .22.368h12.164a.25.25 0 0 0 .22-.368Zm.53 3.996v2.5a.75.75 0 0 1-1.5 0v-2.5a.75.75 0 0 1 1.5 0ZM9 11a1 1 0 1 1-2 0 1 1 0 0 1 2 0Z'/%3E%3C/svg%3E");
+.markdown-alert-warning,
+.md-alert-warning { --alert-icon: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 16 16'%3E%3Cpath d='M6.457 1.047c.659-1.234 2.427-1.234 3.086 0l6.082 11.378A1.75 1.75 0 0 1 14.082 15H1.918a1.75 1.75 0 0 1-1.543-2.575Zm1.763.707a.25.25 0 0 0-.44 0L1.698 13.132a.25.25 0 0 0 .22.368h12.164a.25.25 0 0 0 .22-.368Zm.53 3.996v2.5a.75.75 0 0 1-1.5 0v-2.5a.75.75 0 0 1 1.5 0ZM9 11a1 1 0 1 1-2 0 1 1 0 0 1 2 0Z'/%3E%3C/svg%3E");
   --alert-color: var(--alert-warning); }
 .cm-md-alert-caution,
-.markdown-alert-caution { --alert-icon: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 16 16'%3E%3Cpath d='M4.47.22A.749.749 0 0 1 5 0h6c.199 0 .389.079.53.22l4.25 4.25c.141.14.22.331.22.53v6a.749.749 0 0 1-.22.53l-4.25 4.25A.749.749 0 0 1 11 16H5a.749.749 0 0 1-.53-.22L.22 11.53A.749.749 0 0 1 0 11V5c0-.199.079-.389.22-.53Zm.84 1.28L1.5 5.31v5.38l3.81 3.81h5.38l3.81-3.81V5.31L10.69 1.5ZM8 4a.75.75 0 0 1 .75.75v3.5a.75.75 0 0 1-1.5 0v-3.5A.75.75 0 0 1 8 4Zm0 8a1 1 0 1 1 0-2 1 1 0 0 1 0 2Z'/%3E%3C/svg%3E");
+.markdown-alert-caution,
+.md-alert-caution { --alert-icon: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 16 16'%3E%3Cpath d='M4.47.22A.749.749 0 0 1 5 0h6c.199 0 .389.079.53.22l4.25 4.25c.141.14.22.331.22.53v6a.749.749 0 0 1-.22.53l-4.25 4.25A.749.749 0 0 1 11 16H5a.749.749 0 0 1-.53-.22L.22 11.53A.749.749 0 0 1 0 11V5c0-.199.079-.389.22-.53Zm.84 1.28L1.5 5.31v5.38l3.81 3.81h5.38l3.81-3.81V5.31L10.69 1.5ZM8 4a.75.75 0 0 1 .75.75v3.5a.75.75 0 0 1-1.5 0v-3.5A.75.75 0 0 1 8 4Zm0 8a1 1 0 1 1 0-2 1 1 0 0 1 0 2Z'/%3E%3C/svg%3E");
   --alert-color: var(--alert-caution); }
 
 /*
@@ -3658,4 +3663,200 @@ button {
   .app-header > .button {
     display: none;
   }
+}
+
+
+/*
+ * GitHub 警告块的第三套类名：上游渲染器（md-alert*）的输出。
+ *
+ * 三套名字指同一件事，来自三条路径：
+ *   .cm-md-alert*      编辑器行装饰（源码态）
+ *   .markdown-alert*   markdown-it 的块级输出（当前渲染）
+ *   .md-alert*         上游内核的块级输出（迁移后走这条）
+ *
+ * 上游是 <blockquote> 包着空 span + data-text，结构不同，不能共用选择器。
+ *
+ * ⚠️ 不要用 `::before { content: attr(data-text) }` 显示标签 ——
+ * 上游给那个 span 既设了属性、又保留了元素文本，伪元素会让标题
+ * 出现两次（实测：两行「注意」）。
+ */
+.cm-md-block .md-alert,
+.md-alert {
+  --alert-color: var(--md-border-strong);
+
+  border-left: var(--alert-width) solid var(--alert-color);
+  background: none;
+  padding: 6px 0 6px 16px;
+  margin: 8px 0;
+  color: var(--md-text);
+  font-style: normal;
+  quotes: none;
+}
+
+.cm-md-block .md-alert::before,
+.cm-md-block .md-alert::after {
+  content: none;
+}
+
+.md-alert > p {
+  margin: 0;
+}
+
+.md-alert > p + p {
+  margin-top: 8px;
+}
+
+.md-alert-text {
+  margin: 0;
+}
+
+.md-alert-text-container {
+  display: block;
+  font-weight: 600;
+  font-size: 0.92em;
+  color: var(--alert-color);
+  margin-bottom: 6px;
+}
+
+.md-alert-note,
+.md-alert-text-note {
+  --alert-color: var(--alert-note);
+}
+.md-alert-tip,
+.md-alert-text-tip {
+  --alert-color: var(--alert-tip);
+}
+.md-alert-important,
+.md-alert-text-important {
+  --alert-color: var(--alert-important);
+}
+.md-alert-warning,
+.md-alert-text-warning {
+  --alert-color: var(--alert-warning);
+}
+.md-alert-caution,
+.md-alert-text-caution {
+  --alert-color: var(--alert-caution);
+}
+
+/*
+ * 图标：Octicon 的 SVG，不用上游 base.css 里的 emoji。
+ *
+ * base.css 给的是 `.md-alert-text-container:before { content: "ⓘ" }` ——
+ * 单冒号伪元素、特异性 (0,2,1)，同分选择器压不住（谁后加载谁赢）。
+ * 所以选择器带上 .md-alert 提特异性，content 用 !important 清空 emoji，
+ * 图标本身用 CSS mask + currentColor，跟着类型色走。
+ */
+.md-alert .md-alert-text-container::before {
+  content: '' !important;
+
+  display: inline-block;
+  width: 14px;
+  height: 14px;
+  margin-right: 6px;
+  vertical-align: -2px;
+  font-style: normal;
+
+  background: var(--alert-color);
+  -webkit-mask: var(--alert-icon) center / contain no-repeat;
+  mask: var(--alert-icon) center / contain no-repeat;
+}
+
+/* 标签由 ::after 提供（见 base.css），图标与文字之间不需要额外空隙 */
+.md-alert .md-alert-text-container::after {
+  margin-right: 0;
+}
+
+
+/* ── 粗体与标题字重 ─────────────────────────────────────── */
+
+/*
+ * ⚠️ 保持 `-webkit-font-smoothing: antialiased`（原版 base.css 已设）。
+ *
+ * 曾经改成 `auto` 想把字加厚，结果 Windows 下会启用**子像素抗锯齿**，
+ * 而粗体靠 `-webkit-text-stroke` 实现 —— 描边叠在子像素渲染上会产生
+ * **彩色边缘**，六级标题看起来"花花绿绿"（实测报障）。
+ *
+ * 厚度交给描边，平滑保持 antialiased：两者一起才既有字重、又没有彩边。
+ */
+
+/*
+ * 标题用到 600，而中文字体通常只有 400 / 700 两档。
+ * 600 落到 700 的映射在部分字体上不生效（实测：computed 是 600，
+ * 屏幕上是常规），所以显式写 700 —— 宁可重一点，也不要"看不出是标题"。
+ */
+.cm-editor .cm-line.cm-heading {
+  font-weight: 700;
+}
+
+/* 行内加粗同上：明确 700，不依赖 bold 关键字的映射 */
+.cm-editor .cm-md-strong {
+  font-weight: 700;
+}
+
+
+/* ── 粗体走中文字体 ─────────────────────────────────────── */
+
+/*
+ * `system-ui` 在 Windows 上命中 Segoe UI Variable（西文字体）。中文没有
+ * 字形，走 fallback —— 而 fallback 拿到的那一档**不含粗体**：computed
+ * font-weight 是 700、墨迹却没有变化（实测：标题与 `**加粗**` 都看不出
+ * 加粗，而同一段文字用 "Microsoft YaHei" 直接绘制时 700 的墨迹是 400
+ * 的 1.62 倍）。
+ *
+ * 所以对**需要加粗的元素**单独把中文字体提到最前。正文不动 ——
+ * 那里 system-ui 的西文观感更好，而且常规字重不受影响。
+ */
+.cm-editor .cm-line.cm-heading,
+.cm-editor .cm-md-strong {
+  font-family:
+    'Microsoft YaHei',
+    'PingFang SC',
+    'Noto Sans CJK SC',
+    'Source Han Sans SC',
+    -apple-system,
+    'Segoe UI',
+    system-ui,
+    sans-serif;
+  font-weight: 700;
+}
+
+
+/*
+ * 不加 text-shadow，也不加 -webkit-text-stroke。
+ *
+ * 试过的两种"加厚"手段都得不偿失：
+ *
+ *   · `-webkit-text-stroke` —— WebView2 上描边向右下偏移，深色模式里
+ *     浅色字的偏移轮廓非常明显，就是"重影"；
+ *   · `text-shadow` 带模糊 —— 不产生偏移重影，但会给笔画边缘再叠一圈
+ *     半透明过渡。Windows 的 ClearType 按 RGB 次像素渲染，那一圈同样
+ *     被分通道处理，**彩边因此变宽**（实测反馈）。
+ *
+ * 而它换来的"加厚"远达不到真 Bold。两者相权，去掉。
+ *
+ * 字重仍然保留 `font-weight: 700`：系统里有带 Bold 的中文字体时它
+ * 自然生效；等随应用打包字体之后，这里不需要任何补偿。
+ */
+
+/* 标题加厚：与 .cm-md-strong 同一套做法，半径略小（字号大，0.6px 会发虚） */
+.cm-editor .cm-line.cm-heading {
+}
+
+/*
+ * 顶栏必须撑满 grid 的第一行。
+ *
+ * 原版 app.css 里有一条**元素选择器**：
+ *
+ *   header { height: var(--titlebar-height) }   // 30px
+ *
+ * 它是给 Electron/Tauri 自绘标题栏用的。我们的顶栏恰好也是 `<header>`，
+ * 被这条规则压到 30px，而 `.app` 的 grid 第一行是 40px（`--md-header-height`）
+ * —— 底部就空出 10px 的缝。
+ *
+ * 这是**元素选择器**，特异性只有 (0,0,1)，任何类选择器都能压过它；
+ * 但之前没人设过高度，所以它一直生效。
+ */
+.app-header {
+  height: 100%;
 }

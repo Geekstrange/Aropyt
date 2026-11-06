@@ -1,0 +1,71 @@
+/* Shared application dialogs, matching the editor's compact Typora layout. */
+.aropyt-dialog {
+  --dialog-button-bg: #e5e5e5;
+  --dialog-button-hover: #d8d8d8;
+  --dialog-primary: #428bca;
+  box-sizing: border-box;
+  position: fixed;
+  inset: 75px 0 auto;
+  width: 420px;
+  max-width: calc(100vw - 32px);
+  max-height: calc(100vh - 90px);
+  margin: 0 auto;
+  overflow: auto;
+  padding: 15px;
+  border: 1px solid var(--chrome-border, #d0d0d0);
+  border-radius: 0;
+  background: var(--bg-color, #fff);
+  color: var(--text-color, #333);
+  box-shadow: 0 20px 35px #0004;
+  font: 13px/1.6 "Segoe UI", "Microsoft YaHei UI", -apple-system, BlinkMacSystemFont, sans-serif;
+  text-align: left;
+  text-indent: 0;
+  overflow-wrap: anywhere;
+}
+.aropyt-dialog::backdrop { background: #0000001a; }
+.aropyt-message-dialog[open] { display: flex; flex-direction: column; }
+.aropyt-message-dialog > :not(.dialog-text) { flex: none; }
+.aropyt-message-dialog .dialog-text { min-height: 0; overflow: auto; }
+.aropyt-dialog h2 { margin: 0 0 14px; padding: 0; border: 0; font-family: inherit; font-size: 16px; font-weight: 400; line-height: 1.6; }
+.aropyt-dialog form { margin: 0; }
+.aropyt-dialog .dialog-text, .aropyt-dialog .dialog-message, .aropyt-dialog .dialog-detail { margin: 0; white-space: pre-wrap; }
+.aropyt-dialog .dialog-fields { display: grid; gap: 14px; margin: 22px 0 0; }
+.aropyt-dialog label { display: flex; flex-direction: column; gap: 6px; margin: 0; font: inherit; }
+.aropyt-dialog input:not([type=checkbox]), .aropyt-dialog select, .aropyt-dialog textarea {
+  box-sizing: border-box; width: 100%; min-width: 0; height: 34px; margin: 0; padding: 6px 12px;
+  border: 1px solid var(--chrome-border, #ccc); border-radius: 3px;
+  background: var(--bg-color, #fff); color: inherit; font: inherit;
+  box-shadow: inset 0 1px 1px #0001;
+}
+.aropyt-dialog textarea { height: auto; min-height: 90px; resize: vertical; }
+.aropyt-dialog .dialog-fields.dimensions { grid-template-columns: 1fr 1fr; }
+.aropyt-dialog .dialog-fields.dimensions label { flex-direction: row; align-items: center; gap: 10px; white-space: nowrap; }
+.aropyt-dialog input[type=number] { appearance: textfield; }
+.aropyt-dialog input::-webkit-inner-spin-button, .aropyt-dialog input::-webkit-outer-spin-button { appearance: none; margin: 0; }
+.aropyt-dialog .dialog-actions { display: flex; flex-wrap: wrap; gap: 5px; justify-content: flex-end; margin: 30px 0 0; }
+.aropyt-dialog .message-actions { justify-content: flex-start; }
+.aropyt-dialog .message-actions.single-action { justify-content: flex-end; }
+.aropyt-dialog .message-actions .dialog-cancel { margin-left: auto; }
+.aropyt-dialog button {
+  box-sizing: border-box; min-width: 67px; min-height: 31px; margin: 0; padding: 5px 15px;
+  border: 1px solid transparent; border-radius: 0; background: var(--dialog-button-bg);
+  color: inherit; font: inherit; line-height: 19px; text-shadow: none; box-shadow: none; cursor: pointer;
+}
+.aropyt-dialog button:hover { background: var(--dialog-button-hover); }
+.aropyt-dialog button.primary { background: var(--dialog-primary); color: #fff; }
+.aropyt-dialog button.primary:hover { background: #3276b1; }
+.aropyt-dialog :is(button, input, select, textarea):focus-visible { outline: 2px solid var(--dialog-primary); outline-offset: 2px; }
+.aropyt-dialog .dialog-checkbox { flex-direction: row; align-items: flex-start; gap: 8px; margin-top: 14px; }
+.aropyt-dialog input[type=checkbox] { flex: none; margin: 4px 0 0; accent-color: var(--dialog-primary); }
+html.theme-dark .aropyt-dialog, body.dark .aropyt-dialog {
+  --dialog-button-bg: #454545; --dialog-button-hover: #555; --dialog-primary: #428bca;
+  background: var(--bg-color, #2b2b2b); color: var(--text-color, #ddd); border-color: #555;
+}
+html.theme-dark .aropyt-dialog::backdrop, body.dark .aropyt-dialog::backdrop { background: #0006; }
+body.dark .aropyt-dialog :is(input:not([type=checkbox]), select, textarea) { background: #333; border-color: #555; }
+@media (max-height: 360px) {
+  .aropyt-dialog { top: 16px; max-height: calc(100vh - 32px); }
+}
+@media (max-width: 360px) {
+  .aropyt-dialog .dialog-fields.dimensions { grid-template-columns: 1fr; }
+}

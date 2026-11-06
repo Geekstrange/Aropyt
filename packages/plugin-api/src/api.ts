@@ -227,6 +227,13 @@ export interface WorkspaceFileHandle {
   writeBytes(path: string, data: Uint8Array): Promise<void>;
   createDirectory(path: string): Promise<void>;
   remove(path: string, options?: { readonly recursive?: boolean }): Promise<void>;
+  /**
+   * 重命名同目录下的一个条目。
+   *
+   * 可选：FSA / OPFS 两个适配器还没实现。调用方要判空 —— 缺这个方法时
+   * 说明当前环境不支持行内改名，而不是"改名失败了"。
+   */
+  rename?(path: string, newName: string): Promise<void>;
 }
 
 export interface WorkspaceApi {

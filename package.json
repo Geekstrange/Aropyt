@@ -1,6 +1,6 @@
 {
   "name": "aropyt",
-  "version": "0.2.1",
+  "version": "0.2.2",
   "private": true,
   "description": "跨平台 Markdown 编辑器",
   "license": "AGPL-3.0-or-later",
@@ -41,7 +41,12 @@
     "check:editor-layout": "node scripts/check-layout-editor.mjs"
   },
   "devDependencies": {
-    "@tauri-apps/cli": "^2.12.3"
+    "@tauri-apps/cli": "^2.12.3",
+    "markdown-it-footnote": "^4.0.0",
+    "markdown-it-mark": "^4.0.0",
+    "markdown-it-sub": "^2.0.0",
+    "markdown-it-sup": "^2.0.0",
+    "markdown-it-task-lists": "^2.1.1"
   },
   "allowScripts": {
     "esbuild@0.25.12": true

@@ -1,0 +1,8 @@
+Merriweather
+Copyright 2016 The Merriweather Project Authors (https://github.com/EbenSorkin/Merriweather), with Reserved Font Name "Merriweather".
+
+Lato
+Copyright (c) 2010-2011 by tyPoland Lukasz Dziedzic with Reserved Font Name "Lato".
+
+Both font families are licensed under the SIL Open Font License, Version 1.1.
+The complete license is reproduced in OFL.txt.

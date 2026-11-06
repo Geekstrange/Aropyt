@@ -1,0 +1,28 @@
+html, body.aropyt-export { height: auto; min-height: 0; overflow: visible; margin: 0; }
+body.aropyt-export { padding: 0; background: var(--bg-color, #fff); }
+.aropyt-export #write { width: 100%; box-sizing: border-box; }
+.aropyt-export pre.md-fences { position: relative; overflow: hidden; font-family: Menlo, Monaco, Consolas, monospace; }
+.aropyt-export .md-fences-title { display: none; }
+.aropyt-export pre.md-fences > code.hljs {
+  display: block; padding: 0 10px; margin: 0; border: 0; border-radius: 0;
+  background: transparent; font: inherit; line-height: 1.6; white-space: pre-wrap; overflow-wrap: anywhere;
+}
+.aropyt-export .md-lineno { display: inline-block; min-width: 2em; padding-right: 1em; color: #999; user-select: none; }
+.aropyt-export .md-diagram { text-align: center; padding: 8px 0; background: transparent; border: 0; }
+.aropyt-export .md-diagram svg { display: block; max-width: 100%; height: auto; margin: 0 auto; }
+.aropyt-export .md-diagram-pending { display: none; }
+.aropyt-export .MathJax svg { max-width: 100%; }
+.aropyt-export mjx-container { display: inline-block; vertical-align: middle; }
+.aropyt-export mjx-container[display="true"] { display: block; text-align: center; margin: 1em 0; }
+.aropyt-export pre, .aropyt-export .md-diagram, .aropyt-export .md-math-block, .aropyt-export table { break-inside: avoid; }
+.aropyt-export h1, .aropyt-export h2, .aropyt-export h3 { break-after: avoid; }
+.aropyt-export img { max-width: 100%; }
+@media print {
+  html, body.aropyt-export { background: #fff; }
+  .aropyt-export #write { max-width: none; padding: 0; margin: 0; }
+  .aropyt-export .md-diagram svg { max-height: 220mm; }
+}
+
+/* MathJax's assistive MathML remains available to assistive technology. Its
+ * runtime stylesheet is not present in the standalone export document. */
+.aropyt-export mjx-assistive-mml { position: absolute !important; width: 1px; height: 1px; overflow: hidden; clip: rect(1px, 1px, 1px, 1px); white-space: nowrap; }

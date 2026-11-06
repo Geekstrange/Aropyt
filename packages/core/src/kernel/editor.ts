@@ -140,8 +140,13 @@ import type {
 } from '@aropyt/plugin-api';
 
 import { toggleLinePrefix as applyLinePrefix, toggleWrap as applyWrap } from '../commands.js';
-import { MARKDOWN_LANGUAGE, isRenderableLanguage } from '../languages.js';
-import { inlineRender } from '../wysiwyg/inline-render.js';
+import { isRenderableLanguage } from '../languages.js';
+import {
+  initUpstreamRenderer,
+  mountUpstreamHost,
+  upstreamRenderExtensions,
+  upstreamSetSourceMode,
+} from '../editor-upstream/adapter.js';
 import { guardSync } from '../safety.js';
 import { aropytEditorTheme, aropytHighlightStyle } from '../theme.js';
 
@@ -201,6 +206,15 @@ export class EditorAdapter implements EditorApi {
   readonly #slot = new Compartment();
   /** 渲染层的装载槽。同上：切模式绝不能重建编辑器。 */
   readonly #renderSlot = new Compartment();
+
+  /**
+   * 原版渲染扩展的槽。
+   *
+   * 它**不随模式切换**，只随语言切换：源码态和渲染态都需要它常驻。
+   * 原因见 `#applyMode` 里的注解 —— 把这批扩展整体卸掉会让 `showTooltip`
+   * 一类的消费者读到已不存在的 StateField。
+   */
+  readonly #upstreamSlot = new Compartment();
   /**
    * 语言解析器槽。
    *
@@ -305,7 +319,11 @@ export class EditorAdapter implements EditorApi {
      * 注意这只管**初始**状态；用户仍可用 Ctrl+/ 切到渲染态（能切回去
      */
     this.#sourceMode = options.inlineRender === false || this.#vimOn;
-    this.#appliedSource = this.#sourceMode;
+    /*
+     * 故意**不**把 `#appliedSource` 对齐到初始值：构造完成后要跑一次
+     * `#applyMode`，把 `modeField.source` 同步给原版内核。对齐了就早退，
+     * "启动即源码态"（vim）时原版仍会按渲染态铺装饰。
+     */
     // vim 模式的初始装载是异步的（动态 import），就绪后补挂扩展
     if (this.#vimOn) {
       void import('@replit/codemirror-vim').then(({ vim, getCM, Vim }) => {
@@ -422,6 +440,16 @@ export class EditorAdapter implements EditorApi {
            * 会让"启动即 vim"的场景下：状态说源码、实际注入的却是渲染态扩展
            * （#appliedSource 与槽分叉，用户表现为"源码模式未激活"）。
            */
+          /*
+           * 原版渲染扩展：按语言装载、与模式无关。
+           *
+           * tex / fountain 不注入 —— 它们的排版由各自插件的装饰提供，
+           * 套上 markdown 渲染器会把正文整段按 markdown 解析（实测：tex
+           * 正文被当成一个大段落）。
+           */
+          this.#upstreamSlot.of(
+            this.#languageRenderable ? upstreamRenderExtensions() : [],
+          ),
           this.#renderSlot.of(this.#renderModeExtensions(this.#sourceMode)),
           /*
            * 自有键位必须排在 `...defaultKeymap` **之前**。
@@ -564,6 +592,18 @@ export class EditorAdapter implements EditorApi {
       }
     }
 
+    /*
+     * 原版渲染扩展跟着语言走：只有 markdown 有渲染态，tex / fountain
+     * 的排版由各自插件提供。
+     */
+    if (!this.#disposed) {
+      this.#view.dispatch({
+        effects: this.#upstreamSlot.reconfigure(
+          renderable ? upstreamRenderExtensions() : [],
+        ),
+      });
+    }
+
     /* 语言变了，"生效模式"可能跟着变（非 markdown 没有渲染态）。 */
     this.#applyMode();
   }
@@ -602,19 +642,14 @@ export class EditorAdapter implements EditorApi {
       ];
     }
     /*
-     * 渲染态：**只有 markdown 有内联渲染器**。
+     * 渲染态：**这个槽里什么都不放**。
      *
-     * tex / fountain 的渲染由各自插件的装饰提供。在这里挂 markdown
-     * 渲染器的后果不是"多渲染一点"，而是把正文整段替换成 `cm-md-block`
-     * widget —— 插件装饰作用在被替换掉的文本上，用户看到的是一片
-     * 按 markdown 解析的、完全错误的排版（实测：tex 正文被当成一个大段落）。
+     * 渲染本身由 `#upstreamSlot` 里的原版扩展提供，它按语言切换（tex /
+     * fountain 不注入），与模式无关 —— 源码态只是把它的装饰清空。
+     *
+     * 行号在这里同样是噪音（Typora 没有行号），所以渲染态为空数组。
      */
-    if (this.#language !== null && this.#language !== MARKDOWN_LANGUAGE) return [];
-
-    // 行号是纯噪音。Typora 就没有行号，
-    // 而且标记隐藏后行内不再有等宽符号，一列数字贴在正文左边
-    // 反而让人进不了"读文档"的状态。
-    return inlineRender({ resolveAsset: this.options.resolveAsset });
+    return [];
   }
 
   /**
@@ -735,6 +770,18 @@ export class EditorAdapter implements EditorApi {
     this.#appliedLanguage = this.#language;
     this.#view.dispatch({
       effects: [
+        /*
+         * 源码态由原版的 `modeField.source` 表达，**不是**把渲染扩展整体撤掉。
+         *
+         * 撤扩展会炸：`showTooltip` 一类的消费者在同一个 transaction 里
+         * 仍会去读 `decorationField`，抛
+         * `RangeError: Field is not present in this state` —— dispatch 整个
+         * 失败，表现是"点了源码模式，按钮文案变了、编辑区毫无反应"。
+         *
+         * `modeField.source = true` 时 `buildDecorations` 直接返回空装饰，
+         * 源码自然露出来，这是原版自己的做法。
+         */
+        upstreamSetSourceMode.of(source),
         this.#renderSlot.reconfigure(this.#renderModeExtensions(source)),
         this.#modeClassSlot.reconfigure(
           EditorView.editorAttributes.of({
@@ -1043,5 +1090,18 @@ function subscribe<T>(set: Set<(payload: T) => void>, listener: (payload: T) => 
 }
 
 export function createEditor(options: EditorOptions): EditorAdapter {
-  return new EditorAdapter(options);
+  /*
+   * 原版渲染器是模块级注入的，必须在创建视图之前注册 —— `decorationField`
+   * 首次计算就会调 `renderDocumentBlocks`。
+   */
+  initUpstreamRenderer();
+
+  const editor = new EditorAdapter(options);
+
+  /*
+   * `new EditorView` 时 widget 已经 toDOM 过，而 `__host` 是之后才挂的。
+   * 不补这一次重绘，首屏的公式会停在纯文本占位上（不报错、也不像错误）。
+   */
+  mountUpstreamHost(editor.view);
+  return editor;
 }

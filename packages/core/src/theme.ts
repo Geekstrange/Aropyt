@@ -107,8 +107,8 @@ export const aropytEditorTheme: Extension = EditorView.theme(
      * 一个"改错文件"的错觉。实测先例是 `max-width: 46em`，
      * 在渲染层删掉后宽度依然 690px。
      *
-     * 现在渲染态样式**只有一处 owner**：`wysiwyg/inline-render.ts`。
-     * 它随渲染扩展一起装载与卸载，切到源码模式时自然消失。
+     * 渲染态的排版由静态样式表（`apps/web/index.html` 引入的那组）提供，
+     * 本节只定义源码模式的覆盖规则，两边不要重复定义同一样式。
      *
      * 保留本节是为了记住这个坑：**同一样式定义在两处，特异性高的赢，
      * 与扩展顺序无关，而且不会有任何报错。**
@@ -132,10 +132,8 @@ export const aropytEditorTheme: Extension = EditorView.theme(
       overflowWrap: 'anywhere',
       /*
        * ⚠️ CM6 给 .cm-content 设了 `flex-shrink: 0; flex-grow: 2`
-       * （永不收缩）。渲染态在 inline-render.ts 里补过这两个，
-       * 源码模式**同样必须补** —— 不补的话，pre-wrap 就算生效，
+       * （永不收缩）。这里必须补 —— 不补的话，pre-wrap 就算生效，
        * content 本身还是不肯变窄，横向溢出依旧（实测 26054px）。
-       * MEMORY 已有此坑的渲染态版本，这里是源码模式的同一颗雷。
        */
       flexShrink: '1',
       minWidth: '0',
@@ -222,12 +220,12 @@ export const aropytEditorTheme: Extension = EditorView.theme(
  */
 export const aropytHighlightStyle: Extension = syntaxHighlighting(
   HighlightStyle.define([
-    { tag: tags.heading1, color: 'var(--md-h1)', fontWeight: '500' },
-    { tag: tags.heading2, color: 'var(--md-h2)', fontWeight: '500' },
-    { tag: tags.heading3, color: 'var(--md-h3)', fontWeight: '500' },
-    { tag: tags.heading4, color: 'var(--md-h4)', fontWeight: '500' },
-    { tag: tags.heading5, color: 'var(--md-h5)', fontWeight: '500' },
-    { tag: tags.heading6, color: 'var(--md-h6)', fontWeight: '500' },
+    { tag: tags.heading1, color: 'var(--md-text)', fontWeight: '700' },
+    { tag: tags.heading2, color: 'var(--md-text)', fontWeight: '700' },
+    { tag: tags.heading3, color: 'var(--md-text)', fontWeight: '700' },
+    { tag: tags.heading4, color: 'var(--md-text)', fontWeight: '700' },
+    { tag: tags.heading5, color: 'var(--md-text)', fontWeight: '700' },
+    { tag: tags.heading6, color: 'var(--md-text)', fontWeight: '700' },
     { tag: tags.strong, color: 'var(--md-text)', fontWeight: '500' },
     { tag: tags.emphasis, color: 'var(--md-text)', fontStyle: 'italic' },
     { tag: tags.strikethrough, color: 'var(--md-muted)', textDecoration: 'line-through' },

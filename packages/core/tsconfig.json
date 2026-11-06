@@ -1,4 +1,14 @@
 {
   "extends": "../../tsconfig.base.json",
+  "compilerOptions": {
+    // 上游源码（editor-upstream/）里有若干未使用的参数与局部变量，那是它
+    // 自己 `strict: false` 的写法。为了不改动上游代码（否则同步会产生大量
+    // 无意义 diff），这里关掉这两项检查。
+    //
+    // 注意：`verbatimModuleSyntax` 不能关。它抓的是"类型被当成值导入"，
+    // 那种代码在 build 时被 rollup 掩盖、在 dev 时会让整个应用白屏。
+    "noUnusedLocals": false,
+    "noUnusedParameters": false
+  },
   "include": ["src"]
 }
