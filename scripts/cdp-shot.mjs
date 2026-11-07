@@ -179,7 +179,8 @@ const chrome = spawn(
     '--disable-background-networking',
     `--remote-debugging-port=${PORT}`,
     `--user-data-dir=${profileDir}`,
-    '--window-size=1440,900',
+    /* 窗口尺寸可用 CDP_WINDOW="宽,高" 覆盖：排查布局问题时要试窄窗 */
+    `--window-size=${process.env.CDP_WINDOW ?? '1440,900'}`,
     '--hide-scrollbars',
     'about:blank',
   ],
@@ -256,6 +257,24 @@ try {
 
   await rpc('Page.enable');
   await rpc('Runtime.enable');
+
+  /*
+   * 模拟 Windows 的显示缩放。
+   *
+   * 应用里不少地方用 `height: 100%` 串起高度链，在 125% / 150% 缩放下
+   * 容易算出 0 —— 那是「编辑区塌成一条」这类问题的常见来源，而本机
+   * 运行在 DPR=1，默认测不出来。
+   */
+  const dpr = Number(process.env.CDP_DPR ?? '0');
+  if (dpr > 0) {
+    const [w, h] = (process.env.CDP_WINDOW ?? '1440,900').split(',').map(Number);
+    await rpc('Emulation.setDeviceMetricsOverride', {
+      width: w,
+      height: h,
+      deviceScaleFactor: dpr,
+      mobile: false,
+    });
+  }
 
   if (preInjectSource) {
     await rpc('Page.addScriptToEvaluateOnNewDocument', { source: preInjectSource });

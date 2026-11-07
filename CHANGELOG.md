@@ -12,6 +12,26 @@ release.
 
 ### Planned
 
+## [0.2.3] - 2026-11-06
+
+### Fixed
+
+- **Bold text rendered as regular**: the highlight style mapped
+  `tags.strong` to `font-weight: 500`. With a font that only carries 400 and
+  700, CSS falls back to 400 for a 500 request, so `**bold**` came out as
+  regular. It also overrode the `700` on the wrapping `.cm-md-strong` span —
+  the highlight span sits inside it, and an inner `font-weight` wins over an
+  outer one. Headings were unaffected because `heading1…6` already asked for
+  700, which is why only inline bold looked wrong. It is 700 now.
+- **The family did not resolve to its bold face**: `font-weight: 700`
+  computed correctly yet the strokes did not change, even with the value
+  raised to 900. Two `@font-face` rules now bind the family to both weights
+  through `local()` — 700 to `msyhbd.ttc`, 400 to the regular face — with
+  several spellings because Windows registers them differently. `local()`
+  references installed fonts, so nothing is bundled or redistributed.
+  `font-synthesis: weight` is a fallback for systems where every lookup
+  misses.
+
 ## [0.2.2] - 2026-11-06
 
 ### Added
@@ -1861,7 +1881,8 @@ Other fixes:
 - Editor core, command registry, keybinding parsing, theme system
 - Light and dark palettes and first-paint bundle budget gate
 
-[Unreleased]: https://github.com/Geekstrange/Aropyt/compare/v0.2.2...HEAD
+[Unreleased]: https://github.com/Geekstrange/Aropyt/compare/v0.2.3...HEAD
+[0.2.3]: https://github.com/Geekstrange/Aropyt/compare/v0.2.2...v0.2.3
 [0.2.2]: https://github.com/Geekstrange/Aropyt/compare/v0.2.1...v0.2.2
 [0.2.1]: https://github.com/Geekstrange/Aropyt/compare/v0.2.0...v0.2.1
 [0.2.0]: https://github.com/Geekstrange/Aropyt/compare/v0.1.8...v0.2.0

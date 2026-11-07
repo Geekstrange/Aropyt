@@ -226,7 +226,7 @@ export const aropytHighlightStyle: Extension = syntaxHighlighting(
     { tag: tags.heading4, color: 'var(--md-text)', fontWeight: '700' },
     { tag: tags.heading5, color: 'var(--md-text)', fontWeight: '700' },
     { tag: tags.heading6, color: 'var(--md-text)', fontWeight: '700' },
-    { tag: tags.strong, color: 'var(--md-text)', fontWeight: '500' },
+    { tag: tags.strong, color: 'var(--md-text)', fontWeight: '700' },
     { tag: tags.emphasis, color: 'var(--md-text)', fontStyle: 'italic' },
     { tag: tags.strikethrough, color: 'var(--md-muted)', textDecoration: 'line-through' },
     { tag: tags.link, color: 'var(--md-link)' },

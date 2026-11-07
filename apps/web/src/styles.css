@@ -3860,3 +3860,68 @@ button {
 .app-header {
   height: 100%;
 }
+
+
+/* ── 中文字体：显式绑定两个字重 ─────────────────────────── */
+
+/*
+ * 只用 `font-family: "Microsoft YaHei"` 时，浏览器在 WebView2 里拿不到
+ * 粗体那一档：computed font-weight 是 700，屏幕上的笔画和 400 一样。
+ * 系统里 `msyhbd.ttc` 是存在的，问题在「族名 → face」的匹配没走到它。
+ *
+ * `@font-face` + `local()` 把族名与字重显式配对，浏览器就会按 700
+ * 去取粗体文件。不引入字体文件，也不涉及分发 —— `local()` 只引用
+ * 已安装的字体。
+ *
+ * 多个 `local()` 候选是因为 Windows 各版本注册的名字不同（带不带
+ * "Bold"、用中文名还是英文名）。全都不匹配时退回后面的族，不会更糟。
+ */
+@font-face {
+  font-family: 'Aropyt CN';
+  src:
+    local('Microsoft YaHei Bold'),
+    local('MicrosoftYaHei-Bold'),
+    local('Microsoft YaHei-Bold'),
+    local('微软雅黑 Bold');
+  font-weight: 700;
+  font-style: normal;
+}
+
+@font-face {
+  font-family: 'Aropyt CN';
+  src:
+    local('Microsoft YaHei'),
+    local('MicrosoftYaHei'),
+    local('微软雅黑');
+  font-weight: 400;
+  font-style: normal;
+}
+
+/*
+ * 正文与粗体统一走这个族。
+ *
+ * 只在粗体上用是不够的：同一段落里 400 与 700 必须来自同一个家族，
+ * 否则字宽与基线会差一点，中文排版里那点差别很显眼。
+ */
+.cm-editor .cm-content,
+.cm-editor .cm-md-strong,
+.cm-editor .cm-line.cm-heading {
+  font-family:
+    'Aropyt CN',
+    'Microsoft YaHei',
+    'PingFang SC',
+    'Noto Sans CJK SC',
+    'Source Han Sans SC',
+    system-ui,
+    sans-serif;
+}
+
+/*
+ * `font-synthesis: weight` 是兜底：万一某个系统连 local() 都匹配不上，
+ * 允许浏览器合成粗体。有真 Bold 时它不起作用。
+ */
+.cm-editor .cm-md-strong,
+.cm-editor .cm-line.cm-heading {
+  font-weight: 700;
+  font-synthesis: weight;
+}
