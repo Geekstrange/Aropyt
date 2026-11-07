@@ -328,13 +328,17 @@
     /*
      * 徽章尺寸。
      *
-     * 组件的 size 只有 large / small 两个合法值，且 large 硬编码
-     * `img { height: 104px }` —— 放在首屏里大得离谱。size="small" 本身
-     * 不带尺寸规则（用 SVG 的固有宽度），所以再用 Shadow Parts 把高度
-     * 钉在 48px：这是原来静态图的高度，也是指南建议的可读尺寸。
+     * 组件的 size 只有 large / small 两个合法值，没有"中号"：
+     *   · large → shadow 内部硬编码 `img { height: 104px }`，首屏里大得离谱
+     *   · small → 不带尺寸规则，按 SVG 的固有尺寸走，且素材本身偏小，
+     *             想放到 48px 要靠放大 —— 位图放大会糊
      *
-     * !important 是为了压过 shadow 内部的 `img.large { height }` ——
-     * 组件脚本会按属性追加样式，没有它就取决于规则插入顺序。
+     * 所以保留 `size="large"`（素材是最大份的），只用 Shadow Parts 把高度
+     * 压到 48px：缩小永远比放大清晰。48px 与原来的静态图同高，也是商店
+     * 指南建议的可读尺寸。
+     *
+     * `!important` 是必需的：shadow 内部的 `img.large { height: 104px }`
+     * 由组件脚本按属性追加，没有它就要赌规则插入顺序。
      */
     .store-badge ms-store-badge::part(img) {
       height: 48px !important;
@@ -578,7 +582,7 @@
       renderStoreBadge() 点亮。
     -->
     <div class="store-badge" id="msStoreBadgeWrap" hidden>
-      <ms-store-badge productid="9pl9cm7qx8jf" window-mode="full" size="small" animation="on"
+      <ms-store-badge productid="9pl9cm7qx8jf" window-mode="full" size="large" animation="on"
         language="en-us" theme="auto"></ms-store-badge>
       <a class="store-badge__fallback" id="msStoreBadgeFallback" hidden target="_blank"
         rel="noopener">Get it from Microsoft Store</a>
@@ -1020,7 +1024,7 @@
       const next = document.createElement("ms-store-badge");
       next.setAttribute("productid", STORE_APP_ID.toLowerCase());
       next.setAttribute("window-mode", "full");
-      next.setAttribute("size", "small");
+      next.setAttribute("size", "large");
       next.setAttribute("animation", "on");
       next.setAttribute("language", language);
       next.setAttribute("theme", theme);

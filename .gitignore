@@ -1,4 +1,3 @@
-msixupload/
 .keystore/
 node_modules/
 dist/
@@ -17,3 +16,15 @@ src-tauri/gen/schemas/
 # 构建产物（历史上为绕开批量删除防护留下的）
 apps/web/dist-stale-*/
 
+# POC：上游内核的可行性验证（临时，不进版本库）
+.poc-upstream/
+
+
+# 根目录的 build/：POC 阶段误拷的 vendor 副本，不应进版本库
+/build/
+
+# 上游参考代码：aropyt-tauri 的完整副本，只作对照，不进版本库
+/aropyt-tauri-main/
+
+# IDE 元数据
+/.codebuddy/
