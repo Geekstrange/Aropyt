@@ -3925,3 +3925,22 @@ button {
   font-weight: 700;
   font-synthesis: weight;
 }
+
+/*
+ * KaTeX 公式的宿主尺寸。
+ *
+ * 原来写在 index.html 的内联 <style> 里。移出来是因为 Tauri 打包时会
+ * 给内联样式算 CSP hash，而 style-src 一旦出现 hash，'unsafe-inline'
+ * 就失效 —— CM6 运行期注入的 baseTheme 没有 hash，会被整体拦下，
+ * 表现为编辑区不能滚动、源码模式空白。
+ */
+.aropyt-math {
+  display: inline-block;
+  vertical-align: middle;
+}
+
+.aropyt-math[data-display='1'] {
+  display: block;
+  text-align: center;
+  margin: 1em 0;
+}

@@ -16,6 +16,19 @@ release.
 
 ### Fixed
 
+- **The packaged build could not scroll, and source mode came up blank**:
+  Tauri scans the built `index.html` and adds a `sha256` of every inline
+  `<style>` to the CSP `style-src`. Per the CSP spec, the presence of a hash
+  (or nonce) makes `'unsafe-inline'` void — so CodeMirror's
+  runtime-injected `baseTheme` was blocked outright. Without it `.cm-editor`
+  never received `display: flex` and `.cm-scroller` lost its `height: 100%`;
+  the scroller collapsed to content height (168px inside a 721px editor),
+  and source mode had no layout rules at all.
+  The single inline `<style>` in `index.html` — the KaTeX host sizing — moved
+  into `styles.css`, which ships as a linked stylesheet and produces no hash.
+  `style-src` is back to `'self' 'unsafe-inline'`.
+  `dev` never went through the hash step, which is why it stayed healthy.
+
 - **Bold text rendered as regular**: the highlight style mapped
   `tags.strong` to `font-weight: 500`. With a font that only carries 400 and
   700, CSS falls back to 400 for a 500 request, so `**bold**` came out as
