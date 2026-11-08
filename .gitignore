@@ -1,30 +1,32 @@
-.keystore/
+# 依赖
 node_modules/
+
+# 构建产物
 dist/
 dist-ssr/
-*.tsbuildinfo
-.DS_Store
-.env
-.env.local
-*.log
 dev-dist/
-
-# Rust / Tauri 构建产物
-src-tauri/target/
+apps/web/dist-stale-*/
+*.tsbuildinfo
 target/
 src-tauri/gen/schemas/
-# 构建产物（历史上为绕开批量删除防护留下的）
-apps/web/dist-stale-*/
 
-# POC：上游内核的可行性验证（临时，不进版本库）
-.poc-upstream/
+# MSIX 上传包：本地归档，体积大且可重新打包
+msixupload/
 
+# 环境与私密材料
+.env
+.env.local
+.keystore/
 
-# 根目录的 build/：POC 阶段误拷的 vendor 副本，不应进版本库
-/build/
+# 系统与编辑器
+.DS_Store
+Thumbs.db
+.codebuddy/
+.idea/
+.vscode/
 
-# 上游参考代码：aropyt-tauri 的完整副本，只作对照，不进版本库
-/aropyt-tauri-main/
+# 日志
+*.log
 
-# IDE 元数据
-/.codebuddy/
+# 本文件不进版本库：忽略规则按各开发环境自行维护
+.gitignore
