@@ -915,6 +915,14 @@ function WheelButton({ commands, details, onRun }: WheelButtonProps): JSX.Elemen
   const current = commands[index] ?? commands[0];
   const detail = details.get(current);
   const title = commandTitle(detail?.title ?? current);
+  /*
+   * 提示尾巴用 `useT` 取，而不是模块级的 `t`。
+   *
+   * `t` 读的是当前 locale，正确的；但它不是 hook —— 语言切换时这个组件
+   * 不会重渲染，提示会一直停在切换前的语言上，直到别的原因触发一次重绘。
+   * `useT` 订阅了语言变化，切换后立刻更新。
+   */
+  const translate = useT();
 
   return (
     <button
@@ -922,7 +930,7 @@ function WheelButton({ commands, details, onRun }: WheelButtonProps): JSX.Elemen
       type="button"
       className="tool-button tool-button--wheel"
       /* 提示里说明滚轮 —— 否则这个交互没有任何可发现性 */
-      title={`${title}（滚轮切换级别）`}
+      title={`${title}${translate('toolbar.headingWheel')}`}
       aria-label={title}
       onClick={() => onRun(current)}
     >
