@@ -12,6 +12,22 @@ release.
 
 ### Planned
 
+## [0.2.4] - 2026-11-09
+
+### Fixed
+
+- **Heading levels 4 to 6 kept their Chinese names**: `formatting.ts`
+  declares six heading commands with Chinese titles, but the title lookup
+  table only mapped the first three and every locale file only carried
+  `toolbar.h1` to `h3`. Scrolling the heading wheel past level 3 left the
+  tooltip on the raw Chinese string even with the interface in English.
+- **The wheel hint was hardcoded**: the suffix lived in a template literal
+  inside `WheelButton`, so no locale could change it. The suffix now reads
+  through `useT()` rather than the module-level `t` — the latter returns
+  the right locale but is not a hook, so switching language would leave
+  the tooltip showing the previous one until something else re-rendered
+  the button.
+
 ## [0.2.3] - 2026-11-06
 
 ### Fixed
@@ -1894,7 +1910,8 @@ Other fixes:
 - Editor core, command registry, keybinding parsing, theme system
 - Light and dark palettes and first-paint bundle budget gate
 
-[Unreleased]: https://github.com/Geekstrange/Aropyt/compare/v0.2.3...HEAD
+[Unreleased]: https://github.com/Geekstrange/Aropyt/compare/v0.2.4...HEAD
+[0.2.4]: https://github.com/Geekstrange/Aropyt/compare/v0.2.3...v0.2.4
 [0.2.3]: https://github.com/Geekstrange/Aropyt/compare/v0.2.2...v0.2.3
 [0.2.2]: https://github.com/Geekstrange/Aropyt/compare/v0.2.1...v0.2.2
 [0.2.1]: https://github.com/Geekstrange/Aropyt/compare/v0.2.0...v0.2.1
