@@ -3350,6 +3350,20 @@ function validateContributions(manifest: PluginManifest): void {
 
   // ── 启动 ──
 
+  /**
+   * 排空原生侧的待打开文件队列。
+   *
+   * 一次事件可能带来多个文件（Finder 里多选双击），所以循环取到空为止。
+   * 浏览器开发模式下 `invokeNative` 直接报错，`.catch` 之后当作空队列。
+   */
+  async function drainPendingOpens(): Promise<void> {
+    for (;;) {
+      const path = await invokeNative<string | null>('take_launch_file').catch(() => null);
+      if (!path) return;
+      await openExternalPath(path);
+    }
+  }
+
   void (async () => {
     void requestPersistentStorage();
     /*
@@ -3544,8 +3558,26 @@ function validateContributions(manifest: PluginManifest): void {
      */
     scheduleAutoSync(5000);
 
-    const launchFile = await invokeNative<string | null>('take_launch_file').catch(() => null);
-    if (launchFile) await openExternalPath(launchFile);
+    /*
+     * 文件关联（双击 .md）有两条通道，最终都落到原生侧的待打开队列：
+     *   · 冷启动：Windows/Linux 走 argv，macOS 走启动时的 Apple Event；
+     *   · 应用已在运行：macOS 把文件交给现有实例，原生侧入队后 emit 通知。
+     *
+     * 顺序是**先订阅、后排空**。反过来会留下一个窗口期：事件正好在
+     * 订阅之前到达，前端既收不到通知，队列也要等下次启动才被处理 ——
+     * 那正是这个 bug 在"应用已运行"时的样子。
+     */
+    if (hasTauri()) {
+      try {
+        const { listen } = await import('@tauri-apps/api/event');
+        await listen('aropyt:open-external-files', () => {
+          void drainPendingOpens();
+        });
+      } catch {
+        /* 浏览器开发模式没有事件 API：启动时那次排空仍然有效 */
+      }
+    }
+    await drainPendingOpens();
     notify();
   })();
 

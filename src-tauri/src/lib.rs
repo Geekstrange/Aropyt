@@ -11,13 +11,15 @@
 //! 编译状态：Windows 本地 `cargo build --release` 与 GitHub Actions
 //! （ubuntu-22.04 / macos-latest）均已通过。改完记得 `cargo check`。
 
-use std::collections::HashMap;
+use std::collections::{HashMap, VecDeque};
 use std::fs;
 use std::io::Write;
 use std::path::{Component, Path, PathBuf};
 
 use serde::{Deserialize, Serialize};
 use std::sync::Mutex;
+#[cfg(any(target_os = "macos", target_os = "ios", target_os = "android"))]
+use tauri::Emitter;
 use tauri::{Manager, State};
 
 /// WebDAV 客户端（同步用）。放在独立文件里：lib.rs 已经足够长，
@@ -1039,15 +1041,25 @@ fn settings_write(app: tauri::AppHandle, text: String) -> Result<(), String> {
 }
 
 /*
- * ── 文件关联：命令行打开 ────────────────────────────────────
+ * ── 文件关联：双击打开 ──────────────────────────────────────
  *
- * Windows/macOS 双击文件时，系统把**文件路径作为第一个参数**传给 exe。
- * 这里在 setup 阶段读出来存进 state，前端启动后调 `take_launch_file`
- * 取走（一次性）—— 比事件订阅简单，也避免"前端还没加载完，事件已经
- * emit 完"的时序问题。
+ * Windows/Linux 双击文件时，系统把**文件路径作为启动参数**传给新进程，
+ * 冷启动从 argv 里就能读到。
  *
- * 二次打开（应用已运行时再双击文件）需要单实例插件把参数转交已有窗口，
- * 那是下一步，本版只处理"冷启动带文件"。
+ * macOS 不是这样：Finder 通过 Apple Event（kAEOpenDocuments）把文件交给
+ * **应用**，argv 里一个路径都没有，Tauri 把它转成 `RunEvent::Opened`。
+ * 只读 argv 的后果就是 v0.2.4 那个 bug —— 窗口起来了，文档是空的。
+ *
+ * 两条通道最终汇进同一个待打开队列：
+ *   · 冷启动：setup 阶段把 argv 里的文件入队；
+ *   · macOS 冷启动 / 应用已运行：`RunEvent::Opened` 把 file:// URL 转成路径入队。
+ *
+ * 用队列而不是直接把路径 emit 给前端：冷启动时前端还没加载完，emit 会丢。
+ * 前端启动后主动来取队列，事件只作为"队列里有新文件"的提示 ——
+ * 事件早到、晚到、还是根本没人接，文件都不会丢。
+ *
+ * Windows/Linux 的"应用已运行"不在这个机制里：系统会另起一个进程（各自
+ * 一个窗口），把参数转交给已有实例需要单实例插件，属于另一件事。
  */
 
 /// 可编辑的文本扩展名。
@@ -1073,13 +1085,75 @@ fn launch_file_from_args() -> Option<String> {
         .find(|arg| !arg.starts_with('-') && is_supported_external(Path::new(arg)))
 }
 
-/// 待打开的外部文件（冷启动时由 argv 填充，前端取走后清空）。
-struct PendingOpen(Mutex<Option<String>>);
+/// 通知前端"待打开队列里有新文件"的事件名。前端在 runtime.ts 订阅同名事件。
+#[cfg(any(target_os = "macos", target_os = "ios", target_os = "android"))]
+const OPEN_FILES_EVENT: &str = "aropyt:open-external-files";
 
-/// 取走启动时要打开的文件（只返回一次）。
+/// 把 `RunEvent::Opened` 里的 `file://` URL 转成本地路径。
+///
+/// 只接受 file 协议：同一个事件也可能来自自定义协议或分享菜单（http/https），
+/// 把它们当文件读，用户只会看到一句莫名其妙的"不支持的文件类型"。
+#[cfg(any(target_os = "macos", target_os = "ios", target_os = "android"))]
+fn opened_url_path(url: &tauri::Url) -> Option<String> {
+    if url.scheme() != "file" {
+        return None;
+    }
+    let path = url.to_file_path().ok()?;
+    if !is_supported_external(&path) {
+        log_line(&format!("文件关联：忽略不支持的文件 {}", path.display()));
+        return None;
+    }
+    Some(path.to_string_lossy().to_string())
+}
+
+/// 把待打开文件入队，并通知已经就绪的前端来取。
+///
+/// 路径始终从队列取，事件只是提示 —— 前端没就绪时 emit 丢不了文件。
+#[cfg(any(target_os = "macos", target_os = "ios", target_os = "android"))]
+fn queue_open_files(app: &tauri::AppHandle, paths: Vec<String>) {
+    let pending = app.state::<PendingOpen>();
+    for path in paths {
+        log_line(&format!("文件关联：待打开 {path}"));
+        pending.push(path);
+    }
+
+    /*
+     * 把窗口带到前面。用户刚在 Finder 里双击了文件，期待的是"看到那个文档"，
+     * 不是任务栏图标闪一下；应用被最小化或藏在其它窗口后面时尤其明显。
+     */
+    if let Some(window) = app.get_webview_window("main") {
+        let _ = window.unminimize();
+        let _ = window.set_focus();
+    }
+
+    let _ = app.emit(OPEN_FILES_EVENT, ());
+}
+
+/// 待打开的外部文件队列。
+///
+/// 用队列而不是单个槽：Finder 里一次选中多个文件双击，macOS 会在同一个
+/// `openURLs` 事件里给出全部 URL —— 单槽只能留下一个，其余静默丢失。
+struct PendingOpen(Mutex<VecDeque<String>>);
+
+impl PendingOpen {
+    fn push(&self, path: String) {
+        if let Ok(mut queue) = self.0.lock() {
+            // 同一个文件连着双击两次（Finder 的"打开最近"也会这样）不重复入队。
+            if !queue.iter().any(|item| item == &path) {
+                queue.push_back(path);
+            }
+        }
+    }
+
+    fn take(&self) -> Option<String> {
+        self.0.lock().ok().and_then(|mut queue| queue.pop_front())
+    }
+}
+
+/// 取走一个待打开的文件（前端启动时循环调用，直到返回 null）。
 #[tauri::command]
 fn take_launch_file(state: State<'_, PendingOpen>) -> Option<String> {
-    state.0.lock().ok().and_then(|mut slot| slot.take())
+    state.take()
 }
 
 /// 读一个**工作区之外**的文件（文件关联打开用）。
@@ -2274,7 +2348,16 @@ pub fn run() {
                 }
             }
 
-            app.manage(PendingOpen(Mutex::new(launch_file_from_args())));
+            /*
+             * 冷启动的待打开文件。Windows/Linux 在 argv 里，macOS 的在
+             * `RunEvent::Opened` 里（见下面的 run 回调）—— 两条路都进这个队列。
+             */
+            let pending = PendingOpen(Mutex::new(VecDeque::new()));
+            if let Some(path) = launch_file_from_args() {
+                log_line(&format!("启动参数：待打开 {path}"));
+                pending.push(path);
+            }
+            app.manage(pending);
             // 状态只在这里注册一次。命令里不再 manage —— 重复注册会 panic。
             app.manage(WorkspaceState {
                 roots: Mutex::new(HashMap::new()),
@@ -2302,9 +2385,32 @@ pub fn run() {
             Ok(())
         });
 
-    builder
-        .run(tauri::generate_context!())
+    let app = builder
+        .build(tauri::generate_context!())
         .expect("Aropyt 启动失败");
+
+    /*
+     * 必须走 `App::run` 而不是 `Builder::run`：macOS 的"打开文件"是
+     * Apple Event，会在事件循环里以 `RunEvent::Opened` 的形式到达 ——
+     * 没有回调就没人接，Finder 双击文件就只剩一个空白窗口。
+     * 冷启动与"应用已运行"两种情况走的是同一个事件，所以一处理就都覆盖了。
+     */
+    app.run(|app_handle, event| {
+        #[cfg(any(target_os = "macos", target_os = "ios", target_os = "android"))]
+        {
+            if let tauri::RunEvent::Opened { urls } = event {
+                let paths: Vec<String> = urls.iter().filter_map(opened_url_path).collect();
+                if !paths.is_empty() {
+                    queue_open_files(app_handle, paths);
+                }
+            }
+        }
+
+        #[cfg(not(any(target_os = "macos", target_os = "ios", target_os = "android")))]
+        {
+            let _ = (app_handle, event);
+        }
+    });
 }
 /// 原生侧的行为测试。
 ///
@@ -2611,5 +2717,43 @@ mod tests {
             fs::read_to_string(root.join("deep").join("nested").join("x.md")).unwrap(),
             "hi"
         );
+    }
+
+    /*
+     * 文件关联的待打开队列。
+     *
+     * 前端靠"一直取到 None 为止"来排空，所以顺序与去重都是契约的一部分：
+     * 反了会让用户先双击的文件后打开，不去重则同一个文件被连点两次就排队两次。
+     */
+    #[test]
+    fn pending_open_queue_is_fifo_and_deduplicated() {
+        let pending = PendingOpen(Mutex::new(VecDeque::new()));
+        pending.push("a.md".to_string());
+        pending.push("b.md".to_string());
+        pending.push("a.md".to_string());
+
+        assert_eq!(pending.take().as_deref(), Some("a.md"));
+        assert_eq!(pending.take().as_deref(), Some("b.md"));
+        assert_eq!(pending.take(), None, "排空后必须返回 None，前端才停得下来");
+    }
+
+    /*
+     * macOS 的"打开文件"事件给的是 file:// URL，不是路径。
+     * 这条验的是转换与过滤：只认 file 协议、只认可编辑扩展名。
+     * 函数本身只在 Apple/Android 平台参与编译，测试一并跳过。
+     */
+    #[cfg(any(target_os = "macos", target_os = "ios", target_os = "android"))]
+    #[test]
+    fn opened_url_only_accepts_supported_local_files() {
+        let notes = tauri::Url::parse("file:///tmp/%E7%AC%94%E8%AE%B0.md").unwrap();
+        assert_eq!(opened_url_path(&notes).as_deref(), Some("/tmp/笔记.md"));
+
+        // 非 file 协议（自定义协议、分享链接）不能当文件读
+        let link = tauri::Url::parse("https://example.com/a.md").unwrap();
+        assert!(opened_url_path(&link).is_none(), "https 不该被当成文件");
+
+        // 不支持的类型直接忽略，不该弹「不支持的文件类型」给用户
+        let image = tauri::Url::parse("file:///tmp/cover.png").unwrap();
+        assert!(opened_url_path(&image).is_none(), "png 不是可编辑文件");
     }
 }

@@ -10,7 +10,25 @@ release.
 
 ## [Unreleased]
 
+### Fixed
+
+- **macOS: double-clicking a Markdown file only opened a blank window**: the
+  native side looked for the file in the process arguments, but macOS delivers
+  Finder's "open document" request as an Apple Event instead of argv. Aropyt now
+  listens for `RunEvent::Opened`, converts the `file://` URLs to paths and puts
+  them in the same external-file queue the Windows command line uses. This
+  covers both a cold launch and an already-running instance, and the window is
+  brought to the front when a document arrives. Non-file URLs and unsupported
+  extensions are ignored instead of surfacing an "unsupported file type" error.
+
 ### Planned
+
+- Version-to-version diff in edit history (single-version comparison shipped
+  in v0.1.2)
+- Touch targets in the toolbar (about 26px today, below the 44px guideline)
+- Sync has still only met a local test server; a real provider will find
+  things (TLS behind a corporate proxy, per-vendor PROPFIND quirks, paths with
+  unusual characters)
 
 ## [0.2.4] - 2026-11-09
 
@@ -261,17 +279,6 @@ release.
   most one place. Selecting hundreds of disjoint ranges is not a workflow this
   editor has, so the button is hidden and a count badge takes its place.
   Documents over 200 KB skip the count.
-
-## [Unreleased]
-
-### Planned
-
-- Version-to-version diff in edit history (single-version comparison shipped
-  in v0.1.2)
-- Touch targets in the toolbar (about 26px today, below the 44px guideline)
-- Sync has still only met a local test server; a real provider will find
-  things (TLS behind a corporate proxy, per-vendor PROPFIND quirks, paths with
-  unusual characters)
 
 ## [0.2.0] - 2026-11-03
 
