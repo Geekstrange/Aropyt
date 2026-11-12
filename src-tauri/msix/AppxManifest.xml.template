@@ -76,11 +76,18 @@
         Square44x44Logo="Assets\Square44x44Logo.png" />
 
       <Extensions>
-        <!-- 文件关联：与 tauri.conf.json 的 bundle.fileAssociations 一一对应 -->
+        <!--
+          文件关联：与 tauri.conf.json 的 bundle.fileAssociations 一一对应。
+
+          ⚠️ <uap:Logo> 就是资源管理器里这类文件的图标 —— 它既不是 exe 的
+          图标，也不读 tauri.conf.json。三处都写 Square44x44Logo.png 时，
+          .md / .tex / .fountain 全都显示成应用图标（用户报的就是这个）。
+          各类型用自己的图标，图片由 pack.ps1 从 icons/files/*.png 生成。
+        -->
         <uap:Extension Category="windows.fileTypeAssociation">
           <uap:FileTypeAssociation Name="aropyt.markdown">
             <uap:DisplayName>Markdown Document</uap:DisplayName>
-            <uap:Logo>Assets\Square44x44Logo.png</uap:Logo>
+            <uap:Logo>Assets\markdown.png</uap:Logo>
             <uap:SupportedFileTypes>
               <uap:FileType>.md</uap:FileType>
               <uap:FileType>.markdown</uap:FileType>
@@ -91,7 +98,7 @@
         <uap:Extension Category="windows.fileTypeAssociation">
           <uap:FileTypeAssociation Name="aropyt.latex">
             <uap:DisplayName>LaTeX Document</uap:DisplayName>
-            <uap:Logo>Assets\Square44x44Logo.png</uap:Logo>
+            <uap:Logo>Assets\latex.png</uap:Logo>
             <uap:SupportedFileTypes>
               <uap:FileType>.tex</uap:FileType>
               <uap:FileType>.latex</uap:FileType>
@@ -102,7 +109,7 @@
         <uap:Extension Category="windows.fileTypeAssociation">
           <uap:FileTypeAssociation Name="aropyt.fountain">
             <uap:DisplayName>Fountain Screenplay</uap:DisplayName>
-            <uap:Logo>Assets\Square44x44Logo.png</uap:Logo>
+            <uap:Logo>Assets\fountain.png</uap:Logo>
             <uap:SupportedFileTypes>
               <uap:FileType>.fountain</uap:FileType>
             </uap:SupportedFileTypes>

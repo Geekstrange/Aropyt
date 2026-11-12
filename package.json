@@ -34,6 +34,7 @@
     "check:workspace": "node scripts/check-workspace.mjs",
     "build:icons": "node scripts/make-icons.mjs",
     "build:icons:toolbar": "node scripts/make-toolbar-icons.mjs",
+    "build:icons:files": "node scripts/make-file-icons.mjs && node scripts/make-file-ico.mjs",
     "check:layout": "node scripts/check-layout.mjs",
     "check:crash": "node scripts/check-crash-recovery.mjs",
     "check:tabs": "node scripts/check-tabs.mjs",

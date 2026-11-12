@@ -20,6 +20,13 @@ release.
   covers both a cold launch and an already-running instance, and the window is
   brought to the front when a document arrives. Non-file URLs and unsupported
   extensions are ignored instead of surfacing an "unsupported file type" error.
+- **Store build: associated files showed the app icon instead of the document
+  icon**: every file association in the MSIX manifest pointed its `uap:Logo` at
+  `Square44x44Logo.png` — the app icon — so Explorer had no way to tell a
+  `.md`, `.tex` or `.fountain` file from Aropyt itself. Each association now
+  ships its own icon, rendered from `icon/mdFile.svg`, `icon/texFile.svg` and
+  `icon/fountainFile.svg` when the package is built (44px baseline plus
+  high-DPI scale variants).
 
 ### Planned
 

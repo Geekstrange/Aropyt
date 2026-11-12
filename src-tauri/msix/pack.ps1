@@ -148,6 +148,32 @@ New-TileImage -Source $logoSource -Size 50 -Destination (Join-Path $assets 'Stor
 New-TileImage -Source $logoSource -Size 150 -Destination (Join-Path $assets 'Square150x150Logo.png')
 New-TileImage -Source $logoSource -Size 44 -Destination (Join-Path $assets 'Square44x44Logo.png') -ContentScale 1.0
 
+<#
+  文件关联图标。
+
+  资源管理器里 .md / .tex / .fountain 的图标取的是清单 <uap:Logo> 指向的
+  图片 —— 既不是 exe 图标，也不读 tauri.conf.json 的 fileAssociations。
+  之前三处都写 Square44x44Logo.png，于是所有关联文件都显示成应用图标；
+  用户报的"图标不对"就是这么来的。
+
+  源图是 make-file-icons.mjs 从 icon/mdFile.svg 等渲染的 256px PNG。
+  微软的基准尺寸是 44x44（scale-100），再派生 125/150/200/400 的变体，
+  高 DPI 下才不糊。全部在打包时现生成，仓库里不放发布用的中间产物。
+#>
+$fileIconScales = [ordered]@{ 100 = 44; 125 = 55; 150 = 66; 200 = 88; 400 = 176 }
+foreach ($type in @('markdown', 'latex', 'fountain')) {
+  $iconSource = Join-Path $repo "src-tauri/icons/files/$type.png"
+  if (-not (Test-Path $iconSource)) {
+    throw "找不到 $type 的文件类型图标：$iconSource`n先跑 npm run build:icons:files 生成。"
+  }
+
+  # 清单引用的是不带限定名的 Assets\<type>.png；限定名只作为高分屏候选。
+  New-TileImage -Source $iconSource -Size 44 -Destination (Join-Path $assets "$type.png") -ContentScale 1.0
+  foreach ($scale in $fileIconScales.GetEnumerator()) {
+    New-TileImage -Source $iconSource -Size $scale.Value -Destination (Join-Path $assets "$type.scale-$($scale.Key).png") -ContentScale 1.0
+  }
+}
+
 # ── 4. 渲染清单 ──────────────────────────────────────────────
 $manifest = Get-Content (Join-Path $here 'AppxManifest.xml.template') -Raw
 
