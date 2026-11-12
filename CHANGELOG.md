@@ -10,6 +10,17 @@ release.
 
 ## [Unreleased]
 
+### Planned
+
+- Version-to-version diff in edit history (single-version comparison shipped
+  in v0.1.2)
+- Touch targets in the toolbar (about 26px today, below the 44px guideline)
+- Sync has still only met a local test server; a real provider will find
+  things (TLS behind a corporate proxy, per-vendor PROPFIND quirks, paths with
+  unusual characters)
+
+## [0.2.5] - 2026-11-12
+
 ### Fixed
 
 - **macOS: double-clicking a Markdown file only opened a blank window**: the
@@ -27,15 +38,6 @@ release.
   ships its own icon, rendered from `icon/mdFile.svg`, `icon/texFile.svg` and
   `icon/fountainFile.svg` when the package is built (44px baseline plus
   high-DPI scale variants).
-
-### Planned
-
-- Version-to-version diff in edit history (single-version comparison shipped
-  in v0.1.2)
-- Touch targets in the toolbar (about 26px today, below the 44px guideline)
-- Sync has still only met a local test server; a real provider will find
-  things (TLS behind a corporate proxy, per-vendor PROPFIND quirks, paths with
-  unusual characters)
 
 ## [0.2.4] - 2026-11-09
 
